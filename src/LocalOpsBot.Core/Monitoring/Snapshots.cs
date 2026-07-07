@@ -26,3 +26,25 @@ public sealed record NetworkStatusSnapshot(
     IReadOnlyList<string> ActiveAdapters,
     long? PingLatencyMs,
     string? FailureReason);
+
+public sealed record ProcessWatchStatus(
+    string WatchName,
+    IReadOnlyList<string> ProcessNames,
+    bool IsRunning,
+    int InstanceCount,
+    IReadOnlyList<ProcessInstanceInfo> Instances);
+
+public sealed record ProcessInstanceInfo(
+    int ProcessId,
+    string ProcessName,
+    string? MainModulePath,
+    DateTimeOffset? StartedAt,
+    long? WorkingSetBytes);
+
+public sealed record WindowsServiceWatchStatus(
+    string WatchName,
+    string ServiceName,
+    string? DisplayName,
+    string? Status,
+    bool IsExpectedStatus,
+    string? FailureReason);

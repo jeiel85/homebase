@@ -34,6 +34,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISystemMetricsCollector, WindowsSystemMetricsCollector>();
         services.AddSingleton<IDiskCollector, WindowsDiskCollector>();
         services.AddSingleton<INetworkStatusChecker, WindowsNetworkStatusChecker>();
+        services.AddSingleton<IProcessCollector, WindowsProcessCollector>();
+        services.AddSingleton<IWindowsServiceCollector, WindowsServiceCollector>();
 
         return services;
     }

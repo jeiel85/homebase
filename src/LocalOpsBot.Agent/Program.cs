@@ -15,13 +15,14 @@ builder.Services.AddWindowsService(options =>
     options.ServiceName = "LocalOpsBot Agent";
 });
 
-builder.Services.AddLocalOpsCore();
+builder.Services.AddLocalOpsCore(builder.Configuration);
 builder.Services.AddLocalOpsTelegram(builder.Configuration);
 builder.Services.AddLocalOpsWindowsCollectors();
 builder.Services.AddLocalOpsData(builder.Configuration);
 builder.Services.AddHostedService<DatabaseMigrationService>();
 builder.Services.AddHostedService<TelegramPollingService>();
 builder.Services.AddHostedService<BootNotificationService>();
+builder.Services.AddHostedService<WatchdogBackgroundService>();
 
 IHost host = builder.Build();
 await host.RunAsync();
