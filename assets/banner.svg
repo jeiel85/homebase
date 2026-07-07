@@ -1,0 +1,149 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a1a"/>
+      <stop offset="50%" stop-color="#0f1a2e"/>
+      <stop offset="100%" stop-color="#1a1a3a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2b9af3"/>
+      <stop offset="100%" stop-color="#6c5ce7"/>
+    </linearGradient>
+    <linearGradient id="accentGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2b9af3" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#6c5ce7" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.03"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="8" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Grid pattern overlay -->
+  <g opacity="0.04">
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#fff" stroke-width="0.5"/>
+    </pattern>
+    <rect width="1280" height="640" fill="url(#grid)"/>
+  </g>
+
+  <!-- Glowing accent blobs -->
+  <circle cx="900" cy="200" r="250" fill="url(#accentGlow)"/>
+  <circle cx="200" cy="480" r="200" fill="url(#accentGlow)"/>
+
+  <!-- Floating tech circles -->
+  <g opacity="0.15">
+    <circle cx="1100" cy="120" r="60" fill="none" stroke="#2b9af3" stroke-width="1">
+      <animate attributeName="r" values="60;65;60" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1120" cy="140" r="30" fill="none" stroke="#6c5ce7" stroke-width="1">
+      <animate attributeName="r" values="30;35;30" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="180" cy="150" r="40" fill="none" stroke="#2b9af3" stroke-width="1">
+      <animate attributeName="r" values="40;44;40" dur="5s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Telegram icon (right side) -->
+  <g transform="translate(960, 200)" filter="url(#shadow)">
+    <rect x="-60" y="-60" width="120" height="120" rx="20" fill="url(#cardBg)" stroke="#2b9af3" stroke-width="1.5" stroke-opacity="0.3"/>
+    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="48" fill="#2b9af3">✈</text>
+  </g>
+
+  <!-- Windows icon (middle right) -->
+  <g transform="translate(760, 320)" filter="url(#shadow)">
+    <rect x="-55" y="-55" width="110" height="110" rx="20" fill="url(#cardBg)" stroke="#6c5ce7" stroke-width="1.5" stroke-opacity="0.3"/>
+    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="44" fill="#6c5ce7">⊞</text>
+  </g>
+
+  <!-- Terminal icon (middle) -->
+  <g transform="translate(560, 160)" filter="url(#shadow)">
+    <rect x="-55" y="-55" width="110" height="110" rx="20" fill="url(#cardBg)" stroke="#00b894" stroke-width="1.5" stroke-opacity="0.3"/>
+    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="44" fill="#00b894">&gt;_</text>
+  </g>
+
+  <!-- Bell icon (left) -->
+  <g transform="translate(320, 300)" filter="url(#shadow)">
+    <rect x="-50" y="-50" width="100" height="100" rx="20" fill="url(#cardBg)" stroke="#fdcb6e" stroke-width="1.5" stroke-opacity="0.3"/>
+    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="40" fill="#fdcb6e">🔔</text>
+  </g>
+
+  <!-- Connection lines between icons -->
+  <g stroke="url(#accent)" stroke-width="1" opacity="0.15" fill="none">
+    <path d="M 420 300 Q 480 240 560 220"/>
+    <path d="M 680 200 Q 720 280 760 320"/>
+    <path d="M 870 320 Q 920 260 960 200"/>
+  </g>
+
+  <!-- Title area -->
+  <g transform="translate(80, 200)">
+    <text x="0" y="0" font-family="'Segoe UI', -apple-system, sans-serif" font-size="18" fill="#2b9af3" font-weight="600" letter-spacing="3">LOCALOPS BOT</text>
+    <text x="0" y="60" font-family="'Segoe UI', -apple-system, sans-serif" font-size="56" fill="#ffffff" font-weight="700" letter-spacing="-1">
+      Your PC,<tspan fill="url(#accent)"> in your pocket</tspan>
+    </text>
+    <text x="0" y="110" font-family="'Segoe UI', -apple-system, sans-serif" font-size="20" fill="#8899aa" font-weight="400">
+      Personal Windows PC monitoring bot for Telegram
+    </text>
+
+    <!-- Feature pills -->
+    <g transform="translate(0, 160)">
+      <rect x="0" y="0" width="130" height="32" rx="16" fill="#2b9af3" fill-opacity="0.15" stroke="#2b9af3" stroke-width="0.5"/>
+      <text x="65" y="20" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13" fill="#2b9af3">🔍 Real-time</text>
+
+      <rect x="145" y="0" width="140" height="32" rx="16" fill="#00b894" fill-opacity="0.15" stroke="#00b894" stroke-width="0.5"/>
+      <text x="215" y="20" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13" fill="#00b894">🛡️ Zero exposure</text>
+
+      <rect x="300" y="0" width="150" height="32" rx="16" fill="#fdcb6e" fill-opacity="0.15" stroke="#fdcb6e" stroke-width="0.5"/>
+      <text x="375" y="20" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13" fill="#fdcb6e">🔔 Push alerts</text>
+    </g>
+  </g>
+
+  <!-- Tech stack bar at bottom -->
+  <g transform="translate(0, 560)">
+    <rect width="1280" height="80" fill="#000" fill-opacity="0.3"/>
+    <g transform="translate(80, 25)">
+      <text x="0" y="15" font-family="monospace" font-size="13" fill="#556677">TECH STACK</text>
+
+      <!-- .NET -->
+      <g transform="translate(0, 28)">
+        <rect x="0" y="0" width="100" height="24" rx="12" fill="#512bd4" fill-opacity="0.2"/>
+        <text x="50" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#9b7ee8" font-weight="600">.NET 9</text>
+      </g>
+      <!-- C# -->
+      <g transform="translate(115, 28)">
+        <rect x="0" y="0" width="80" height="24" rx="12" fill="#178600" fill-opacity="0.2"/>
+        <text x="40" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#4cba4c" font-weight="600">C#</text>
+      </g>
+      <!-- SQLite -->
+      <g transform="translate(210, 28)">
+        <rect x="0" y="0" width="100" height="24" rx="12" fill="#f8b800" fill-opacity="0.2"/>
+        <text x="50" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#f8d44a" font-weight="600">SQLite</text>
+      </g>
+      <!-- WPF -->
+      <g transform="translate(325, 28)">
+        <rect x="0" y="0" width="80" height="24" rx="12" fill="#2b9af3" fill-opacity="0.2"/>
+        <text x="40" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#6bb5f8" font-weight="600">WPF</text>
+      </g>
+      <!-- Telegram Bot API -->
+      <g transform="translate(420, 28)">
+        <rect x="0" y="0" width="150" height="24" rx="12" fill="#0088cc" fill-opacity="0.2"/>
+        <text x="75" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#4dabf0" font-weight="600">Telegram Bot API</text>
+      </g>
+      <!-- xUnit -->
+      <g transform="translate(585, 28)">
+        <rect x="0" y="0" width="80" height="24" rx="12" fill="#e57373" fill-opacity="0.2"/>
+        <text x="40" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#ef9a9a" font-weight="600">xUnit</text>
+      </g>
+    </g>
+  </g>
+</svg>

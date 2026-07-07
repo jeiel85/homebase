@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LocalOps Bot — Personal Windows PC monitoring bot for Telegram. Monitor your PC status, receive boot notifications, watch processes and services, forward Windows Toast notifications, all from your phone via Telegram.">
+  <meta name="keywords" content="windows, monitoring, telegram, bot, dotnet, pc-monitoring, devops">
+  <meta property="og:title" content="LocalOps Bot">
+  <meta property="og:description" content="Your PC, in your pocket. Personal Windows monitoring bot for Telegram.">
+  <meta property="og:image" content="../assets/banner.svg">
+  <title>LocalOps Bot — Personal Windows PC Monitoring for Telegram</title>
+  <style>
+    :root {
+      --bg: #0a0a1a;
+      --bg-card: #0f1a2e;
+      --text: #e0e0e0;
+      --text-muted: #8899aa;
+      --accent: #2b9af3;
+      --accent2: #6c5ce7;
+      --green: #00b894;
+      --yellow: #fdcb6e;
+      --purple: #9b7ee8;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Hero */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      background: linear-gradient(135deg, #0a0a1a 0%, #0f1a2e 50%, #1a1a3a 100%);
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      width: 800px; height: 800px;
+      top: -200px; right: -200px;
+      background: radial-gradient(circle, rgba(43,154,243,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      width: 600px; height: 600px;
+      bottom: -200px; left: -200px;
+      background: radial-gradient(circle, rgba(108,92,231,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-label {
+      font-size: 0.85rem;
+      letter-spacing: 4px;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #fff 30%, #2b9af3);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: clamp(1rem, 2vw, 1.3rem);
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 1rem auto 2rem;
+    }
+
+    .hero-pills {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 2.5rem;
+    }
+    .pill {
+      padding: 0.4rem 1rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    .pill-blue { background: rgba(43,154,243,0.12); border-color: rgba(43,154,243,0.3); color: #6bb5f8; }
+    .pill-green { background: rgba(0,184,148,0.12); border-color: rgba(0,184,148,0.3); color: #55c9a4; }
+    .pill-yellow { background: rgba(253,203,110,0.12); border-color: rgba(253,203,110,0.3); color: #f5d87a; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 2rem;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #2b9af3, #6c5ce7);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(43,154,243,0.3);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(43,154,243,0.4); }
+    .btn-ghost {
+      border: 1px solid rgba(255,255,255,0.15);
+      color: var(--text);
+    }
+    .btn-ghost:hover { border-color: rgba(255,255,255,0.3); }
+
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .banner-img {
+      margin-top: 3rem;
+      max-width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+    }
+
+    /* Sections */
+    section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 5rem 2rem;
+    }
+    section h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 2.5rem;
+      text-align: center;
+    }
+    section h2 span { background: linear-gradient(135deg, #2b9af3, #6c5ce7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+    /* Features grid */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .feature-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 1.75rem;
+      transition: all 0.2s;
+    }
+    .feature-card:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(43,154,243,0.2);
+      transform: translateY(-2px);
+    }
+    .feature-icon { font-size: 1.75rem; margin-bottom: 1rem; display: block; }
+    .feature-card h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .feature-card p { font-size: 0.9rem; color: var(--text-muted); }
+
+    /* Architecture */
+    .arch-diagram {
+      background: #000;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 2rem;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      line-height: 1.8;
+      overflow-x: auto;
+      white-space: pre;
+      color: #c0c0c0;
+    }
+    .arch-diagram .hl { color: var(--accent); }
+    .arch-diagram .hl2 { color: var(--green); }
+    .arch-diagram .hl3 { color: var(--purple); }
+
+    /* Commands */
+    .cmd-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .cmd-table th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .cmd-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .cmd-table code {
+      background: rgba(43,154,243,0.1);
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    /* Tech stack */
+    .stack-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .stack-item {
+      padding: 0.5rem 1.25rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .stack-item.dotnet { border-color: #512bd4; color: #9b7ee8; }
+    .stack-item.csharp { border-color: #178600; color: #4cba4c; }
+    .stack-item.sqlite { border-color: #f8b800; color: #f8d44a; }
+    .stack-item.wpf { border-color: #2b9af3; color: #6bb5f8; }
+    .stack-item.telegram { border-color: #0088cc; color: #4dabf0; }
+    .stack-item.xunit { border-color: #e57373; color: #ef9a9a; }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid rgba(255,255,255,0.04);
+    }
+
+    @media (max-width: 640px) {
+      section { padding: 3rem 1.5rem; }
+      .features { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="hero-label">✦ LOCALOPS BOT</div>
+    <h1>Your PC,<br>in your pocket</h1>
+    <p>Personal Windows PC monitoring bot for Telegram. Monitor system status, receive alerts, and forward notifications — all from your phone. Zero exposed ports.</p>
+
+    <div class="hero-pills">
+      <span class="pill pill-blue">🔍 Real-time monitoring</span>
+      <span class="pill pill-green">🛡️ Zero network exposure</span>
+      <span class="pill pill-yellow">🔔 Push notifications</span>
+    </div>
+
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="https://github.com/jeiel85/localops-bot">View on GitHub &nearr;</a>
+      <a class="btn btn-ghost" href="#features">Explore features ↓</a>
+    </div>
+
+    <img src="../assets/banner.svg" alt="LocalOps Bot Banner" class="banner-img" width="900">
+  </section>
+
+  <section id="features">
+    <h2><span>Features</span></h2>
+    <div class="features">
+      <div class="feature-card">
+        <span class="feature-icon">🖥️</span>
+        <h3>System Status</h3>
+        <p>CPU, RAM, disk, network, and uptime at your fingertips. Check your PC's health from anywhere.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🚀</span>
+        <h3>Boot Notifications</h3>
+        <p>Get an instant Telegram message when your PC boots up, with IP, hostname, and timestamp.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">👁️</span>
+        <h3>Process &amp; Service Watch</h3>
+        <p>Monitor critical processes like Ollama, PostgreSQL, or your dev server. Get alerts when they go down.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📋</span>
+        <h3>Event Log Watch</h3>
+        <p>Forward Windows Error/Critical events to Telegram. Catch crashes and system issues in real time.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔔</span>
+        <h3>Toast Notification Forwarding</h3>
+        <p>Forward Windows Toast notifications (Chrome, Slack, etc.) to your phone with privacy filtering.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔒</span>
+        <h3>Privacy First</h3>
+        <p>No open ports, no cloud relay, no keylogging. Sensitive content is masked by default. Whitelist-only chat access.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span>Commands</span></h2>
+    <table class="cmd-table">
+      <thead>
+        <tr><th>Command</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/ping</code></td><td>Bot health check</td></tr>
+        <tr><td><code>/help</code></td><td>Show available commands</td></tr>
+        <tr><td><code>/status</code></td><td>Full PC status summary</td></tr>
+        <tr><td><code>/disk</code></td><td>Disk usage by drive</td></tr>
+        <tr><td><code>/process</code></td><td>Watched process status</td></tr>
+        <tr><td><code>/services</code></td><td>Windows Service status</td></tr>
+        <tr><td><code>/events</code></td><td>Recent Windows Event Logs</td></tr>
+        <tr><td><code>/alerts</code></td><td>Recent alert history</td></tr>
+        <tr><td><code>/mute 1h</code></td><td>Quiet hours for alerts</td></tr>
+        <tr><td><code>/diagnostics</code></td><td>Agent self-diagnostics</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span>Architecture</span></h2>
+    <div class="arch-diagram">
+┌──────────────────────────────────────┐
+│         Telegram Mobile/Desktop       │
+└────────────────┬─────────────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────┐
+│        Telegram Bot API              │
+│   (outbound HTTPS only, no webhook)  │
+└────────────────┬─────────────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────┐
+│          Local Windows PC             │
+│                                       │
+│  ┌─────────────────────────────────┐  │
+│  │  <span class="hl">LocalOpsBot.Agent</span>                  │  │
+│  │  Windows Service                │  │
+│  │  • Boot notification            │  │
+│  │  • Status collectors            │  │
+│  │  • Event log watcher            │  │
+│  │  • Process/service watcher      │  │
+│  │  • Telegram polling             │  │
+│  │  • SQLite persistence           │  │
+│  └────────────┬────────────────────┘  │
+│               │ named pipe            │
+│  ┌────────────▼────────────────────┐  │
+│  │  <span class="hl2">LocalOpsBot.Tray</span>                  │  │
+│  │  User Session App               │  │
+│  │  • Toast notification listener  │  │
+│  │  • Notification filter/mask     │  │
+│  │  • Local settings UI            │  │
+│  └─────────────────────────────────┘  │
+│                                       │
+│  ┌─────────────────────────────────┐  │
+│  │  <span class="hl3">LocalOpsBot.Core</span>                  │  │
+│  │  Shared domain &amp; interfaces     │  │
+│  └─────────────────────────────────┘  │
+└──────────────────────────────────────┘</div>
+  </section>
+
+  <section>
+    <h2><span>Tech Stack</span></h2>
+    <div class="stack-grid">
+      <span class="stack-item dotnet">.NET 9</span>
+      <span class="stack-item csharp">C#</span>
+      <span class="stack-item sqlite">SQLite</span>
+      <span class="stack-item wpf">WPF</span>
+      <span class="stack-item telegram">Telegram Bot API</span>
+      <span class="stack-item xunit">xUnit</span>
+      <span class="stack-item serilog">Serilog</span>
+      <span class="stack-item">Named Pipes IPC</span>
+      <span class="stack-item">Windows Service</span>
+    </div>
+  </section>
+
+  <footer>
+    <p>LocalOps Bot &mdash; MIT License. Built with .NET and ❤️.</p>
+  </footer>
+</body>
+</html>
