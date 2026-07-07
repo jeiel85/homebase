@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICommandHandler, UptimeCommandHandler>();
         services.AddSingleton<ICommandHandler, ProcessCommandHandler>();
         services.AddSingleton<ICommandHandler, ServicesCommandHandler>();
+        services.AddSingleton<ICommandHandler, EventsCommandHandler>();
 
         var processWatches = config.GetSection("processWatches").Get<ProcessWatchConfig[]>() ?? [];
         services.AddSingleton<IReadOnlyList<ProcessWatchConfig>>(processWatches);
@@ -24,6 +25,9 @@ public static class ServiceCollectionExtensions
         var serviceWatches = config.GetSection("serviceWatches").Get<ServiceWatchConfig[]>() ?? [];
         services.AddSingleton<IReadOnlyList<ServiceWatchConfig>>(serviceWatches);
         services.AddSingleton(serviceWatches.AsEnumerable());
+
+        var eventLogOpts = config.GetSection("eventLog").Get<EventLogOptions>() ?? new EventLogOptions();
+        services.AddSingleton(eventLogOpts);
 
         return services;
     }

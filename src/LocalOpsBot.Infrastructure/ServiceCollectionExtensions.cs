@@ -36,6 +36,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INetworkStatusChecker, WindowsNetworkStatusChecker>();
         services.AddSingleton<IProcessCollector, WindowsProcessCollector>();
         services.AddSingleton<IWindowsServiceCollector, WindowsServiceCollector>();
+        services.AddSingleton<IEventLogWatcher, WindowsEventLogWatcher>();
 
         return services;
     }

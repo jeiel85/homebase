@@ -41,6 +41,16 @@ public sealed record ProcessInstanceInfo(
     DateTimeOffset? StartedAt,
     long? WorkingSetBytes);
 
+public sealed record WindowsEventLogItem(
+    string LogName,
+    long RecordId,
+    int EventId,
+    string? ProviderName,
+    string Level,
+    DateTimeOffset TimeCreated,
+    string? MachineName,
+    string? Message);
+
 public sealed record WindowsServiceWatchStatus(
     string WatchName,
     string ServiceName,

@@ -23,6 +23,7 @@ builder.Services.AddHostedService<DatabaseMigrationService>();
 builder.Services.AddHostedService<TelegramPollingService>();
 builder.Services.AddHostedService<BootNotificationService>();
 builder.Services.AddHostedService<WatchdogBackgroundService>();
+builder.Services.AddHostedService<EventLogPollingService>();
 
 IHost host = builder.Build();
 await host.RunAsync();
