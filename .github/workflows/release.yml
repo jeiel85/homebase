@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0'
+
+      - name: Publish Agent
+        run: dotnet publish src/LocalOpsBot.Agent/LocalOpsBot.Agent.csproj -c Release -r win-x64 --self-contained true -o publish/Agent
+
+      - name: Publish Tray
+        run: dotnet publish src/LocalOpsBot.Tray/LocalOpsBot.Tray.csproj -c Release -r win-x64 --self-contained true -o publish/Tray
+
+      - name: Create Agent zip + SHA256
+        run: |
+          Compress-Archive -Path publish/Agent/* -DestinationPath LocalOpsBot.Agent.zip -Force
+          $hash = (Get-FileHash LocalOpsBot.Agent.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path LocalOpsBot.Agent.zip.sha256 -Value $hash
+
+      - name: Create Tray zip + SHA256
+        run: |
+          Compress-Archive -Path publish/Tray/* -DestinationPath LocalOpsBot.Tray.zip -Force
+          $hash = (Get-FileHash LocalOpsBot.Tray.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path LocalOpsBot.Tray.zip.sha256 -Value $hash
+
+      - name: Extract changelog
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: LocalOps Bot ${{ env.TAG }}
+          body_path: CHANGELOG.md
+          files: |
+            LocalOpsBot.Agent.zip
+            LocalOpsBot.Agent.zip.sha256
+            LocalOpsBot.Tray.zip
+            LocalOpsBot.Tray.zip.sha256
+            installer/install-service.ps1
+            installer/uninstall-service.ps1
+            installer/register-startup-tray.ps1
+            config/appsettings.example.json

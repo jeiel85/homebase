@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using LocalOpsBot.Core.Commands;
 using LocalOpsBot.Core.Monitoring;
 using LocalOpsBot.Core.Notifications;
+using LocalOpsBot.Core.Updates;
 using LocalOpsBot.Infrastructure.Commands;
 using LocalOpsBot.Infrastructure.Notifications;
 using LocalOpsBot.Infrastructure.Telegram;
@@ -68,6 +69,33 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProcessCollector, WindowsProcessCollector>();
         services.AddSingleton<IWindowsServiceCollector, WindowsServiceCollector>();
         services.AddSingleton<IEventLogWatcher, WindowsEventLogWatcher>();
+
+        services.AddSingleton<IHttpEndpointMonitor, HttpEndpointMonitor>();
+        services.AddSingleton<ITcpPortMonitor, TcpPortMonitor>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddLocalOpsDevMonitor(
+        this IServiceCollection services)
+    {
+        services.AddHttpClient("DevMonitor", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
+        return services;
+    }
+
+    public static IServiceCollection AddLocalOpsUpdates(
+        this IServiceCollection services)
+    {
+        services.AddHttpClient<UpdateService>("GitHub", client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("LocalOpsBot/0.1");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
 
         return services;
     }

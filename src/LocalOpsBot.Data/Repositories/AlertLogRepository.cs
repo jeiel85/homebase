@@ -32,6 +32,31 @@ public sealed class AlertLogRepository : IAlertLogRepository
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<IReadOnlyList<Models.AlertLogEntry>> GetRecentAsync(int count, CancellationToken ct)
+    {
+        var results = new List<Models.AlertLogEntry>();
+        using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, alert_id, kind, severity, title, body, dedup_key, source, status, error, created_at, sent_at
+            FROM alert_log ORDER BY created_at DESC LIMIT @count
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@count", count));
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new Models.AlertLogEntry(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9),
+                DateTimeOffset.Parse(reader.GetString(10)),
+                reader.IsDBNull(11) ? null : DateTimeOffset.Parse(reader.GetString(11))));
+        }
+        return results;
+    }
+
     public async Task<bool> ExistsRecentDedupKeyAsync(string dedupKey, TimeSpan window, CancellationToken ct)
     {
         using var cmd = _db.Connection.CreateCommand();
