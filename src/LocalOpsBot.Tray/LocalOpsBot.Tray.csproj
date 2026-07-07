@@ -3,9 +3,13 @@
     <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <OutputType>WinExe</OutputType>
+    <NoWarn>NU1701</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\LocalOpsBot.Core\LocalOpsBot.Core.csproj" />
     <ProjectReference Include="..\LocalOpsBot.Infrastructure\LocalOpsBot.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Hardcodet.Wpf.TaskbarNotification" Version="1.0.5" />
   </ItemGroup>
 </Project>
