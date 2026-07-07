@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="LocalOps Bot — Personal Windows PC monitoring bot for Telegram. Monitor your PC status, receive boot notifications, watch processes and services, forward Windows Toast notifications, all from your phone via Telegram.">
+  <meta name="description" content="LocalOps Bot — 개인 Windows PC 모니터링 Telegram 봇. PC 상태 확인, 부팅 알림, 프로세스/서비스 감시, Windows 토스트 알림 전달을 Telegram으로 받아보세요.">
   <meta name="keywords" content="windows, monitoring, telegram, bot, dotnet, pc-monitoring, devops">
   <meta property="og:title" content="LocalOps Bot">
-  <meta property="og:description" content="Your PC, in your pocket. Personal Windows monitoring bot for Telegram.">
+  <meta property="og:description" content="당신의 PC를 주머니 속으로. 개인 Windows 모니터링 Telegram 봇.">
   <meta property="og:image" content="../assets/banner.svg">
-  <title>LocalOps Bot — Personal Windows PC Monitoring for Telegram</title>
+  <title>LocalOps Bot — 개인 Windows PC 모니터링 Telegram 봇</title>
   <style>
     :root {
       --bg: #0a0a1a;
@@ -23,7 +23,7 @@
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
@@ -260,125 +260,125 @@
 <body>
   <section class="hero">
     <div class="hero-label">✦ LOCALOPS BOT</div>
-    <h1>Your PC,<br>in your pocket</h1>
-    <p>Personal Windows PC monitoring bot for Telegram. Monitor system status, receive alerts, and forward notifications — all from your phone. Zero exposed ports.</p>
+    <h1>당신의 PC를<br>주머니 속으로</h1>
+    <p>개인 Windows PC 모니터링 Telegram 봇. 시스템 상태 확인, 알림 수신, 알림 전달까지 — 모두 스마트폰에서. 포트 노출 제로.</p>
 
     <div class="hero-pills">
-      <span class="pill pill-blue">🔍 Real-time monitoring</span>
-      <span class="pill pill-green">🛡️ Zero network exposure</span>
-      <span class="pill pill-yellow">🔔 Push notifications</span>
+      <span class="pill pill-blue">🔍 실시간 모니터링</span>
+      <span class="pill pill-green">🛡️ 네트워크 노출 없음</span>
+      <span class="pill pill-yellow">🔔 푸시 알림</span>
     </div>
 
     <div class="hero-actions">
-      <a class="btn btn-primary" href="https://github.com/jeiel85/localops-bot">View on GitHub &nearr;</a>
-      <a class="btn btn-ghost" href="#features">Explore features ↓</a>
+      <a class="btn btn-primary" href="https://github.com/jeiel85/localops-bot">GitHub에서 보기 &nearr;</a>
+      <a class="btn btn-ghost" href="#features">기능 살펴보기 ↓</a>
     </div>
 
-    <img src="../assets/banner.svg" alt="LocalOps Bot Banner" class="banner-img" width="900">
+    <img src="../assets/banner.svg" alt="LocalOps Bot 배너" class="banner-img" width="900">
   </section>
 
   <section id="features">
-    <h2><span>Features</span></h2>
+    <h2><span>기능</span></h2>
     <div class="features">
       <div class="feature-card">
         <span class="feature-icon">🖥️</span>
-        <h3>System Status</h3>
-        <p>CPU, RAM, disk, network, and uptime at your fingertips. Check your PC's health from anywhere.</p>
+        <h3>시스템 상태</h3>
+        <p>CPU, RAM, 디스크, 네트워크, 가동 시간을 손쉽게 확인. 어디서나 PC 상태를 체크하세요.</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🚀</span>
-        <h3>Boot Notifications</h3>
-        <p>Get an instant Telegram message when your PC boots up, with IP, hostname, and timestamp.</p>
+        <h3>부팅 알림</h3>
+        <p>PC가 부팅되면 IP, 호스트명, 시간과 함께 Telegram으로 즉시 알림을 받습니다.</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">👁️</span>
-        <h3>Process &amp; Service Watch</h3>
-        <p>Monitor critical processes like Ollama, PostgreSQL, or your dev server. Get alerts when they go down.</p>
+        <h3>프로세스 &amp; 서비스 감시</h3>
+        <p>Ollama, PostgreSQL, 개발 서버 등 중요한 프로세스를 감시하고 다운타임 시 알림을 받습니다.</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">📋</span>
-        <h3>Event Log Watch</h3>
-        <p>Forward Windows Error/Critical events to Telegram. Catch crashes and system issues in real time.</p>
+        <h3>이벤트 로그 감시</h3>
+        <p>Windows 오류/심각 이벤트를 Telegram으로 전달. 크래시와 시스템 문제를 실시간으로 포착.</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🔔</span>
-        <h3>Toast Notification Forwarding</h3>
-        <p>Forward Windows Toast notifications (Chrome, Slack, etc.) to your phone with privacy filtering.</p>
+        <h3>토스트 알림 전달</h3>
+        <p>Chrome, Slack 등 Windows 토스트 알림을 프라이버시 필터링과 함께 휴대폰으로 전달.</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🔒</span>
-        <h3>Privacy First</h3>
-        <p>No open ports, no cloud relay, no keylogging. Sensitive content is masked by default. Whitelist-only chat access.</p>
+        <h3>프라이버시 우선</h3>
+        <p>포트를 열지 않고, 클라우드 중계 없음, 키로깅 없음. 민감한 내용은 기본적으로 마스킹. 허용 목록 기반 채팅 접근.</p>
       </div>
     </div>
   </section>
 
   <section>
-    <h2><span>Commands</span></h2>
+    <h2><span>명령어</span></h2>
     <table class="cmd-table">
       <thead>
-        <tr><th>Command</th><th>Description</th></tr>
+        <tr><th>명령어</th><th>설명</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>/ping</code></td><td>Bot health check</td></tr>
-        <tr><td><code>/help</code></td><td>Show available commands</td></tr>
-        <tr><td><code>/status</code></td><td>Full PC status summary</td></tr>
-        <tr><td><code>/disk</code></td><td>Disk usage by drive</td></tr>
-        <tr><td><code>/process</code></td><td>Watched process status</td></tr>
-        <tr><td><code>/services</code></td><td>Windows Service status</td></tr>
-        <tr><td><code>/events</code></td><td>Recent Windows Event Logs</td></tr>
-        <tr><td><code>/alerts</code></td><td>Recent alert history</td></tr>
-        <tr><td><code>/mute 1h</code></td><td>Quiet hours for alerts</td></tr>
-        <tr><td><code>/diagnostics</code></td><td>Agent self-diagnostics</td></tr>
+        <tr><td><code>/ping</code></td><td>봇 상태 확인</td></tr>
+        <tr><td><code>/help</code></td><td>사용 가능한 명령어 표시</td></tr>
+        <tr><td><code>/status</code></td><td>전체 PC 상태 요약</td></tr>
+        <tr><td><code>/disk</code></td><td>드라이브별 디스크 사용량</td></tr>
+        <tr><td><code>/process</code></td><td>감시 중인 프로세스 상태</td></tr>
+        <tr><td><code>/services</code></td><td>Windows 서비스 상태</td></tr>
+        <tr><td><code>/events</code></td><td>최근 Windows 이벤트 로그</td></tr>
+        <tr><td><code>/alerts</code></td><td>최근 알림 이력</td></tr>
+        <tr><td><code>/mute 1h</code></td><td>알림 음소거</td></tr>
+        <tr><td><code>/diagnostics</code></td><td>에이전트 자체 진단</td></tr>
       </tbody>
     </table>
   </section>
 
   <section>
-    <h2><span>Architecture</span></h2>
+    <h2><span>아키텍처</span></h2>
     <div class="arch-diagram">
 ┌──────────────────────────────────────┐
-│         Telegram Mobile/Desktop       │
+│         Telegram 모바일/데스크톱       │
 └────────────────┬─────────────────────┘
                  │
                  ▼
 ┌──────────────────────────────────────┐
 │        Telegram Bot API              │
-│   (outbound HTTPS only, no webhook)  │
+│   (outbound HTTPS만, webhook 없음)   │
 └────────────────┬─────────────────────┘
                  │
                  ▼
 ┌──────────────────────────────────────┐
-│          Local Windows PC             │
+│          로컬 Windows PC              │
 │                                       │
 │  ┌─────────────────────────────────┐  │
 │  │  <span class="hl">LocalOpsBot.Agent</span>                  │  │
-│  │  Windows Service                │  │
-│  │  • Boot notification            │  │
-│  │  • Status collectors            │  │
-│  │  • Event log watcher            │  │
-│  │  • Process/service watcher      │  │
-│  │  • Telegram polling             │  │
-│  │  • SQLite persistence           │  │
+│  │  Windows 서비스                  │  │
+│  │  • 부팅 알림                    │  │
+│  │  • 상태 수집기                  │  │
+│  │  • 이벤트 로그 감시             │  │
+│  │  • 프로세스/서비스 감시         │  │
+│  │  • Telegram 폴링                │  │
+│  │  • SQLite 영속성                │  │
 │  └────────────┬────────────────────┘  │
 │               │ named pipe            │
 │  ┌────────────▼────────────────────┐  │
 │  │  <span class="hl2">LocalOpsBot.Tray</span>                  │  │
-│  │  User Session App               │  │
-│  │  • Toast notification listener  │  │
-│  │  • Notification filter/mask     │  │
-│  │  • Local settings UI            │  │
+│  │  사용자 세션 앱                  │  │
+│  │  • 토스트 알림 리스너           │  │
+│  │  • 알림 필터/마스킹             │  │
+│  │  • 로컬 설정 UI                 │  │
 │  └─────────────────────────────────┘  │
 │                                       │
 │  ┌─────────────────────────────────┐  │
 │  │  <span class="hl3">LocalOpsBot.Core</span>                  │  │
-│  │  Shared domain &amp; interfaces     │  │
+│  │  공유 도메인 및 인터페이스       │  │
 │  └─────────────────────────────────┘  │
 └──────────────────────────────────────┘</div>
   </section>
 
   <section>
-    <h2><span>Tech Stack</span></h2>
+    <h2><span>기술 스택</span></h2>
     <div class="stack-grid">
       <span class="stack-item dotnet">.NET 9</span>
       <span class="stack-item csharp">C#</span>
@@ -393,7 +393,7 @@
   </section>
 
   <footer>
-    <p>LocalOps Bot &mdash; MIT License. Built with .NET and ❤️.</p>
+    <p>LocalOps Bot &mdash; MIT License. .NET과 ❤️로 만들었습니다.</p>
   </footer>
 </body>
 </html>

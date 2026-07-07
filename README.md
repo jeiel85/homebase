@@ -15,79 +15,79 @@
 </p>
 
 <p align="center">
-  <a href="#-features">Features</a> •
-  <a href="#-getting-started">Getting Started</a> •
-  <a href="#-commands">Commands</a> •
-  <a href="#-architecture">Architecture</a> •
-  <a href="#-tech-stack">Tech Stack</a> •
-  <a href="#-project-structure">Project Structure</a>
+  <a href="#-기능">기능</a> •
+  <a href="#-시작하기">시작하기</a> •
+  <a href="#-명령어">명령어</a> •
+  <a href="#-아키텍처">아키텍처</a> •
+  <a href="#-기술-스택">기술 스택</a> •
+  <a href="#-프로젝트-구조">프로젝트 구조</a>
 </p>
 
 ---
 
-## ✨ Features
+## ✨ 기능
 
-| | Feature | Description |
+| | 기능 | 설명 |
 |---|---|---|
-| 🖥️ | **System Status** | CPU, RAM, disk, network, uptime via Telegram |
-| 🚀 | **Boot Notification** | Get alerted when your PC boots up |
-| 👁️ | **Process/Service Watch** | Monitor Ollama, PostgreSQL, dev servers |
-| 📋 | **Event Log Watch** | Forward Windows Error/Critical events |
-| 🔔 | **Toast Forwarding** | Forward Windows notifications with privacy filtering |
-| 🔒 | **Privacy First** | Mask passwords, OTPs, tokens; block sensitive apps |
-| 🔇 | **Quiet Hours** | `/mute 1h` to silence alerts temporarily |
-| 📊 | **SQLite Logging** | Persistent command and alert history |
+| 🖥️ | **시스템 상태** | CPU, RAM, 디스크, 네트워크, 가동 시간을 Telegram으로 확인 |
+| 🚀 | **부팅 알림** | PC가 부팅되면 Telegram으로 즉시 알림 |
+| 👁️ | **프로세스/서비스 감시** | Ollama, PostgreSQL, 개발 서버 등의 상태 모니터링 |
+| 📋 | **이벤트 로그 감시** | Windows 오류/심각 이벤트를 Telegram으로 전달 |
+| 🔔 | **토스트 알림 전달** | Windows 알림을 프라이버시 필터링과 함께 전달 |
+| 🔒 | **프라이버시 우선** | 비밀번호, OTP, 토큰 마스킹; 민감 앱 차단 |
+| 🔇 | **조용한 시간** | `/mute 1h`로 일시적으로 알림 음소거 |
+| 📊 | **SQLite 로깅** | 명령 및 알림 이력 영구 저장 |
 
-## 🚀 Getting Started
+## 🚀 시작하기
 
-### Prerequisites
+### 사전 요구사항
 
 - Windows 10/11
-- [.NET 9 Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)
-- Telegram account + [BotFather](https://t.me/BotFather) token
+- [.NET 9 런타임](https://dotnet.microsoft.com/download/dotnet/9.0)
+- Telegram 계정 + [BotFather](https://t.me/BotFather) 토큰
 
-### Quick Install
+### 빠른 설치
 
 ```powershell
-# 1. Download the latest release
-# 2. Set your Telegram token
+# 1. 최신 릴리스를 다운로드
+# 2. Telegram 토큰 설정
 [Environment]::SetEnvironmentVariable("LOCALOPSBOT_TELEGRAM_TOKEN", "your_token_here", "Machine")
 
-# 3. Run installer as Administrator
+# 3. 관리자 권한으로 설치 스크립트 실행
 .\installer\install-service.ps1
 
-# 4. Find your chat_id and configure
-# 5. Start chatting with your bot!
+# 4. chat_id 확인 후 설정
+# 5. 봇과 대화 시작!
 ```
 
-### Manual Build
+### 직접 빌드
 
 ```powershell
 dotnet build LocalOpsBot.sln
 ```
 
-## 🤖 Commands
+## 🤖 명령어
 
-| Command | Description |
+| 명령어 | 설명 |
 |---|---|
-| `/ping` | Bot health check |
-| `/help` | Show available commands |
-| `/status` | Full PC status (CPU, RAM, disk, network) |
-| `/uptime` | System uptime |
-| `/disk` | Disk usage by drive |
-| `/process` | Watched process status |
-| `/services` | Windows Service status |
-| `/events` | Recent Windows Event Logs |
-| `/alerts` | Recent alert history |
-| `/mute 1h` | Silence alerts for a duration |
-| `/unmute` | Re-enable alerts |
-| `/diagnostics` | Agent self-diagnostics |
+| `/ping` | 봇 상태 확인 |
+| `/help` | 사용 가능한 명령어 표시 |
+| `/status` | 전체 PC 상태 (CPU, RAM, 디스크, 네트워크) |
+| `/uptime` | 시스템 가동 시간 |
+| `/disk` | 드라이브별 디스크 사용량 |
+| `/process` | 감시 중인 프로세스 상태 |
+| `/services` | Windows 서비스 상태 |
+| `/events` | 최근 Windows 이벤트 로그 |
+| `/alerts` | 최근 알림 이력 |
+| `/mute 1h` | 일정 시간 동안 알림 음소거 |
+| `/unmute` | 알림 다시 활성화 |
+| `/diagnostics` | 에이전트 자체 진단 |
 
-## 🏗️ Architecture
+## 🏗️ 아키텍처
 
 ```
 ┌─────────────────────────────────────────────┐
-│ Telegram Mobile/Desktop                     │
+│ Telegram 모바일/데스크톱                     │
 └───────────────────┬─────────────────────────┘
                     │
                     ▼
@@ -97,22 +97,22 @@ dotnet build LocalOpsBot.sln
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│ Local Windows PC                             │
+│ 로컬 Windows PC                              │
 │                                               │
 │  ┌─────────────────────────────────────────┐ │
-│  │ LocalOpsBot.Agent (Windows Service)      │ │
-│  │ • Boot notification                     │ │
-│  │ • Status collectors                     │ │
-│  │ • Event log watcher                     │ │
-│  │ • Process/service watcher               │ │
-│  │ • Telegram polling                      │ │
+│  │ LocalOpsBot.Agent (Windows 서비스)       │ │
+│  │ • 부팅 알림                             │ │
+│  │ • 상태 수집기                           │ │
+│  │ • 이벤트 로그 감시                      │ │
+│  │ • 프로세스/서비스 감시                  │ │
+│  │ • Telegram 폴링                         │ │
 │  └───────────────────┬─────────────────────┘ │
 │                      │ Named Pipe IPC        │
 │  ┌───────────────────▼─────────────────────┐ │
-│  │ LocalOpsBot.Tray (User Session App)      │ │
-│  │ • Toast notification listener           │ │
-│  │ • Notification filter/mask              │ │
-│  │ • Local settings UI                     │ │
+│  │ LocalOpsBot.Tray (사용자 세션 앱)        │ │
+│  │ • 토스트 알림 리스너                    │ │
+│  │ • 알림 필터/마스킹                      │ │
+│  │ • 로컬 설정 UI                          │ │
 │  └─────────────────────────────────────────┘ │
 │                                               │
 │  ┌─────────────────────────────────────────┐ │
@@ -121,7 +121,7 @@ dotnet build LocalOpsBot.sln
 └─────────────────────────────────────────────┘
 ```
 
-## 🛠️ Tech Stack
+## 🛠️ 기술 스택
 
 <p>
   <img src="https://img.shields.io/badge/.NET_9-512BD4?logo=dotnet&logoColor=white" alt=".NET 9">
@@ -133,42 +133,42 @@ dotnet build LocalOpsBot.sln
   <img src="https://img.shields.io/badge/Serilog-2C3E50?logo=serilog&logoColor=white" alt="Serilog">
 </p>
 
-| Component | Technology |
+| 구성요소 | 기술 |
 |---|---|
-| Runtime | .NET 9 |
-| Language | C# 12 |
+| 런타임 | .NET 9 |
+| 언어 | C# 12 |
 | IPC | Named Pipes (length-prefixed JSON) |
-| Database | SQLite via Microsoft.Data.Sqlite |
-| UI (Tray) | WPF |
-| Bot Protocol | Telegram Bot API (long polling) |
-| DI/Hosting | Microsoft.Extensions.Hosting |
-| Logging | Serilog |
-| Testing | xUnit |
+| 데이터베이스 | SQLite via Microsoft.Data.Sqlite |
+| UI (트레이) | WPF |
+| 봇 프로토콜 | Telegram Bot API (long polling) |
+| DI/호스팅 | Microsoft.Extensions.Hosting |
+| 로깅 | Serilog |
+| 테스팅 | xUnit |
 
-## 📁 Project Structure
+## 📁 프로젝트 구조
 
 ```
 LocalOpsBot/
 ├─ src/
-│  ├─ LocalOpsBot.Core/           # Domain models, interfaces
-│  ├─ LocalOpsBot.Infrastructure/ # Telegram, Windows collectors
-│  ├─ LocalOpsBot.Data/           # SQLite persistence
-│  ├─ LocalOpsBot.Agent/          # Windows Service entry
-│  └─ LocalOpsBot.Tray/           # WPF Tray App
+│  ├─ LocalOpsBot.Core/           # 도메인 모델, 인터페이스
+│  ├─ LocalOpsBot.Infrastructure/ # Telegram, Windows 수집기
+│  ├─ LocalOpsBot.Data/           # SQLite 영속성
+│  ├─ LocalOpsBot.Agent/          # Windows 서비스 진입점
+│  └─ LocalOpsBot.Tray/           # WPF 트레이 앱
 ├─ tests/
-│  └─ LocalOpsBot.Tests/          # Unit & integration tests
-├─ installer/                     # PowerShell scripts
-├─ config/                        # Sample configuration
-├─ docs/                          # GitHub Pages landing
-└─ assets/                        # Images, banners
+│  └─ LocalOpsBot.Tests/          # 단위 및 통합 테스트
+├─ installer/                     # PowerShell 스크립트
+├─ config/                        # 설정 예시
+├─ docs/                          # GitHub Pages 랜딩 페이지
+└─ assets/                        # 이미지, 배너
 ```
 
-## 📄 License
+## 📄 라이선스
 
-MIT &mdash; see [LICENSE](LICENSE) for details.
+MIT &mdash; 자세한 내용은 [LICENSE](LICENSE) 파일을 참고하세요.
 
 ---
 
 <p align="center">
-  <sub>Built with .NET and ❤️</sub>
+  <sub>.NET과 ❤️로 만들었습니다</sub>
 </p>

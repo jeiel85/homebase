@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\src\LocalOpsBot.Core\LocalOpsBot.Core.csproj" />
     <ProjectReference Include="..\..\src\LocalOpsBot.Infrastructure\LocalOpsBot.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\LocalOpsBot.Data\LocalOpsBot.Data.csproj" />
+    <ProjectReference Include="..\..\src\LocalOpsBot.Agent\LocalOpsBot.Agent.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
