@@ -1,0 +1,33 @@
+# Dependabot keeps dependencies current with automated pull requests.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  # GitHub Actions - bumps the SHA pins in .github/workflows/*, updating both the
+  # commit SHA and its "# vX.Y.Z" comment when a new release ships.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # .NET / NuGet - packages across LocalOpsBot.sln (src/* + tests). Minor and patch
+  # bumps are grouped into a single PR; majors arrive separately for careful review.
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      dotnet-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
