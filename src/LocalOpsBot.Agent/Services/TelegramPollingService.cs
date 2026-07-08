@@ -1,4 +1,5 @@
 using LocalOpsBot.Core.Commands;
+using LocalOpsBot.Core.Monitoring;
 using LocalOpsBot.Data.Repositories;
 using LocalOpsBot.Infrastructure.Telegram;
 using Microsoft.Extensions.Hosting;
@@ -15,6 +16,7 @@ public sealed class TelegramPollingService : BackgroundService
     private readonly IRuntimeStateRepository _stateRepo;
     private readonly IOptions<TelegramOptions> _options;
     private readonly ILogger<TelegramPollingService> _logger;
+    private readonly ITelegramPollStatus _pollStatus;
     private long? _offset;
 
     private const string OffsetKey = "telegram.last_update_offset";
@@ -25,7 +27,8 @@ public sealed class TelegramPollingService : BackgroundService
         ICommandRouter router,
         IRuntimeStateRepository stateRepo,
         IOptions<TelegramOptions> options,
-        ILogger<TelegramPollingService> logger)
+        ILogger<TelegramPollingService> logger,
+        ITelegramPollStatus pollStatus)
     {
         _telegram = telegram;
         _auth = auth;
@@ -33,6 +36,7 @@ public sealed class TelegramPollingService : BackgroundService
         _stateRepo = stateRepo;
         _options = options;
         _logger = logger;
+        _pollStatus = pollStatus;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -52,6 +56,7 @@ public sealed class TelegramPollingService : BackgroundService
             try
             {
                 var updates = await _telegram.GetUpdatesAsync(_offset, opts.PollingTimeoutSeconds, ct);
+                _pollStatus.RecordSuccess();
                 foreach (var update in updates)
                 {
                     await ProcessUpdateAsync(update, ct);
@@ -67,11 +72,13 @@ public sealed class TelegramPollingService : BackgroundService
             }
             catch (TelegramApiException ex) when (ex.HttpStatusCode == 401)
             {
+                _pollStatus.RecordFailure();
                 _logger.LogCritical(ex, "Telegram bot token is invalid (401). Polling stopped.");
                 break;
             }
             catch (Exception ex)
             {
+                _pollStatus.RecordFailure();
                 _logger.LogError(ex, "Telegram polling failed, backing off {Seconds}s", opts.PollingErrorBackoffSeconds);
                 try { await Task.Delay(TimeSpan.FromSeconds(opts.PollingErrorBackoffSeconds), ct); }
                 catch (OperationCanceledException) { break; }

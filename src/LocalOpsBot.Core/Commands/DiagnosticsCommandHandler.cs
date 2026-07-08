@@ -16,6 +16,7 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
     private readonly IReadOnlyList<HttpEndpointConfig> _httpEndpoints;
     private readonly IReadOnlyList<TcpPortConfig> _tcpPorts;
     private readonly IConfiguration _config;
+    private readonly ITelegramPollStatus _pollStatus;
 
     public string CommandName => "diagnostics";
     public string Description => "Agent self-diagnostics";
@@ -27,7 +28,8 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
         IEnumerable<ServiceWatchConfig> serviceWatches,
         IEnumerable<HttpEndpointConfig> httpEndpoints,
         IEnumerable<TcpPortConfig> tcpPorts,
-        IConfiguration config)
+        IConfiguration config,
+        ITelegramPollStatus pollStatus)
     {
         _stateStore = stateStore;
         _alertStore = alertStore;
@@ -36,6 +38,7 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
         _httpEndpoints = httpEndpoints.ToList();
         _tcpPorts = tcpPorts.ToList();
         _config = config;
+        _pollStatus = pollStatus;
     }
 
     public async Task<CommandResult> HandleAsync(BotCommand command, CancellationToken ct)
@@ -79,12 +82,28 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
 
         var forwarding = _config.GetSection("notificationForwarding").GetValue<bool>("enabled") ? "On" : "Off";
 
+        string lastPoll;
+        var lastPollUtc = _pollStatus.LastSuccessfulPollUtc;
+        if (lastPollUtc is null)
+        {
+            lastPoll = "never";
+        }
+        else
+        {
+            var age = DateTimeOffset.UtcNow - lastPollUtc.Value;
+            if (age < TimeSpan.Zero) age = TimeSpan.Zero;
+            lastPoll = $"{lastPollUtc.Value.ToLocalTime():HH:mm:ss} ({FormatAge(age)} ago)";
+        }
+        var pollFailures = _pollStatus.ConsecutiveFailures;
+
         var lines = new List<string>
         {
             "<b>\U0001f9ea LocalOps Diagnostics</b>\n",
             $"Version: <code>{version}</code>",
             $"Agent uptime: <code>{uptime}</code>",
             $"Database: <code>{dbStatus}</code>",
+            $"Last Telegram poll: <code>{lastPoll}</code>",
+            $"Consecutive poll failures: <code>{pollFailures}</code>",
             $"Mute: <code>{muteStatus}</code>",
             $"Watches: <code>{_processWatches.Count} process, {_serviceWatches.Count} service, {_httpEndpoints.Count} http, {_tcpPorts.Count} port</code>",
             $"Alerts sent (24h): <code>{(alerts24h < 0 ? "?" : alerts24h.ToString())}</code>",
@@ -93,4 +112,10 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
 
         return new CommandResult(true, string.Join("\n", lines));
     }
+
+    private static string FormatAge(TimeSpan a) =>
+        a.TotalSeconds < 60 ? $"{(int)a.TotalSeconds}s"
+        : a.TotalMinutes < 60 ? $"{(int)a.TotalMinutes}m"
+        : a.TotalHours < 24 ? $"{(int)a.TotalHours}h"
+        : $"{(int)a.TotalDays}d";
 }

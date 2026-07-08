@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `/diagnostics` now reports the last successful Telegram poll time and the current
+  consecutive-poll-failure count, so you can tell at a glance whether polling is alive.
+
+### Changed
+- Windows Event Log polling resumes from a bookmark instead of re-scanning the whole log
+  every cycle — much cheaper on large logs, with identical alerting behaviour.
+
 ## v0.4.0 — Homebase: Redesign, Onboarding & Readable Replies
 
 ### Fixed

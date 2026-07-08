@@ -11,6 +11,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddLocalOpsCore(this IServiceCollection services, IConfiguration config)
     {
         services.AddSingleton<ICommandRouter, CommandRouter>();
+        services.AddSingleton<ITelegramPollStatus, TelegramPollStatus>();
         services.AddSingleton<ICommandHandler, PingCommandHandler>();
         services.AddSingleton<ICommandHandler, StatusCommandHandler>();
         services.AddSingleton<ICommandHandler, DiskCommandHandler>();
