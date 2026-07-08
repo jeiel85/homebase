@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jeiel85/localops-bot/actions"><img src="https://img.shields.io/github/actions/workflow/status/jeiel85/localops-bot/build.yml?style=flat-square&logo=github&label=build" alt="Build"></a>
+  <a href="https://github.com/jeiel85/localops-bot/actions"><img src="https://img.shields.io/github/actions/workflow/status/jeiel85/localops-bot/release.yml?style=flat-square&logo=github&label=release" alt="Release"></a>
   <a href="https://github.com/jeiel85/localops-bot/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jeiel85/localops-bot?style=flat-square" alt="License"></a>
   <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-9.0-512BD4?style=flat-square&logo=dotnet" alt=".NET"></a>
   <a href="https://github.com/jeiel85/localops-bot/issues"><img src="https://img.shields.io/github/issues-raw/jeiel85/localops-bot?style=flat-square&logo=github" alt="Issues"></a>
@@ -42,25 +42,40 @@
 
 ### 사전 요구사항
 
-- Windows 10/11
-- [.NET 9 런타임](https://dotnet.microsoft.com/download/dotnet/9.0)
-- Telegram 계정 + [BotFather](https://t.me/BotFather) 토큰
+- Windows 10/11 (버전 1809 이상)
+- Telegram 계정 + [BotFather](https://t.me/BotFather) 봇 토큰
+- 설치 파일에 .NET 런타임이 포함되어 있어 **별도 런타임 설치는 필요 없습니다**
 
-### 빠른 설치
+### 설치 — 어느 파일을 받나요?
+
+[**최신 릴리스**](https://github.com/jeiel85/localops-bot/releases/latest)에서 상황에 맞는 파일 하나만 받으세요.
+
+| 파일 | 이럴 때 받으세요 |
+|---|---|
+| **`LocalOpsBot-Setup.exe`** | ⭐ **대부분 이것 하나면 됩니다.** 더블클릭하면 마법사가 토큰·chat ID를 묻고 설치를 끝냅니다 |
+| `LocalOpsBot-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1` 실행 |
+| `bootstrap.ps1` | 명령 한 줄 설치 (아래 방법 B) |
+
+**방법 A — 설치 마법사 (권장)**
+
+1. `LocalOpsBot-Setup.exe`를 받아 더블클릭
+2. **Windows SmartScreen** 경고("Windows의 PC 보호")가 뜨면 → **추가 정보** → **실행**을 누르세요. 서명되지 않은 개인용 앱이라 표시되는 정상 경고입니다
+3. 마법사가 물어보는 Telegram 봇 토큰과 chat ID 입력
+4. 설치가 끝나면 Telegram에서 봇에게 `/ping` 전송
+
+**방법 B — 한 줄 설치**
+
+**관리자 권한** PowerShell에서:
 
 ```powershell
-# 1. 최신 릴리스를 다운로드
-# 2. Telegram 토큰 설정
-[Environment]::SetEnvironmentVariable("LOCALOPSBOT_TELEGRAM_TOKEN", "your_token_here", "Machine")
-
-# 3. 관리자 권한으로 설치 스크립트 실행
-.\installer\install-service.ps1
-
-# 4. chat_id 확인 후 설정
-# 5. 봇과 대화 시작!
+irm https://github.com/jeiel85/localops-bot/releases/latest/download/bootstrap.ps1 | iex
 ```
 
+> **chat ID를 모르나요?** 봇에게 아무 메시지나 보낸 뒤 `https://api.telegram.org/bot<봇토큰>/getUpdates`를 열어 `chat.id` 값을 확인하세요.
+
 ### 직접 빌드
+
+[.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)가 필요합니다.
 
 ```powershell
 dotnet build LocalOpsBot.sln

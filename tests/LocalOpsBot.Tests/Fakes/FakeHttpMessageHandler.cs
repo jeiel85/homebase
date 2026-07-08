@@ -17,6 +17,12 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
         });
     }
 
+    // Enqueue an arbitrary content body (e.g. binary zip bytes or a plain-text checksum).
+    public void QueueContent(HttpStatusCode status, HttpContent content)
+    {
+        _responses.Enqueue(new HttpResponseMessage(status) { Content = content });
+    }
+
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken ct)
     {

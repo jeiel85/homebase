@@ -21,26 +21,30 @@ public sealed class UpdateCommandHandler : ICommandHandler
             if (info == null)
                 return new CommandResult(true, $"<b>\u2705 Up-to-date</b>\nCurrent version: {currentVer}");
 
-            var lines = new List<string>
+            // Download + verify synchronously so we can report success or failure back to
+            // the user. Only if that succeeds do we launch the (self-restarting) apply step.
+            try
             {
-                $"<b>\ud83d\udce1 Update available: {info.Version}</b>",
+                var zip = await _updater.DownloadUpdateAsync(info, null, ct);
+                _updater.ApplyUpdate(zip);
+            }
+            catch (Exception ex)
+            {
+                return new CommandResult(true,
+                    $"<b>\u26a0\ufe0f Update failed</b>\n" +
+                    $"v{info.Version} could not be installed: {ex.Message}\n" +
+                    $"The current version ({currentVer}) is still running.",
+                    Error: ex.Message);
+            }
+
+            return new CommandResult(true, string.Join("\n", new[]
+            {
+                $"<b>\ud83d\udce1 Update v{info.Version} downloaded &amp; verified</b>",
                 $"Current: {currentVer}",
                 $"Published: {info.PublishedAt:yyyy-MM-dd}",
                 "",
-                "Applying update..."
-            };
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var zip = await _updater.DownloadUpdateAsync(info.DownloadUrl, null, CancellationToken.None);
-                    _updater.ApplyUpdate(zip);
-                }
-                catch { }
-            }, CancellationToken.None);
-
-            return new CommandResult(true, string.Join("\n", lines));
+                "Installing now \u2014 the service will restart in a few seconds."
+            }));
         }
         catch (UpdateCheckException ex)
         {

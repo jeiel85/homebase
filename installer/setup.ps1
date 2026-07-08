@@ -187,8 +187,15 @@ function Write-Config {
 #  MAIN
 # ============================================================
 
+$verText = "v?"
+if ($HasAgentBinaries) {
+    try {
+        $pv = (Get-Item (Join-Path $AgentSource "LocalOpsBot.Agent.exe")).VersionInfo.ProductVersion
+        if ($pv) { $verText = "v$pv" }
+    } catch { }
+}
 Write-Host "`n==============================================" -ForegroundColor Cyan
-Write-Host "   LocalOps Bot v0.1.0 Setup" -ForegroundColor Cyan
+Write-Host "   LocalOps Bot $verText Setup" -ForegroundColor Cyan
 Write-Host "==============================================`n" -ForegroundColor Cyan
 
 # --- Check for existing installation ---
@@ -202,42 +209,24 @@ if ($existingService) {
     }
 }
 
-# --- Step 0: Ensure binaries ---
-if (-not $HasAgentBinaries) {
-    Write-Step "Step 0/7: Downloading Agent binaries from GitHub..."
-    $zipUrl = "https://github.com/$GitHubRepo/releases/latest/download/LocalOpsBot.Agent.zip"
-    $zipPath = Join-Path $env:TEMP "LocalOpsBot.Agent.zip"
-    $extractPath = Join-Path $env:TEMP "LocalOpsBot.Agent"
-    try {
-        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
-        if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
-        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-        $AgentSource = $extractPath
-        $HasAgentBinaries = $true
-        Write-Ok "Agent binaries downloaded and extracted"
-    } catch {
-        Write-ErrorExit "Failed to download Agent binaries: $_"
-    }
-} else {
+# --- Step 0: Verify binaries are present ---
+# setup.ps1 always ships inside the LocalOpsBot-Setup package (the .zip payload or
+# the Setup.exe install dir), so the Agent/ and Tray/ folders sit next to it.
+# There are no standalone Agent/Tray zips to fall back to anymore.
+Write-Step "Step 0/7: Verifying binaries"
+if ($HasAgentBinaries) {
     Write-Ok "Agent binaries found at $AgentSource"
-}
-if (-not $HasTrayBinaries) {
-    Write-Step "Step 0/7: Downloading Tray binaries from GitHub..."
-    $zipUrl = "https://github.com/$GitHubRepo/releases/latest/download/LocalOpsBot.Tray.zip"
-    $zipPath = Join-Path $env:TEMP "LocalOpsBot.Tray.zip"
-    $extractPath = Join-Path $env:TEMP "LocalOpsBot.Tray"
-    try {
-        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
-        if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
-        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-        $TraySource = $extractPath
-        $HasTrayBinaries = $true
-        Write-Ok "Tray binaries downloaded and extracted"
-    } catch {
-        Write-Warn "Failed to download Tray binaries: $_ (Tray install skipped)"
-    }
 } else {
+    Write-Host "  [X] Agent binaries not found next to setup.ps1." -ForegroundColor Red
+    Write-Host "      Download the full 'LocalOpsBot-Setup.zip', extract it, then run setup.ps1" -ForegroundColor Yellow
+    Write-Host "      from the extracted folder. Or use the one-liner installer instead:" -ForegroundColor Yellow
+    Write-Host "      irm https://github.com/$GitHubRepo/releases/latest/download/bootstrap.ps1 | iex" -ForegroundColor Yellow
+    exit 1
+}
+if ($HasTrayBinaries) {
     Write-Ok "Tray binaries found at $TraySource"
+} else {
+    Write-Warn "Tray binaries not found — Tray install will be skipped"
 }
 
 # --- Step 1: Collect configuration ---

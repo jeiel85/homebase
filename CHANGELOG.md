@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.0 — Streamlined Release & Hardened Updates
+
+### Changed
+- Slimmed the release to 5 clearly-named assets: `LocalOpsBot-Setup.exe` (installer),
+  `LocalOpsBot-Setup.zip` (manual install), its `.sha256`, `bootstrap.ps1`, and
+  `appsettings.example.json`. Removed the standalone Agent/Tray zips and duplicated
+  scripts that cluttered the release page.
+- Release notes now lead with a "which file do I download?" guide.
+- Rewrote the README install section around the installer; corrected the runtime
+  prerequisite (the build is self-contained — no separate .NET runtime needed).
+
+### Hardened (auto-update)
+- Verify the SHA-256 of every downloaded update before applying it; abort on mismatch.
+- Report update download/apply failures back to the user instead of silently swallowing them.
+- The apply step now logs to `update.log`, waits for the Agent to exit, verifies the new
+  binary is present, and restarts the service on failure so a botched update never leaves
+  the monitor down. Both Agent and Tray are updated (previously the Tray was missed).
+- Pin auto-update to the `LocalOpsBot-Setup.zip` asset instead of "the first .zip".
+- Stamp the version from the git tag at build time so update checks compare correctly.
+
+### Added
+- Unit tests for the updater (asset selection + checksum verification).
+
 ## v0.2.0 — Runnable + Automatic Alerts
 
 ### Fixed (runnability)

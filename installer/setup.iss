@@ -2,7 +2,11 @@
 ; Build: iscc installer\setup.iss
 
 #define AppName "LocalOps Bot"
-#define AppVersion "0.1.0"
+; Version is injected by the release workflow via: iscc /DAppVersion=<tag>
+; The guard keeps local `iscc installer\setup.iss` builds working with a dev default.
+#ifndef AppVersion
+  #define AppVersion "0.0.0-dev"
+#endif
 #define AppPublisher "jeiel85"
 #define AppURL "https://github.com/jeiel85/localops-bot"
 #define ServiceName "LocalOpsBot.Agent"
@@ -19,7 +23,7 @@ DefaultDirName={commonpf64}\LocalOpsBot
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\publish
-OutputBaseFilename=LocalOpsBot.Setup
+OutputBaseFilename=LocalOpsBot-Setup
 Compression=lzma2/ultra
 SolidCompression=yes
 WizardStyle=modern

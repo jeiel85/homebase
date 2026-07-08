@@ -82,7 +82,7 @@ public sealed class TrayIconManager : IDisposable
                 if (result == MessageBoxResult.Yes)
                 {
                     _updateItem.Header = "Downloading update...";
-                    var zip = await _updater.DownloadUpdateAsync(info.DownloadUrl, null, CancellationToken.None);
+                    var zip = await _updater.DownloadUpdateAsync(info, null, CancellationToken.None);
                     _updater.ApplyUpdate(zip);
                     Application.Current.Shutdown();
                 }
