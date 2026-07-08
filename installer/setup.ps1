@@ -147,59 +147,40 @@ function Read-ChatId {
 }
 
 function Write-Config {
-    param($Token, $ChatId)
-    $config = @"
+    param($ChatId)
+    # Build appsettings.json from the shipped example so the schema always
+    # matches exactly what the Agent binds (telegram.botToken / allowedChatIds /
+    # agent.databasePath / collectors / ...). Only the chat allowlist and DB path
+    # are injected here; the bot token stays out of the file and is resolved at
+    # runtime from the machine env var via the "ENV:" indirection.
+    $dbPath = (Join-Path $DataDir "localops.db")
+    if ($ConfigSampleSrc -and (Test-Path $ConfigSampleSrc)) {
+        $json = Get-Content $ConfigSampleSrc -Raw | ConvertFrom-Json
+        $json.telegram.botToken       = "ENV:$EnvVarName"
+        $json.telegram.allowedChatIds = @([long]$ChatId)
+        $json.agent.databasePath      = $dbPath
+        ($json | ConvertTo-Json -Depth 25) | Set-Content -Path $ConfigFile -Encoding UTF8
+        Write-Ok "Configuration written to $ConfigFile (from example schema)"
+    } else {
+        $dbFwd = $dbPath.Replace('\', '/')
+        $config = @"
 {
   "telegram": {
-    "token": "",
+    "botToken": "ENV:$EnvVarName",
     "allowedChatIds": [$ChatId],
+    "pollingTimeoutSeconds": 30
+  },
+  "agent": {
+    "machineDisplayName": "$env:COMPUTERNAME",
     "sendBootNotification": true,
-    "botDisplayName": "LocalOps Bot"
+    "databasePath": "$dbFwd"
   },
-  "monitoring": {
-    "intervalSeconds": 30,
-    "disk": {
-      "warnFreeBelowGb": 20,
-      "checkIntervalSeconds": 300
-    },
-    "processWatches": ["ollama"],
-    "serviceWatches": ["PostgreSQL"]
-  },
-  "eventLog": {
-    "enabled": true,
-    "level": "Warning",
-    "maxEvents": 50,
-    "watchIntervalSeconds": 60,
-    "watchedLogs": ["System", "Application"]
-  },
-  "notificationForwarding": {
-    "enabled": false,
-    "historyCount": 50,
-    "filterPattern": "",
-    "maskPatterns": ["(?i)(password|secret|token)"]
-  },
-  "alerting": {
-    "enabled": true,
-    "dedupWindowSeconds": 300,
-    "rateLimitPerMinute": 5,
-    "muteCommands": ["mute", "unmute"]
-  },
-  "developer": {
-    "httpEndpoints": [],
-    "tcpPorts": []
-  },
-  "update": {
-    "checkOnStartup": true,
-    "checkIntervalHours": 24,
-    "channel": "stable"
-  },
-  "data": {
-    "connectionString": "Data Source=$DataDir\localops.db"
-  }
+  "notificationForwarding": { "enabled": false }
 }
 "@
-    $config | Set-Content -Path $ConfigFile -Encoding UTF8
-    Write-Ok "Configuration written to $ConfigFile"
+        $config | Set-Content -Path $ConfigFile -Encoding UTF8
+        Write-Ok "Configuration written to $ConfigFile (minimal fallback)"
+    }
 }
 
 # ============================================================
@@ -302,12 +283,12 @@ Write-Step "Step 4/7: Creating configuration"
 if (Test-Path $ConfigFile) {
     $ans = Read-Host "Config already exists. Overwrite? (y/N)"
     if ($ans -eq 'y' -or $ans -eq 'Y') {
-        Write-Config -Token $Token -ChatId $ChatId
+        Write-Config -ChatId $ChatId
     } else {
         Write-Warn "Existing config preserved"
     }
 } else {
-    Write-Config -Token $Token -ChatId $ChatId
+    Write-Config -ChatId $ChatId
 }
 if ($ConfigSampleSrc -and -not (Test-Path $ConfigSample)) {
     Copy-Item $ConfigSampleSrc $ConfigSample -Force

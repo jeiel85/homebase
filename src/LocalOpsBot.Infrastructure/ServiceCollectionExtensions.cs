@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddLocalOpsWindowsCollectors(
         this IServiceCollection services)
     {
+        services.AddSingleton<IHostInfoProvider, HostInfoProvider>();
         services.AddSingleton<ISystemMetricsCollector, WindowsSystemMetricsCollector>();
         services.AddSingleton<IDiskCollector, WindowsDiskCollector>();
         services.AddSingleton<INetworkStatusChecker, WindowsNetworkStatusChecker>();

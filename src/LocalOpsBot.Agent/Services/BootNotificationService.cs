@@ -59,7 +59,7 @@ public sealed class BootNotificationService : IHostedService
         {
             var host = await _hostInfo.GetHostInfoAsync(ct);
             var message = BootMessageFormatter.Format(host, DateTimeOffset.UtcNow);
-            await _telegram.SendMessageAsync(targetChatId, message, null, ct);
+            await _telegram.SendMessageAsync(targetChatId, message, new TelegramSendOptions(), ct);
             await _stateRepo.SetAsync(LastNotifyKey, DateTime.UtcNow.ToString("O"), ct);
             _logger.LogInformation("Boot notification sent to chat {ChatId}", targetChatId);
         }

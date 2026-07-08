@@ -53,13 +53,20 @@ public sealed class ToastPollingService : BackgroundService
                 foreach (var notification in notifications)
                 {
                     var filterResult = _filter.Evaluate(notification);
-                    var sensitivity = filterResult.Allowed ? NotificationSensitivity.Normal : NotificationSensitivity.Blocked;
+                    if (!filterResult.Allowed)
+                    {
+                        // Blocked notifications are dropped here so their content never
+                        // even crosses the pipe to the Agent.
+                        _logger.LogInformation("Notification from '{App}' blocked: {Reason}",
+                            notification.SourceApp, filterResult.DropReason);
+                        continue;
+                    }
 
                     var masked = notification with
                     {
                         Title = _masker.Mask(notification.Title ?? string.Empty),
                         Body = _masker.Mask(notification.Body ?? string.Empty),
-                        Sensitivity = sensitivity
+                        Sensitivity = NotificationSensitivity.Normal
                     };
 
                     await _bridge.SendAsync(masked, ct);

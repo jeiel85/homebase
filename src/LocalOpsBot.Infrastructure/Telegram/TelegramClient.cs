@@ -19,6 +19,10 @@ public sealed class TelegramClient : ITelegramClient
     public TelegramClient(HttpClient http, IOptions<TelegramOptions> options)
     {
         var token = options.Value.BotToken;
+        // Support "ENV:VARNAME" indirection so the secret can live in an environment
+        // variable instead of being written in plain text into the config file.
+        if (!string.IsNullOrEmpty(token) && token.StartsWith("ENV:", StringComparison.Ordinal))
+            token = Environment.GetEnvironmentVariable(token.Substring(4)) ?? string.Empty;
         if (string.IsNullOrWhiteSpace(token))
             throw new InvalidOperationException("Telegram bot token is not configured.");
 

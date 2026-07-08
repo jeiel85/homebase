@@ -46,6 +46,14 @@ public sealed class NotificationForwardingService : IHostedService
     {
         try
         {
+            // Defense in depth: even if a blocked notification reaches the Agent,
+            // never forward it to Telegram.
+            if (notification.Sensitivity == NotificationSensitivity.Blocked)
+            {
+                _logger.LogInformation("Dropped blocked notification from {App}", notification.SourceApp);
+                return;
+            }
+
             var targetChatId = _options.Value.AllowedChatIds.FirstOrDefault();
             if (targetChatId == 0) return;
 

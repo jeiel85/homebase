@@ -27,6 +27,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICommandHandler, WatchCommandHandler>();
         services.AddSingleton<ICommandHandler, PolicyCommandHandler>();
         services.AddSingleton<ICommandHandler, UpdateCommandHandler>();
+        services.AddSingleton<ICommandHandler, HttpCommandHandler>();
+        services.AddSingleton<ICommandHandler, LlmCommandHandler>();
+        services.AddSingleton<ICommandHandler, DiagnosticsCommandHandler>();
 
         var alertingOpts = config.GetSection("alerting").Get<AlertingOptions>() ?? new AlertingOptions();
         services.AddSingleton(alertingOpts);
@@ -41,7 +44,18 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(serviceWatches.AsEnumerable());
 
         var eventLogOpts = config.GetSection("eventLog").Get<EventLogOptions>() ?? new EventLogOptions();
+        // The .NET config binder appends to the default collection instead of
+        // replacing it, which duplicates entries (e.g. "Application, System,
+        // Application, System"). De-duplicate the bound arrays.
+        eventLogOpts = eventLogOpts with
+        {
+            Logs = eventLogOpts.Logs.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Levels = eventLogOpts.Levels.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+        };
         services.AddSingleton(eventLogOpts);
+
+        var collectorOpts = config.GetSection("collectors").Get<CollectorOptions>() ?? new CollectorOptions();
+        services.AddSingleton(collectorOpts);
 
         var devSection = config.GetSection("developerMonitors");
         var httpEndpoints = devSection.GetSection("httpEndpoints").Get<HttpEndpointConfig[]>() ?? [];

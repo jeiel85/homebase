@@ -22,6 +22,22 @@ public sealed class WindowsEventLogWatcher : IEventLogWatcher
         var items = new List<WindowsEventLogItem>();
         try
         {
+            // First poll for this log: record the newest id as a baseline and emit
+            // nothing, so a restart doesn't replay historical errors as an alert storm.
+            if (!_lastRecordIds.ContainsKey(logName))
+            {
+                long? baseline = null;
+                try
+                {
+                    var newestQuery = new EventLogQuery(logName, PathType.LogName) { ReverseDirection = true };
+                    using var newestReader = new EventLogReader(newestQuery);
+                    baseline = newestReader.ReadEvent()?.RecordId;
+                }
+                catch { /* leave baseline null */ }
+                _lastRecordIds[logName] = baseline;
+                return items;
+            }
+
             var lastId = _lastRecordIds.GetValueOrDefault(logName);
 
             using var reader = new EventLogReader(logName, PathType.LogName);

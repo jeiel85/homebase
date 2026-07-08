@@ -1,15 +1,19 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace LocalOpsBot.Core.Commands;
 
 public sealed class HelpCommandHandler : ICommandHandler
 {
-    private readonly IReadOnlyList<ICommandHandler> _allHandlers;
+    private readonly IServiceProvider _services;
 
     public string CommandName => "help";
     public string Description => "List available commands";
 
-    public HelpCommandHandler(IEnumerable<ICommandHandler> allHandlers)
+    // NOTE: resolve handlers lazily at call time. Injecting IEnumerable<ICommandHandler>
+    // directly would create a DI cycle because HelpCommandHandler is itself an ICommandHandler.
+    public HelpCommandHandler(IServiceProvider services)
     {
-        _allHandlers = allHandlers.ToList();
+        _services = services;
     }
 
     public Task<CommandResult> HandleAsync(BotCommand command, CancellationToken ct)
@@ -19,7 +23,7 @@ public sealed class HelpCommandHandler : ICommandHandler
             "<b>\u2139\ufe0f LocalOps Bot Commands</b>\n"
         };
 
-        foreach (var h in _allHandlers.OrderBy(h => h.CommandName))
+        foreach (var h in _services.GetServices<ICommandHandler>().OrderBy(h => h.CommandName))
         {
             lines.Add($"<b>/{h.CommandName}</b> — {HtmlEscape(h.Description)}");
         }
