@@ -34,6 +34,27 @@ jobs:
           $hash = (Get-FileHash LocalOpsBot.Tray.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -Path LocalOpsBot.Tray.zip.sha256 -Value $hash
 
+      - name: Create Setup.zip (combined)
+        run: |
+          New-Item -ItemType Directory -Force -Path publish\Setup\Agent | Out-Null
+          New-Item -ItemType Directory -Force -Path publish\Setup\Tray | Out-Null
+          New-Item -ItemType Directory -Force -Path publish\Setup\config | Out-Null
+          Copy-Item "publish\Agent\*" "publish\Setup\Agent\" -Recurse -Force
+          Copy-Item "publish\Tray\*" "publish\Setup\Tray\" -Recurse -Force
+          Copy-Item "config\appsettings.example.json" "publish\Setup\config\" -Force
+          Copy-Item "installer\setup.ps1" "publish\Setup\" -Force
+          Copy-Item "installer\uninstall-service.ps1" "publish\Setup\" -Force
+          Copy-Item "installer\register-startup-tray.ps1" "publish\Setup\" -Force
+          Compress-Archive -Path publish\Setup\* -DestinationPath LocalOpsBot.Setup.zip -Force
+          $hash = (Get-FileHash LocalOpsBot.Setup.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path LocalOpsBot.Setup.zip.sha256 -Value $hash
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Setup.exe (Inno Setup)
+        run: iscc installer\setup.iss
+
       - name: Extract changelog
         shell: bash
         run: |
@@ -50,7 +71,11 @@ jobs:
             LocalOpsBot.Agent.zip.sha256
             LocalOpsBot.Tray.zip
             LocalOpsBot.Tray.zip.sha256
-            installer/install-service.ps1
+            LocalOpsBot.Setup.zip
+            LocalOpsBot.Setup.zip.sha256
+            publish/LocalOpsBot.Setup.exe
+            installer/bootstrap.ps1
+            installer/setup.ps1
             installer/uninstall-service.ps1
             installer/register-startup-tray.ps1
             config/appsettings.example.json
