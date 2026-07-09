@@ -6,10 +6,6 @@ using System.Windows.Forms;
 using LocalOpsBot.Core.Updates;
 using LocalOpsBot.Tray.Services;
 using Application = System.Windows.Application;
-using MessageBox = System.Windows.MessageBox;
-using MessageBoxButton = System.Windows.MessageBoxButton;
-using MessageBoxImage = System.Windows.MessageBoxImage;
-using MessageBoxResult = System.Windows.MessageBoxResult;
 
 namespace LocalOpsBot.Tray;
 
@@ -137,15 +133,15 @@ public sealed class TrayIconManager : IDisposable
             if (info == null)
             {
                 _updateItem.Text = $"✅ v{_updater.GetCurrentVersionString()} — up to date";
-                MessageBox.Show($"Homebase is up to date (v{_updater.GetCurrentVersionString()}).",
-                    "Update Check", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageDialog.Show("Update Check",
+                    $"Homebase is up to date (v{_updater.GetCurrentVersionString()}).");
             }
             else
             {
-                var result = MessageBox.Show(
-                    $"Update v{info.Version} available!\nPublished: {info.PublishedAt:yyyy-MM-dd}\n\nDownload and install now?",
-                    "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (result == MessageBoxResult.Yes)
+                var confirmed = MessageDialog.Show("Update Available",
+                    $"Update v{info.Version} available!\nPublished: {info.PublishedAt:yyyy-MM-dd}",
+                    primary: "Download & Install", secondary: "Later");
+                if (confirmed)
                 {
                     _updateItem.Text = "Downloading update…";
                     var zip = await _updater.DownloadUpdateAsync(info, null, CancellationToken.None);
@@ -161,8 +157,7 @@ public sealed class TrayIconManager : IDisposable
         catch (Exception ex)
         {
             _updateItem.Text = "⚠️ Update check failed";
-            MessageBox.Show($"Update check failed: {ex.Message}",
-                "Update Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageDialog.Show("Update Error", $"Update check failed: {ex.Message}");
         }
         finally
         {

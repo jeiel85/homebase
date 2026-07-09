@@ -1,0 +1,33 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LocalOpsBot.Tray.MessageDialog"
+        Title="Homebase"
+        Icon="pack://application:,,,/Resources/homebase.ico"
+        Width="400" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False"
+        Background="{StaticResource Brush.Canvas}"
+        FontFamily="{StaticResource Font.Sans}"
+        TextOptions.TextFormattingMode="Display">
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12">
+      <TextBlock x:Name="TitleText" Style="{StaticResource Type.SectionLabel}" Text="HOMEBASE"/>
+    </Border>
+
+    <Border Grid.Row="1" Style="{StaticResource Card}">
+      <TextBlock x:Name="MessageText" Style="{StaticResource Type.Body}" TextWrapping="Wrap"/>
+    </Border>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button x:Name="SecondaryButton" Style="{StaticResource Button.Carbon}" Content="CANCEL"
+              Margin="0,0,8,0" Click="Secondary_Click" Visibility="Collapsed"/>
+      <Button x:Name="PrimaryButton" Style="{StaticResource Button.Signal}" Content="OK" Click="Primary_Click"/>
+    </StackPanel>
+  </Grid>
+</Window>

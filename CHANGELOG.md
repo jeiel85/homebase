@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.2 — Consistent theming across the tray UI
+
+### Changed
+- The tray now themes the controls that were still showing as plain Windows defaults: the bot-token
+  and chat-ID text fields, the notification-forwarding checkbox, the disk list text, and the
+  scrollbars all follow the Homebase look now.
+- The update-check prompts are a themed Homebase dialog (carbon header, signal/carbon buttons)
+  instead of a bare system message box.
+
 ## v0.8.1 — Tray dashboard no longer vanishes on click
 
 ### Fixed

@@ -152,12 +152,13 @@ public partial class SettingsWindow : Window
                 DiskPanel.Children.Add(new TextBlock
                 {
                     Text = $"{d.Name}  {freeGb:F0} GB free / {totalGb:F0} GB",
+                    Style = (Style)FindResource("Type.Body"),
                     Margin = new Thickness(0, 2, 0, 2)
                 });
             }
         }
         if (DiskPanel.Children.Count == 0)
-            DiskPanel.Children.Add(new TextBlock { Text = "—", Foreground = Brushes.Gray });
+            DiskPanel.Children.Add(new TextBlock { Text = "—", Style = (Style)FindResource("Type.Micro") });
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Hide();
