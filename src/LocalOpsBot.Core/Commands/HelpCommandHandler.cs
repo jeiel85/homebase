@@ -30,7 +30,7 @@ public sealed class HelpCommandHandler : ICommandHandler
 
         lines.Add("");
         lines.Add("Tip: Use /mute 1h to silence alerts, /unmute to resume.");
-        lines.Add("Source: https://github.com/jeiel85/localops-bot");
+        lines.Add("Source: https://github.com/jeiel85/homebase");
 
         return Task.FromResult(new CommandResult(true, string.Join("\n", lines)));
     }

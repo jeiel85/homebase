@@ -29,7 +29,7 @@
     Unattended install with known values.
 .EXAMPLE
     # One-liner from web:
-    irm https://github.com/jeiel85/localops-bot/releases/latest/download/bootstrap.ps1 | iex
+    irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 | iex
 #>
 
 #Requires -RunAsAdministrator
@@ -60,7 +60,7 @@ $ProgramData  = "C:\ProgramData\LocalOpsBot"
 $EnvVarName   = "LOCALOPSBOT_TELEGRAM_TOKEN"
 $ConfigFile   = Join-Path $ConfigDir "appsettings.json"
 $ConfigSample = Join-Path $ConfigDir "appsettings.example.json"
-$GitHubRepo   = "jeiel85/localops-bot"
+$GitHubRepo   = "jeiel85/homebase"
 
 # --- Detect source paths ---
 $ScriptRoot = Split-Path -Parent $PSCommandPath

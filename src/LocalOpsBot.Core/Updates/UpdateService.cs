@@ -30,7 +30,7 @@ public sealed class UpdateService
 {
     private static readonly Version CurrentVersion = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 1, 0);
     private const string RepoOwner = "jeiel85";
-    private const string RepoName = "localops-bot";
+    private const string RepoName = "homebase";
 
     private readonly HttpClient _http;
 

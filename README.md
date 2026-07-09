@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jeiel85/localops-bot/actions"><img src="https://img.shields.io/github/actions/workflow/status/jeiel85/localops-bot/release.yml?style=flat-square&logo=github&label=release" alt="Release"></a>
-  <a href="https://github.com/jeiel85/localops-bot/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jeiel85/localops-bot?style=flat-square" alt="License"></a>
+  <a href="https://github.com/jeiel85/homebase/actions"><img src="https://img.shields.io/github/actions/workflow/status/jeiel85/homebase/release.yml?style=flat-square&logo=github&label=release" alt="Release"></a>
+  <a href="https://github.com/jeiel85/homebase/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jeiel85/homebase?style=flat-square" alt="License"></a>
   <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-9.0-512BD4?style=flat-square&logo=dotnet" alt=".NET"></a>
-  <a href="https://github.com/jeiel85/localops-bot/issues"><img src="https://img.shields.io/github/issues-raw/jeiel85/localops-bot?style=flat-square&logo=github" alt="Issues"></a>
+  <a href="https://github.com/jeiel85/homebase/issues"><img src="https://img.shields.io/github/issues-raw/jeiel85/homebase?style=flat-square&logo=github" alt="Issues"></a>
 </p>
 
 <p align="center">
@@ -48,7 +48,7 @@
 
 ### 설치 — 어느 파일을 받나요?
 
-[**최신 릴리스**](https://github.com/jeiel85/localops-bot/releases/latest)에서 상황에 맞는 파일 하나만 받으세요.
+[**최신 릴리스**](https://github.com/jeiel85/homebase/releases/latest)에서 상황에 맞는 파일 하나만 받으세요.
 
 | 파일 | 이럴 때 받으세요 |
 |---|---|
@@ -68,7 +68,7 @@
 **관리자 권한** PowerShell에서:
 
 ```powershell
-irm https://github.com/jeiel85/localops-bot/releases/latest/download/bootstrap.ps1 | iex
+irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 > **chat ID를 모르나요?** 봇에게 아무 메시지나 보낸 뒤 `https://api.telegram.org/bot<봇토큰>/getUpdates`를 열어 `chat.id` 값을 확인하세요.

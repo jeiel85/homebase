@@ -7,7 +7,7 @@
 |---|---|
 | **`Homebase-Setup.exe`** | ⭐ 대부분 이것 하나면 됩니다. 더블클릭하면 설치 마법사가 실행됩니다 |
 | `Homebase-Setup.zip` | 마법사 없이 수동 설치 — 압축을 풀고 **관리자 권한** PowerShell에서 `.\setup.ps1` 실행 |
-| `bootstrap.ps1` | 명령 한 줄 설치 — 관리자 권한 PowerShell에서 `irm https://github.com/jeiel85/localops-bot/releases/latest/download/bootstrap.ps1 \| iex` |
+| `bootstrap.ps1` | 명령 한 줄 설치 — 관리자 권한 PowerShell에서 `irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 \| iex` |
 | `appsettings.example.json` | 설정 항목 참고용 (설치 시 자동 생성되므로 보통 받을 필요 없음) |
 | `*.sha256` | 다운로드 무결성 검증용 (선택) |
 

@@ -8,7 +8,7 @@
   #define AppVersion "0.0.0-dev"
 #endif
 #define AppPublisher "jeiel85"
-#define AppURL "https://github.com/jeiel85/localops-bot"
+#define AppURL "https://github.com/jeiel85/homebase"
 #define ServiceName "LocalOpsBot.Agent"
 
 [Setup]
@@ -20,6 +20,9 @@ AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
 DefaultDirName={commonpf64}\LocalOpsBot
+; Always offer the standard default folder, never a previously-remembered path — so a stale
+; install location can't carry over. Users can still browse to a different folder.
+UsePreviousAppDir=no
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\publish

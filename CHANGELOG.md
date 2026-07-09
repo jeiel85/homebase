@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.2 — Cleaner install folder; repo renamed to homebase
+
+### Changed
+- The installer always offers the standard default folder (`C:\Program Files\LocalOpsBot`) and no
+  longer pre-fills a previously-used location, so a stale install path can't carry over.
+- The project repository moved to `github.com/jeiel85/homebase`; download, one-line install, and
+  auto-update links now point there (GitHub redirects the old URLs).
+
 ## v0.7.1 — Uninstall fully removes the agent
 
 ### Fixed

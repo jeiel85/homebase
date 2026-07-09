@@ -3,13 +3,13 @@
     Bootstrap installer for Homebase — downloads and runs setup.
 .DESCRIPTION
     Run this one-liner from an elevated PowerShell prompt:
-      irm https://github.com/jeiel85/localops-bot/releases/latest/download/bootstrap.ps1 | iex
+      irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 | iex
     Downloads the latest release, extracts everything, and launches interactive setup.
 #>
 
 #Requires -RunAsAdministrator
 
-$Repo = "jeiel85/localops-bot"
+$Repo = "jeiel85/homebase"
 $TempDir = Join-Path $env:TEMP "LocalOpsBot-Bootstrap"
 $SetupZip = Join-Path $TempDir "Homebase-Setup.zip"
 
