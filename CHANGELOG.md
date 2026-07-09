@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 — /events Fix & Event Log Failure Logging
 
 ### Fixed
 - `/events` now shows the actual most-recent events. It previously shared the alert poller's
