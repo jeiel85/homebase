@@ -170,7 +170,16 @@ public sealed class UpdateService
         catch { /* best-effort cleanup */ }
     }
 
-    public void ApplyUpdate(string zipPath)
+    /// <summary>
+    /// Applies a downloaded update package. Returns <c>true</c> once the elevated apply process is
+    /// launched; <c>false</c> if the user declined the UAC prompt (nothing changed).
+    /// </summary>
+    /// <param name="elevate">
+    /// Request UAC elevation. The tray runs non-elevated, so it must pass <c>true</c> — the apply
+    /// script writes to <c>C:\Program Files</c> and stops/starts the Windows service, all of which
+    /// need admin. The Agent already runs as LocalSystem, so it leaves this <c>false</c>.
+    /// </param>
+    public bool ApplyUpdate(string zipPath, bool elevate = false)
     {
         // The update package is Homebase-Setup.zip, whose root contains Agent\ and
         // Tray\ folders. Extract to a temp dir, then copy each component into place so
@@ -214,6 +223,10 @@ try {
         Start-Sleep -Seconds 1
     }
     Get-Process -Name 'Homebase.Tray' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 15; $i++) {
+        if (-not (Get-Process -Name 'Homebase.Tray' -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 400
+    }
 
     Write-Log 'Updating Agent...'
     Copy-Item (Join-Path $agentSrc '*') $agentDir -Recurse -Force
@@ -226,6 +239,18 @@ try {
 
     Write-Log 'Starting service...'
     Start-Service $serviceName
+
+    # Relaunch the tray in the user's (non-elevated) session via explorer, so it comes back
+    # after the update without waiting for the next logon. Only from an interactive session
+    # (tray-initiated update); the LocalSystem /update path runs in session 0 with no desktop,
+    # where the HKCU autostart brings it back on next logon instead. Best-effort either way.
+    if ([Environment]::UserInteractive) {
+        try {
+            $trayExe = Join-Path $trayDir 'Homebase.Tray.exe'
+            if (Test-Path $trayExe) { Start-Process 'explorer.exe' -ArgumentList $trayExe }
+        } catch { Write-Log ('Tray relaunch note: ' + $_.Exception.Message) }
+    }
+
     Write-Log 'Update complete.'
 }
 catch {
@@ -243,13 +268,32 @@ finally {
         var psFile = Path.Combine(Path.GetTempPath(), $"localops_update_{Guid.NewGuid():N}.ps1");
         File.WriteAllText(psFile, script);
 
-        var psi = new ProcessStartInfo("powershell.exe")
+        var args = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{psFile}\"";
+        var psi = elevate
+            ? new ProcessStartInfo("powershell.exe", args)
+            {
+                // Non-elevated caller (the tray): request UAC so the script can write Program Files
+                // and stop/start the service. Verb=runas requires UseShellExecute = true.
+                UseShellExecute = true,
+                Verb = "runas",
+                WindowStyle = ProcessWindowStyle.Hidden,
+            }
+            : new ProcessStartInfo("powershell.exe", args)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            };
+
+        try
         {
-            Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{psFile}\"",
-            CreateNoWindow = true,
-            UseShellExecute = false
-        };
-        Process.Start(psi);
+            return Process.Start(psi) != null;
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // 1223 = ERROR_CANCELLED: the user dismissed the UAC prompt; nothing was changed.
+            TryDelete(psFile);
+            return false;
+        }
     }
 
     private sealed record GitHubRelease(

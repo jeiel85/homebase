@@ -144,9 +144,24 @@ public sealed class TrayIconManager : IDisposable
                 if (confirmed)
                 {
                     _updateItem.Text = "Downloading update…";
+                    // The tray menu closes on click, so surface progress as a balloon too —
+                    // otherwise the download looks like nothing is happening.
+                    _trayIcon.ShowBalloonTip(3000, "Homebase", "Downloading the update…", ToolTipIcon.Info);
                     var zip = await _updater.DownloadUpdateAsync(info, null, CancellationToken.None);
-                    _updater.ApplyUpdate(zip);
-                    Application.Current.Shutdown();
+                    _updateItem.Text = "Installing update…";
+                    // The tray runs non-elevated; ask for UAC so the helper can replace the
+                    // binaries in Program Files and restart the service. Only shut down once the
+                    // elevated helper is actually running.
+                    if (_updater.ApplyUpdate(zip, elevate: true))
+                    {
+                        Application.Current.Shutdown();
+                    }
+                    else
+                    {
+                        _updateItem.Text = $"📡 v{info.Version} available";
+                        MessageDialog.Show("Update Cancelled",
+                            "Installing the update needs administrator approval. Nothing was changed — you can try again anytime.");
+                    }
                 }
                 else
                 {

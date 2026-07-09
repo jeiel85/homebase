@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.4 — Auto-update actually installs now
+
+### Fixed
+- "Check for Updates → Download & Install" from the tray now works. The tray runs without admin
+  rights, so its update helper couldn't write to `Program Files` or restart the service and failed
+  silently. It now asks for administrator approval (UAC) before applying, shows a download
+  notification, brings the tray back after the update, and tells you if you decline the prompt.
+
+> **One-time note:** this fix lives in the updater itself, so v0.8.3 and earlier can't pull it
+> automatically — reinstall once with the v0.8.4 `Homebase-Setup.exe`, and in-app auto-update works
+> from then on.
+
 ## v0.8.3 — Themed window title bars
 
 ### Changed
