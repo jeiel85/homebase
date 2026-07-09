@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.1 — Uninstall fully removes the agent
+
+### Fixed
+- Uninstalling now stops and removes the Windows service, clears the bot-token environment
+  variable, and unregisters tray auto-start. The service was created outside the installer's
+  file tracking, so a plain uninstall used to leave it running — and still sending alerts.
+
+### Changed
+- The service and tray now run in place from the install folder instead of being copied to a
+  separate hardcoded location, so there is a single, cleanly-removable install.
+
 ## v0.7.0 — Set up Telegram from the app, not the installer
 
 ### Changed
