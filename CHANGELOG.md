@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.0 — Set up Telegram from the app, not the installer
+
+### Changed
+- Setup no longer asks for your Telegram bot token and chat ID. The installer just installs the
+  service and tray; you enter your credentials on first run in the Homebase welcome window and
+  click **Save & apply** — a single admin prompt applies them and restarts the service. Change
+  them any time from the same place.
+- The Agent now starts and runs idle when no token is configured yet, instead of failing at
+  startup — so a fresh install stays healthy until you finish setup in the tray.
+
+> **Upgrade note:** reinstall once with the new `Homebase-Setup.exe` to get the in-app setup flow.
+> Your existing token and chat ID are preserved; you can update them from the tray afterwards.
+
 ## v0.6.0 — Local AI Health Advice (Ollama)
 
 ### Added
