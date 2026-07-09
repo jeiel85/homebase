@@ -38,6 +38,7 @@ param(
     [string]$ChatId = "",
     [switch]$NoInteractive,
     [switch]$SkipTelegram,
+    [string]$InstallDir = "",
     [string]$AgentSource = "",
     [string]$TraySource = ""
 )
@@ -45,8 +46,11 @@ param(
 # --- Constants ---
 $ServiceName  = "LocalOpsBot.Agent"
 $DisplayName  = "Homebase"
-$AgentDir     = "C:\Program Files\LocalOpsBot\Agent"
-$TrayDir      = "C:\Program Files\LocalOpsBot\Tray"
+# When the installer passes -InstallDir ({app}), run the service and tray from there — a single,
+# installer-tracked location. Standalone (.zip) installs fall back to Program Files.
+if ($InstallDir) { $InstallRoot = $InstallDir } else { $InstallRoot = "C:\Program Files\LocalOpsBot" }
+$AgentDir     = Join-Path $InstallRoot "Agent"
+$TrayDir      = Join-Path $InstallRoot "Tray"
 $AgentExe     = Join-Path $AgentDir "LocalOpsBot.Agent.exe"
 $TrayExe      = Join-Path $TrayDir "LocalOpsBot.Tray.exe"
 $ConfigDir    = "C:\ProgramData\LocalOpsBot\config"
@@ -273,13 +277,18 @@ Write-Ok "Directories created"
 
 # --- Step 3: Copy binaries ---
 Write-Step "Step 3/7: Copying binaries"
-if ($HasAgentBinaries) {
-    Copy-Item "$AgentSource\*" $AgentDir -Recurse -Force
-    Write-Ok "Agent -> $AgentDir"
-}
-if ($HasTrayBinaries) {
-    Copy-Item "$TraySource\*" $TrayDir -Recurse -Force
-    Write-Ok "Tray  -> $TrayDir"
+if ($InstallDir) {
+    # In-place install: the installer already placed the binaries under {app}; nothing to copy.
+    Write-Ok "Using in-place binaries under $InstallRoot"
+} else {
+    if ($HasAgentBinaries) {
+        Copy-Item "$AgentSource\*" $AgentDir -Recurse -Force
+        Write-Ok "Agent -> $AgentDir"
+    }
+    if ($HasTrayBinaries) {
+        Copy-Item "$TraySource\*" $TrayDir -Recurse -Force
+        Write-Ok "Tray  -> $TrayDir"
+    }
 }
 
 # --- Step 4: Create config ---

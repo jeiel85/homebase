@@ -70,6 +70,11 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; setup.ps1 installs the service and Tray but leaves Telegram unconfigured
 ; (-SkipTelegram). The user enters the bot token and chat ID on first run, from
 ; the Tray welcome window, which applies them with a one-time elevation.
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup.ps1"" -SkipTelegram -NoInteractive -AgentSource ""{app}\Agent"" -TraySource ""{app}\Tray"""; StatusMsg: "Installing service and tray..."; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup.ps1"" -SkipTelegram -NoInteractive -InstallDir ""{app}"" -AgentSource ""{app}\Agent"" -TraySource ""{app}\Tray"""; StatusMsg: "Installing service and tray..."; Flags: runhidden
 ; Launch the Tray so first-run onboarding appears right after install.
 Filename: "{app}\Tray\LocalOpsBot.Tray.exe"; Description: "Start Homebase"; Flags: nowait postinstall skipifsilent; Components: tray
+
+[UninstallRun]
+; The Agent service is created with sc.exe, so the installer doesn't track it — remove it
+; (plus auto-start and the bot-token env var) here, before files are deleted. Keeps config/data.
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-service.ps1"" -InstallDir ""{app}"""; RunOnceId: "RemoveAgentService"; Flags: runhidden
