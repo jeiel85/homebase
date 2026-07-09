@@ -30,7 +30,16 @@ public sealed class OllamaLlmClient : ILlmClient
     public async Task<LlmResult> GenerateAsync(string prompt, CancellationToken ct)
     {
         var url = $"{_options.Endpoint.TrimEnd('/')}/api/generate";
-        var payload = new { model = _options.Model, prompt, stream = false };
+        // keep_alive keeps the model warm between calls (a cold load dominates latency for small
+        // models); num_predict caps output length so generation stays fast and the reply is short.
+        var payload = new
+        {
+            model = _options.Model,
+            prompt,
+            stream = false,
+            keep_alive = $"{Math.Max(0, _options.KeepAliveMinutes)}m",
+            options = new { num_predict = Math.Max(1, _options.MaxTokens) }
+        };
 
         try
         {

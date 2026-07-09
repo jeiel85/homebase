@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.4 — Faster advice and reply language
+
+### Added
+- Advice can reply in your language: set `llmAdvisor.language` (e.g. `"Korean"`), or leave it
+  empty to follow the OS display language automatically.
+
+### Changed
+- `/advise` and automatic advice are much faster on repeat calls: the model is kept warm between
+  calls (`keep_alive`) and the reply length is capped (`maxTokens`), avoiding the slow model-load
+  each time (measured ~7s cold vs ~1.2s warm on `llama3.2:1b`). Both are tunable under `llmAdvisor`.
+
 ## v0.7.3 — Full Homebase rebrand (service, binaries, folders)
 
 ### Changed

@@ -27,6 +27,21 @@ public sealed class OllamaLlmClientTests
     }
 
     [Fact]
+    public async Task Generate_sends_keep_alive_and_num_predict_for_speed()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.QueueResponse(HttpStatusCode.OK, """{"response":"ok","done":true}""");
+        var client = new OllamaLlmClient(new HttpClient(handler),
+            new LlmAdvisorOptions { MaxTokens = 200, KeepAliveMinutes = 5 });
+
+        await client.GenerateAsync("hi", CancellationToken.None);
+
+        var body = await handler.Requests.Single().Content!.ReadAsStringAsync();
+        Assert.Contains("\"keep_alive\":\"5m\"", body);
+        Assert.Contains("\"num_predict\":200", body);
+    }
+
+    [Fact]
     public async Task Generate_on_model_not_found_hints_at_pull()
     {
         var handler = new FakeHttpMessageHandler();

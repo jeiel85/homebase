@@ -84,6 +84,17 @@ public sealed class PcStateAdvisorTests
     }
 
     [Fact]
+    public async Task Prompt_includes_configured_reply_language()
+    {
+        var llm = new FakeLlmClient();
+        var advisor = NewAdvisor(new LlmAdvisorOptions { Language = "Korean" }, llm);
+
+        await advisor.AdviseAsync(CancellationToken.None);
+
+        Assert.Contains("Korean", llm.LastPrompt!);
+    }
+
+    [Fact]
     public async Task Advise_propagates_llm_failure()
     {
         var llm = new FakeLlmClient { NextResult = new(false, "", "server down") };
