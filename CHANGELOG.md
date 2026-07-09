@@ -13,6 +13,12 @@
   machines that expose no sensors are handled gracefully, and implausible sentinel readings
   (e.g. a `255°C` "not ready" value) are filtered out. Set `temperature.enabled` to `false` to
   skip collection entirely — for instance if antivirus flags the kernel driver.
+- Active health advice (opt-in): a background monitor watches CPU, memory, disk, and temperature,
+  and when a threshold stays breached it asks the local LLM for advice and sends it to Telegram —
+  so you hear about a hot or overloaded PC without running `/advise` yourself. Off by default;
+  enable and tune it under `advisorAlerts` (per-metric thresholds, poll interval, a sustained-breach
+  count, and a cooldown that caps how often advice is sent). Advice flows through the existing
+  mute/dedup/rate-limit path, and the LLM is only called once a breach persists past the cooldown.
 
 ### Changed
 - Release assets are renamed to the Homebase brand: `Homebase-Setup.exe`, `Homebase-Setup.zip`,

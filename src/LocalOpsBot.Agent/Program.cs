@@ -58,6 +58,7 @@ builder.Services.AddHostedService<BootNotificationService>();
 builder.Services.AddHostedService<WatchdogBackgroundService>();
 builder.Services.AddHostedService<EventLogPollingService>();
 builder.Services.AddHostedService<DevMonitorBackgroundService>();
+builder.Services.AddHostedService<PcHealthAdvisorService>();
 builder.Services.AddLocalOpsDevMonitor();
 builder.Services.AddLocalOpsUpdates();
 
