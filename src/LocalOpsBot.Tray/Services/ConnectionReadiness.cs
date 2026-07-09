@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.ServiceProcess;
+using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Infrastructure.Telegram;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
@@ -15,6 +16,9 @@ internal sealed record ReadinessSnapshot(
     long? PrimaryChatId);
 
 internal sealed record TestSendResult(bool Ok, string Message);
+
+internal sealed record OllamaProbe(
+    OllamaReadiness Status, string Model, string Endpoint, string? Detail);
 
 /// <summary>
 /// Read-only view of whether this machine is ready to talk to Telegram, plus a one-shot
@@ -72,6 +76,23 @@ internal sealed class ConnectionReadiness
             // from any exception text before it reaches the UI.
             return new TestSendResult(false, $"Send failed: {Redact(ex.Message, token)}");
         }
+    }
+
+    /// <summary>
+    /// Checks whether the local Ollama server (from the same config the Agent reads) is running
+    /// and has the configured model pulled, so onboarding can guide the user through AI setup.
+    /// </summary>
+    public async Task<OllamaProbe> ProbeOllamaAsync(CancellationToken ct)
+    {
+        var config = LoadConfig();
+        var endpoint = config["llmAdvisor:endpoint"];
+        if (string.IsNullOrWhiteSpace(endpoint)) endpoint = "http://127.0.0.1:11434";
+        var model = config["llmAdvisor:model"];
+        if (string.IsNullOrWhiteSpace(model)) model = "llama3.2:1b";
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var result = await new OllamaReadinessChecker(http).CheckAsync(endpoint, model, ct);
+        return new OllamaProbe(result.Status, model, endpoint, result.Detail);
     }
 
     private static string Redact(string message, string token) =>

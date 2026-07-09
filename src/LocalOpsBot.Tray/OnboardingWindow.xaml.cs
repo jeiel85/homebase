@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Navigation;
+using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
@@ -16,6 +17,7 @@ namespace LocalOpsBot.Tray;
 public partial class OnboardingWindow : Window
 {
     private readonly ConnectionReadiness _readiness = new();
+    private string _ollamaModel = "llama3.2:1b";
 
     /// <summary>Raised when the user clicks "Get started"; the tray opens the dashboard.</summary>
     public event Action? GetStartedRequested;
@@ -39,6 +41,18 @@ public partial class OnboardingWindow : Window
         catch
         {
             // Transient probe failure — keep whatever was last shown.
+        }
+
+        // AI advice is optional and network-bound: probe it separately with a short timeout so a
+        // slow or absent Ollama never blocks or fails the Telegram checklist above.
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+            ApplyOllama(await _readiness.ProbeOllamaAsync(cts.Token));
+        }
+        catch
+        {
+            ApplyOllama(new OllamaProbe(OllamaReadiness.Unreachable, _ollamaModel, "", null));
         }
         finally
         {
@@ -87,6 +101,49 @@ public partial class OnboardingWindow : Window
         }
 
         TestButton.IsEnabled = s is { TokenConfigured: true, ChatConfigured: true };
+    }
+
+    private void ApplyOllama(OllamaProbe p)
+    {
+        _ollamaModel = p.Model;
+        OllamaInstallHint.Visibility = Visibility.Collapsed;
+        OllamaPullHint.Visibility = Visibility.Collapsed;
+
+        switch (p.Status)
+        {
+            case OllamaReadiness.Ready:
+                SetChip(OllamaChip, OllamaChipText, Chip.Ready);
+                OllamaStatusText.Text = $"Ready — model '{p.Model}' is installed.";
+                break;
+            case OllamaReadiness.ModelMissing:
+                SetChip(OllamaChip, OllamaChipText, Chip.Setup);
+                OllamaStatusText.Text = "Server is running, but the model isn't pulled yet.";
+                OllamaPullCommand.Text = $"ollama pull {p.Model}";
+                OllamaPullHint.Visibility = Visibility.Visible;
+                break;
+            default: // Unreachable
+                SetChip(OllamaChip, OllamaChipText, Chip.Setup);
+                OllamaStatusText.Text = "Not detected. Optional — install Ollama to enable AI advice.";
+                OllamaInstallHint.Visibility = Visibility.Visible;
+                break;
+        }
+    }
+
+    private void OllamaPull_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // Open a console running the pull so the user can watch download progress; ollama is
+            // a user-level CLI, so this needs no elevation.
+            Process.Start(new ProcessStartInfo("cmd.exe", $"/k ollama pull {_ollamaModel}")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            OllamaStatusText.Text = $"Couldn't start the pull: {ex.Message}";
+        }
     }
 
     private void SetChip(Border chip, TextBlock text, Chip level)

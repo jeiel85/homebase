@@ -114,6 +114,55 @@
           </StackPanel>
         </Border>
 
+        <!-- ═ AI ADVICE (Ollama) checklist ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="AI ADVICE · OPTIONAL"/>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+
+            <!-- Ollama status -->
+            <Grid Margin="0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="OllamaChip" Grid.Column="0" Width="76" Padding="7,3" CornerRadius="2"
+                      VerticalAlignment="Center" Background="{StaticResource Brush.Hairline}">
+                <TextBlock x:Name="OllamaChipText" Text="…" HorizontalAlignment="Center"
+                           Foreground="{StaticResource Brush.OnDark}" FontSize="10" FontWeight="Bold"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="Local AI (Ollama)"/>
+                <TextBlock x:Name="OllamaStatusText" Style="{StaticResource Type.Micro}"
+                           TextWrapping="Wrap" Text="checking…"/>
+              </StackPanel>
+            </Grid>
+
+            <!-- Install hint: server unreachable -->
+            <StackPanel x:Name="OllamaInstallHint" Visibility="Collapsed" Margin="0,8,0,0">
+              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                         Text="Install Ollama and start it to enable /advise and automatic health advice."/>
+              <TextBlock Margin="0,4,0,0" FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
+                <Hyperlink NavigateUri="https://ollama.com/download"
+                           RequestNavigate="Hyperlink_RequestNavigate"
+                           Foreground="{StaticResource Brush.InkSoft}">Get Ollama</Hyperlink>
+              </TextBlock>
+            </StackPanel>
+
+            <!-- Pull hint: model not installed -->
+            <StackPanel x:Name="OllamaPullHint" Visibility="Collapsed" Margin="0,8,0,0">
+              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                         Text="The server is running — pull the model to finish:"/>
+              <TextBlock x:Name="OllamaPullCommand" FontFamily="Consolas" FontSize="12" Margin="0,3,0,0"
+                         Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap" Text="ollama pull …"/>
+              <Button x:Name="OllamaPullButton" Style="{StaticResource Button.Amber}"
+                      Content="RUN PULL" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OllamaPull_Click"/>
+            </StackPanel>
+
+          </StackPanel>
+        </Border>
+
         <!-- ═ GUIDANCE ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
           <TextBlock Style="{StaticResource Type.SectionLabel}" Text="FIRST TIME?"/>

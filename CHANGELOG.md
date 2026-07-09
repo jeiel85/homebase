@@ -19,6 +19,10 @@
   enable and tune it under `advisorAlerts` (per-metric thresholds, poll interval, a sustained-breach
   count, and a cooldown that caps how often advice is sent). Advice flows through the existing
   mute/dedup/rate-limit path, and the LLM is only called once a breach persists past the cooldown.
+- Ollama setup onboarding: the Tray welcome window now checks whether the local Ollama server is
+  running and whether the configured model is pulled, and guides you accordingly — a "Get Ollama"
+  link when it isn't reachable, or a one-click "Run pull" for the missing model — so `/advise` and
+  automatic advice are easy to turn on. Read-only and non-elevated, like the rest of onboarding.
 
 ### Changed
 - Release assets are renamed to the Homebase brand: `Homebase-Setup.exe`, `Homebase-Setup.zip`,
