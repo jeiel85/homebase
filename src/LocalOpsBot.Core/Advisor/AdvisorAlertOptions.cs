@@ -37,4 +37,20 @@ public sealed class AdvisorAlertOptions
 
     /// <summary>Temperature in °C that counts as a breach, per category (inclusive).</summary>
     public double TempCelsius { get; init; } = 85;
+
+    /// <summary>
+    /// Returns a copy with every value clamped to a sane range, so a config typo (e.g. a 0%
+    /// threshold or a 1-second interval) can't turn into spammy or nonsensical behaviour.
+    /// </summary>
+    public AdvisorAlertOptions Normalized() => new()
+    {
+        Enabled = Enabled,
+        IntervalSeconds = Math.Clamp(IntervalSeconds, 30, 86_400),
+        CooldownMinutes = Math.Clamp(CooldownMinutes, 1, 1_440),
+        ConsecutiveBreaches = Math.Clamp(ConsecutiveBreaches, 1, 100),
+        CpuPercent = Math.Clamp(CpuPercent, 1, 100),
+        MemoryPercent = Math.Clamp(MemoryPercent, 1, 100),
+        DiskPercent = Math.Clamp(DiskPercent, 1, 100),
+        TempCelsius = Math.Clamp(TempCelsius, 20, 150),
+    };
 }

@@ -120,6 +120,7 @@ public partial class OnboardingWindow : Window
                 OllamaStatusText.Text = "Server is running, but the model isn't pulled yet.";
                 OllamaPullCommand.Text = $"ollama pull {p.Model}";
                 OllamaPullHint.Visibility = Visibility.Visible;
+                OllamaPullButton.IsEnabled = IsSafeModelName(p.Model);
                 break;
             default: // Unreachable
                 SetChip(OllamaChip, OllamaChipText, Chip.Setup);
@@ -131,6 +132,11 @@ public partial class OnboardingWindow : Window
 
     private void OllamaPull_Click(object sender, RoutedEventArgs e)
     {
+        if (!IsSafeModelName(_ollamaModel))
+        {
+            OllamaStatusText.Text = "Model name has unexpected characters — pull it manually.";
+            return;
+        }
         try
         {
             // Open a console running the pull so the user can watch download progress; ollama is
@@ -145,6 +151,12 @@ public partial class OnboardingWindow : Window
             OllamaStatusText.Text = $"Couldn't start the pull: {ex.Message}";
         }
     }
+
+    // Only shell out for model names built from the characters Ollama actually uses, so a stray
+    // llmAdvisor.model config value can't smuggle shell metacharacters into the pull command.
+    private static bool IsSafeModelName(string model) =>
+        !string.IsNullOrWhiteSpace(model)
+        && model.All(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-' or ':' or '/');
 
     private void SetChip(Border chip, TextBlock text, Chip level)
     {

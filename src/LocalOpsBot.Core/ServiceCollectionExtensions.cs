@@ -75,7 +75,8 @@ public static class ServiceCollectionExtensions
         var temperatureOpts = config.GetSection("temperature").Get<TemperatureOptions>() ?? new TemperatureOptions();
         services.AddSingleton(temperatureOpts);
 
-        var advisorAlertOpts = config.GetSection("advisorAlerts").Get<AdvisorAlertOptions>() ?? new AdvisorAlertOptions();
+        var advisorAlertOpts = (config.GetSection("advisorAlerts").Get<AdvisorAlertOptions>()
+                                ?? new AdvisorAlertOptions()).Normalized();
         services.AddSingleton(advisorAlertOpts);
         services.AddSingleton<PcHealthMonitor>();
 

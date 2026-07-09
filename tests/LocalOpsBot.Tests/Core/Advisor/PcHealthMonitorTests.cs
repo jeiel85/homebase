@@ -75,6 +75,22 @@ public sealed class PcHealthMonitorTests
     }
 
     [Fact]
+    public async Task Long_advice_is_truncated_before_dispatch()
+    {
+        var advisor = new FakePcStateAdvisor { NextResult = new(true, new string('x', 5000), null) };
+        var dispatcher = new FakeAlertDispatcher();
+        var monitor = Monitor(Cpu(99), new AdvisorAlertOptions { Enabled = true, ConsecutiveBreaches = 1 },
+            advisor, dispatcher, new FakeStateStore());
+
+        var result = await monitor.PollOnceAsync(CancellationToken.None);
+
+        Assert.Equal(AdviseOutcome.Advised, result.Outcome);
+        var alert = Assert.Single(dispatcher.Dispatched);
+        Assert.True(alert.Body.Length < 4096, $"body was {alert.Body.Length} chars");
+        Assert.EndsWith("…", alert.Body);
+    }
+
+    [Fact]
     public async Task Single_breach_below_streak_does_not_advise()
     {
         var advisor = new FakePcStateAdvisor();

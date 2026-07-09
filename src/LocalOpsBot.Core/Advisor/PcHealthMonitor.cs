@@ -29,6 +29,10 @@ public sealed class PcHealthMonitor
 {
     private const string LastAdvisedKey = "advisor.last_advised_at";
 
+    // Keep the advice comfortably under Telegram's 4096-char message limit, leaving room for the
+    // trigger line, the alert title, and HTML escaping (which can expand some characters).
+    private const int MaxAdviceChars = 3500;
+
     private readonly ISystemMetricsCollector _metrics;
     private readonly IDiskCollector _disk;
     private readonly ITemperatureCollector _temperature;
@@ -87,7 +91,7 @@ public sealed class PcHealthMonitor
             return new PollResult(AdviseOutcome.AdviceFailed, breaches, advice.Error);
 
         var trigger = string.Join("; ", breaches.Select(b => b.Detail));
-        var body = $"Triggered by: {trigger}\n\n{advice.Text}";
+        var body = $"Triggered by: {trigger}\n\n{Truncate(advice.Text, MaxAdviceChars)}";
         await _dispatcher.DispatchAsync(new AlertEvent(
             Guid.NewGuid().ToString("N"), "advisor", AlertSeverity.Warning,
             "PC health advice", body, "advisor:health", _machineName, DateTimeOffset.UtcNow), ct);
@@ -104,4 +108,7 @@ public sealed class PcHealthMonitor
             return DateTimeOffset.UtcNow - last < TimeSpan.FromMinutes(_options.CooldownMinutes);
         return false;
     }
+
+    private static string Truncate(string text, int max) =>
+        text.Length <= max ? text : text[..max].TrimEnd() + "…";
 }
