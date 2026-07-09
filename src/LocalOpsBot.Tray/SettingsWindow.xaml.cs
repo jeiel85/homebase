@@ -162,22 +162,26 @@ public partial class SettingsWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e) => Hide();
 
-    // Tray-popup behaviour: anchor bottom-right above the taskbar; hide (not destroy)
-    // when it loses focus or the user dismisses it, so the same instance can reopen.
+    // Tray-popup behaviour: anchor bottom-right above the taskbar and bring it to the foreground.
+    // Closing (X or CLOSE) hides rather than destroys, so the same instance reopens on the next
+    // tray click. It intentionally does NOT auto-hide on deactivation: launched from the WinForms
+    // tray icon this is a background process, so the window used to lose focus and hide itself
+    // before it even painted — showing only an empty flash and then vanishing on the next click.
     public void ShowNearTray()
     {
         WindowStartupLocation = WindowStartupLocation.Manual;
         var wa = SystemParameters.WorkArea;
         Left = wa.Right - Width - 8;
         Top = Math.Max(wa.Top, wa.Bottom - Height - 8);
-        Show();
-        Activate();
-    }
 
-    protected override void OnDeactivated(EventArgs e)
-    {
-        base.OnDeactivated(e);
-        Hide();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show();
+        // A plain Activate() from a background app often fails to take the foreground; the brief
+        // Topmost flip reliably raises the window to the front without pinning it always-on-top.
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)

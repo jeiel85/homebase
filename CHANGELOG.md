@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.1 — Tray dashboard no longer vanishes on click
+
+### Fixed
+- Clicking the tray icon now reliably opens the dashboard and keeps it open. It used to hide itself
+  the instant it lost focus — which happened immediately when opened from the tray icon, so it only
+  ever flashed as an empty window and disappeared. The dashboard now stays until you close it, comes
+  to the front on a tray click, and only toggles shut when it is already the active window.
+
 ## v0.8.0 — Temperature: driver-free by default, full sensors opt-in
 
 ### Changed

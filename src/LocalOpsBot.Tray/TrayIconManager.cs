@@ -84,7 +84,10 @@ public sealed class TrayIconManager : IDisposable
     private void TogglePopup()
     {
         _popup ??= new SettingsWindow();
-        if (_popup.IsVisible) _popup.Hide();
+        // Toggle only when it is already the foreground window; if it is hidden OR just behind
+        // another window, bring it to the front instead of hiding it, so a tray click always
+        // surfaces the dashboard rather than dismissing an out-of-sight one.
+        if (_popup is { IsVisible: true, IsActive: true }) _popup.Hide();
         else _popup.ShowNearTray();
     }
 
