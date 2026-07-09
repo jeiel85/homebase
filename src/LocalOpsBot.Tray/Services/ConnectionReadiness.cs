@@ -29,9 +29,9 @@ internal sealed record OllamaProbe(
 /// </summary>
 internal sealed class ConnectionReadiness
 {
-    private const string ServiceName = "LocalOpsBot.Agent";
-    private const string ConfigPath  = @"C:\ProgramData\LocalOpsBot\config\appsettings.json";
-    private const string TokenEnvVar = "LOCALOPSBOT_TELEGRAM_TOKEN";
+    private const string ServiceName = "Homebase.Agent";
+    private const string ConfigPath  = @"C:\ProgramData\Homebase\config\appsettings.json";
+    private const string TokenEnvVar = "HOMEBASE_TELEGRAM_TOKEN";
 
     public ReadinessSnapshot Probe()
     {
@@ -99,11 +99,11 @@ internal sealed class ConnectionReadiness
         string.IsNullOrEmpty(token) ? message : message.Replace(token, "***");
 
     // Mirror the Agent's config sources: the installer-written ProgramData file, then
-    // LOCALOPSBOT__ env overrides. Rebuilt per call so it reflects the current file state.
+    // HOMEBASE__ env overrides. Rebuilt per call so it reflects the current file state.
     private static IConfigurationRoot LoadConfig() =>
         new ConfigurationBuilder()
             .AddJsonFile(ConfigPath, optional: true, reloadOnChange: false)
-            .AddEnvironmentVariables("LOCALOPSBOT__")
+            .AddEnvironmentVariables("HOMEBASE__")
             .Build();
 
     // Mirrors TelegramClient's "ENV:VARNAME" indirection so the secret stays out of the

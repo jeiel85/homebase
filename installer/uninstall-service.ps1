@@ -16,20 +16,20 @@ param(
     -Purge: also deletes config/data/logs.
 .PARAMETER InstallDir
     The install root (Inno {app}); its Agent/Tray subfolders are removed in addition to the
-    default C:\Program Files\LocalOpsBot location.
+    default C:\Program Files\Homebase location.
 .PARAMETER Purge
-    Also delete C:\ProgramData\LocalOpsBot (config, database, logs).
+    Also delete C:\ProgramData\Homebase (config, database, logs).
 #>
 
 #Requires -RunAsAdministrator
 
-$ServiceName = "LocalOpsBot.Agent"
-$EnvVarName  = "LOCALOPSBOT_TELEGRAM_TOKEN"
-$ProgramData = "C:\ProgramData\LocalOpsBot"
-$DefaultRoot = "C:\Program Files\LocalOpsBot"
+$ServiceName = "Homebase.Agent"
+$EnvVarName  = "HOMEBASE_TELEGRAM_TOKEN"
+$ProgramData = "C:\ProgramData\Homebase"
+$DefaultRoot = "C:\Program Files\Homebase"
 
 # 1) Kill running processes so files unlock and alerts stop immediately.
-Get-Process -Name 'LocalOpsBot.Agent', 'LocalOpsBot.Tray' -ErrorAction SilentlyContinue |
+Get-Process -Name 'Homebase.Agent', 'Homebase.Tray' -ErrorAction SilentlyContinue |
     Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
@@ -46,7 +46,7 @@ if ($existing) {
 }
 
 # 3) Remove Tray auto-start and the machine-level bot-token env var.
-Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LocalOpsBot.Tray" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Homebase.Tray" -ErrorAction SilentlyContinue
 [Environment]::SetEnvironmentVariable($EnvVarName, $null, 'Machine')
 Write-Host "Tray auto-start and bot-token env var removed."
 

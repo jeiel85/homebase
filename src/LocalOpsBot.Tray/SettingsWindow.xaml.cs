@@ -10,7 +10,7 @@ namespace LocalOpsBot.Tray;
 
 public partial class SettingsWindow : Window
 {
-    private const string ServiceName = "LocalOpsBot.Agent";
+    private const string ServiceName = "Homebase.Agent";
 
     private readonly ISystemMetricsCollector _metrics = new WindowsSystemMetricsCollector();
     private readonly IDiskCollector _disk = new WindowsDiskCollector();

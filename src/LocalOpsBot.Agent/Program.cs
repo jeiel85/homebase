@@ -18,16 +18,16 @@ HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 // The Windows service starts with CWD = C:\Windows\System32, so the default
 // CWD-relative appsettings.json is never found. Load by absolute path from the
 // executable's own folder and from the machine-wide ProgramData location the
-// installer writes to, then let LOCALOPSBOT__ environment variables override.
+// installer writes to, then let HOMEBASE__ environment variables override.
 builder.Configuration
     .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true, reloadOnChange: false)
-    .AddJsonFile(@"C:\ProgramData\LocalOpsBot\config\appsettings.json", optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables("LOCALOPSBOT__");
+    .AddJsonFile(@"C:\ProgramData\Homebase\config\appsettings.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables("HOMEBASE__");
 
 // --- File logging (diagnostics) --------------------------------------------
 // Serilog.Sinks.File is already referenced but was never initialized, so no
 // log file was produced. Write daily rolling logs to ProgramData\logs.
-var logDir = Environment.ExpandEnvironmentVariables(@"%ProgramData%\LocalOpsBot\logs");
+var logDir = Environment.ExpandEnvironmentVariables(@"%ProgramData%\Homebase\logs");
 Directory.CreateDirectory(logDir);
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -43,7 +43,7 @@ builder.Services.AddSerilog(Log.Logger, dispose: true);
 builder.Services.AddWindowsService(options =>
 {
     // Must match the service name the installer registers via sc.exe.
-    options.ServiceName = "LocalOpsBot.Agent";
+    options.ServiceName = "Homebase.Agent";
 });
 
 builder.Services.AddLocalOpsCore(builder.Configuration);

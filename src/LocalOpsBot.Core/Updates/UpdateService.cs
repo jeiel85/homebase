@@ -99,7 +99,7 @@ public sealed class UpdateService
 
     public async Task<string> DownloadUpdateAsync(UpdateInfo info, IProgress<int>? progress, CancellationToken ct)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), "LocalOpsBot_Update");
+        var tempDir = Path.Combine(Path.GetTempPath(), "Homebase_Update");
         Directory.CreateDirectory(tempDir);
         var tempFile = Path.Combine(tempDir, $"update_{Guid.NewGuid():N}.zip");
 
@@ -180,11 +180,11 @@ public sealed class UpdateService
         // a botched update never leaves the monitor permanently down.
         var script = @"$ErrorActionPreference = 'Stop'
 $zip = '__ZIP_PATH__'
-$extract = Join-Path ([System.IO.Path]::GetTempPath()) ('LocalOpsBot_Update_' + [Guid]::NewGuid().ToString('N'))
-$agentDir = 'C:\Program Files\LocalOpsBot\Agent'
-$trayDir = 'C:\Program Files\LocalOpsBot\Tray'
-$serviceName = 'LocalOpsBot.Agent'
-$logDir = Join-Path $env:ProgramData 'LocalOpsBot\logs'
+$extract = Join-Path ([System.IO.Path]::GetTempPath()) ('Homebase_Update_' + [Guid]::NewGuid().ToString('N'))
+$agentDir = 'C:\Program Files\Homebase\Agent'
+$trayDir = 'C:\Program Files\Homebase\Tray'
+$serviceName = 'Homebase.Agent'
+$logDir = Join-Path $env:ProgramData 'Homebase\logs'
 $log = Join-Path $logDir 'update.log'
 
 function Write-Log($m) {
@@ -201,7 +201,7 @@ try {
 
     $agentSrc = Join-Path $extract 'Agent'
     $traySrc  = Join-Path $extract 'Tray'
-    if (-not (Test-Path (Join-Path $agentSrc 'LocalOpsBot.Agent.exe'))) {
+    if (-not (Test-Path (Join-Path $agentSrc 'Homebase.Agent.exe'))) {
         throw 'Agent binary missing from update package; aborting.'
     }
 
@@ -210,10 +210,10 @@ try {
 
     # Wait for the Agent process to actually exit so its files unlock (max ~30s).
     for ($i = 0; $i -lt 30; $i++) {
-        if (-not (Get-Process -Name 'LocalOpsBot.Agent' -ErrorAction SilentlyContinue)) { break }
+        if (-not (Get-Process -Name 'Homebase.Agent' -ErrorAction SilentlyContinue)) { break }
         Start-Sleep -Seconds 1
     }
-    Get-Process -Name 'LocalOpsBot.Tray' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name 'Homebase.Tray' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     Write-Log 'Updating Agent...'
     Copy-Item (Join-Path $agentSrc '*') $agentDir -Recurse -Force

@@ -9,7 +9,7 @@
 #endif
 #define AppPublisher "jeiel85"
 #define AppURL "https://github.com/jeiel85/homebase"
-#define ServiceName "LocalOpsBot.Agent"
+#define ServiceName "Homebase.Agent"
 
 [Setup]
 AppId={{B8A3C4D5-E6F7-8A9B-0C1D-2E3F4A5B6C7D}
@@ -19,7 +19,7 @@ AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
-DefaultDirName={commonpf64}\LocalOpsBot
+DefaultDirName={commonpf64}\Homebase
 ; Always offer the standard default folder, never a previously-remembered path — so a stale
 ; install location can't carry over. Users can still browse to a different folder.
 UsePreviousAppDir=no
@@ -55,19 +55,19 @@ Source: "..\publish\Agent\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recur
 ; Tray binaries
 Source: "..\publish\Tray\*"; DestDir: "{app}\Tray"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: tray
 ; Config sample
-Source: "..\config\appsettings.example.json"; DestDir: "{commonappdata}\LocalOpsBot\config"; Flags: ignoreversion onlyifdoesntexist
+Source: "..\config\appsettings.example.json"; DestDir: "{commonappdata}\Homebase\config"; Flags: ignoreversion onlyifdoesntexist
 ; PowerShell helpers (bundled alongside installer for reference)
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "configure-telegram.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Homebase"; Filename: "{app}\Tray\LocalOpsBot.Tray.exe"; Components: tray
+Name: "{group}\Homebase"; Filename: "{app}\Tray\Homebase.Tray.exe"; Components: tray
 Name: "{group}\Uninstall Homebase"; Filename: "{uninstallexe}"
 
 [Registry]
 ; Tray auto-start for current user
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "LocalOpsBot.Tray"; ValueData: """{app}\Tray\LocalOpsBot.Tray.exe"""; Components: tray; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Homebase.Tray"; ValueData: """{app}\Tray\Homebase.Tray.exe"""; Components: tray; Flags: uninsdeletevalue
 
 [Run]
 ; setup.ps1 installs the service and Tray but leaves Telegram unconfigured
@@ -75,7 +75,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; the Tray welcome window, which applies them with a one-time elevation.
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup.ps1"" -SkipTelegram -NoInteractive -InstallDir ""{app}"" -AgentSource ""{app}\Agent"" -TraySource ""{app}\Tray"""; StatusMsg: "Installing service and tray..."; Flags: runhidden
 ; Launch the Tray so first-run onboarding appears right after install.
-Filename: "{app}\Tray\LocalOpsBot.Tray.exe"; Description: "Start Homebase"; Flags: nowait postinstall skipifsilent; Components: tray
+Filename: "{app}\Tray\Homebase.Tray.exe"; Description: "Start Homebase"; Flags: nowait postinstall skipifsilent; Components: tray
 
 [UninstallRun]
 ; The Agent service is created with sc.exe, so the installer doesn't track it — remove it

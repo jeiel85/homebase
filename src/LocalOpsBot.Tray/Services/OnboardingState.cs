@@ -10,7 +10,7 @@ internal static class OnboardingState
 {
     private static string MarkerPath => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LocalOpsBot", "onboarding.done");
+        "Homebase", "onboarding.done");
 
     public static bool IsCompleted()
     {

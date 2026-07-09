@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.3 — Full Homebase rebrand (service, binaries, folders)
+
+### Changed
+- Renamed to Homebase everywhere it is visible: the install folder (`C:\Program Files\Homebase`),
+  the Windows service (`Homebase.Agent`), the executables (`Homebase.Agent.exe`,
+  `Homebase.Tray.exe`), the data/config folder (`C:\ProgramData\Homebase`), and the bot-token
+  environment variable (`HOMEBASE_TELEGRAM_TOKEN`). Reinstall with the new setup to pick it up.
+
 ## v0.7.2 — Cleaner install folder; repo renamed to homebase
 
 ### Changed

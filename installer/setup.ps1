@@ -44,20 +44,20 @@ param(
 )
 
 # --- Constants ---
-$ServiceName  = "LocalOpsBot.Agent"
+$ServiceName  = "Homebase.Agent"
 $DisplayName  = "Homebase"
 # When the installer passes -InstallDir ({app}), run the service and tray from there — a single,
 # installer-tracked location. Standalone (.zip) installs fall back to Program Files.
-if ($InstallDir) { $InstallRoot = $InstallDir } else { $InstallRoot = "C:\Program Files\LocalOpsBot" }
+if ($InstallDir) { $InstallRoot = $InstallDir } else { $InstallRoot = "C:\Program Files\Homebase" }
 $AgentDir     = Join-Path $InstallRoot "Agent"
 $TrayDir      = Join-Path $InstallRoot "Tray"
-$AgentExe     = Join-Path $AgentDir "LocalOpsBot.Agent.exe"
-$TrayExe      = Join-Path $TrayDir "LocalOpsBot.Tray.exe"
-$ConfigDir    = "C:\ProgramData\LocalOpsBot\config"
-$DataDir      = "C:\ProgramData\LocalOpsBot\data"
-$LogDir       = "C:\ProgramData\LocalOpsBot\logs"
-$ProgramData  = "C:\ProgramData\LocalOpsBot"
-$EnvVarName   = "LOCALOPSBOT_TELEGRAM_TOKEN"
+$AgentExe     = Join-Path $AgentDir "Homebase.Agent.exe"
+$TrayExe      = Join-Path $TrayDir "Homebase.Tray.exe"
+$ConfigDir    = "C:\ProgramData\Homebase\config"
+$DataDir      = "C:\ProgramData\Homebase\data"
+$LogDir       = "C:\ProgramData\Homebase\logs"
+$ProgramData  = "C:\ProgramData\Homebase"
+$EnvVarName   = "HOMEBASE_TELEGRAM_TOKEN"
 $ConfigFile   = Join-Path $ConfigDir "appsettings.json"
 $ConfigSample = Join-Path $ConfigDir "appsettings.example.json"
 $GitHubRepo   = "jeiel85/homebase"
@@ -68,7 +68,7 @@ if (-not $AgentSource) {
     $candidate = Join-Path $ScriptRoot "..\Agent"
     if (Test-Path $candidate) { $AgentSource = Resolve-Path $candidate }
 }
-if (-not $AgentSource -or -not (Test-Path (Join-Path $AgentSource "LocalOpsBot.Agent.exe"))) {
+if (-not $AgentSource -or -not (Test-Path (Join-Path $AgentSource "Homebase.Agent.exe"))) {
     $candidate = Join-Path $ScriptRoot "Agent"
     if (Test-Path $candidate) { $AgentSource = Resolve-Path $candidate }
 }
@@ -76,13 +76,13 @@ if (-not $TraySource) {
     $candidate = Join-Path $ScriptRoot "..\Tray"
     if (Test-Path $candidate) { $TraySource = Resolve-Path $candidate }
 }
-if (-not $TraySource -or -not (Test-Path (Join-Path $TraySource "LocalOpsBot.Tray.exe"))) {
+if (-not $TraySource -or -not (Test-Path (Join-Path $TraySource "Homebase.Tray.exe"))) {
     $candidate = Join-Path $ScriptRoot "Tray"
     if (Test-Path $candidate) { $TraySource = Resolve-Path $candidate }
 }
 
-$HasAgentBinaries = $AgentSource -and (Test-Path (Join-Path $AgentSource "LocalOpsBot.Agent.exe"))
-$HasTrayBinaries  = $TraySource  -and (Test-Path (Join-Path $TraySource  "LocalOpsBot.Tray.exe"))
+$HasAgentBinaries = $AgentSource -and (Test-Path (Join-Path $AgentSource "Homebase.Agent.exe"))
+$HasTrayBinaries  = $TraySource  -and (Test-Path (Join-Path $TraySource  "Homebase.Tray.exe"))
 
 # --- Detect config sample ---
 $SampleCandidates = @(
@@ -198,7 +198,7 @@ function Write-Config {
 $verText = "v?"
 if ($HasAgentBinaries) {
     try {
-        $pv = (Get-Item (Join-Path $AgentSource "LocalOpsBot.Agent.exe")).VersionInfo.ProductVersion
+        $pv = (Get-Item (Join-Path $AgentSource "Homebase.Agent.exe")).VersionInfo.ProductVersion
         if ($pv) { $verText = "v$pv" }
     } catch { }
 }
@@ -340,7 +340,7 @@ Write-Ok "Service '$ServiceName' created and started"
 # --- Step 7: Register Tray auto-start ---
 Write-Step "Step 7/7: Registering Tray auto-start"
 if (Test-Path $TrayExe) {
-    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LocalOpsBot.Tray" -Value "`"$TrayExe`"" -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Homebase.Tray" -Value "`"$TrayExe`"" -PropertyType String -Force | Out-Null
     Write-Ok "Tray auto-start registered"
 } else {
     Write-Warn "Tray binary not found — auto-start skipped"
@@ -350,7 +350,7 @@ if (Test-Path $TrayExe) {
 #  DONE
 # ============================================================
 Write-Host "`n==============================================" -ForegroundColor Cyan
-Write-Host "  [DONE] LocalOpsBot installed successfully!" -ForegroundColor Green
+Write-Host "  [DONE] Homebase installed successfully!" -ForegroundColor Green
 Write-Host "==============================================`n" -ForegroundColor Cyan
 Write-Host "  Agent     : $AgentDir"
 Write-Host "  Tray      : $TrayDir"

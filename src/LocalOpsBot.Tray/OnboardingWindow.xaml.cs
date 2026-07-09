@@ -71,7 +71,7 @@ public partial class OnboardingWindow : Window
                 break;
             case AgentServiceState.Stopped:
                 SetChip(ServiceChip, ServiceChipText, Chip.Setup);
-                ServiceStatusText.Text = "Installed but stopped. Start the LocalOpsBot.Agent service.";
+                ServiceStatusText.Text = "Installed but stopped. Start the Homebase.Agent service.";
                 break;
             default:
                 SetChip(ServiceChip, ServiceChipText, Chip.Missing);

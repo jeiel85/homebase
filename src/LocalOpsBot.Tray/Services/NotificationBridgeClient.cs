@@ -8,7 +8,7 @@ namespace LocalOpsBot.Tray.Services;
 public sealed class NotificationBridgeClient : INotificationBridgeClient, IDisposable
 {
     private NamedPipeClientStream? _pipe;
-    private const string PipeName = "LocalOpsBot.NotificationPipe";
+    private const string PipeName = "Homebase.NotificationPipe";
     private const int MaxRetries = 5;
     private const int RetryDelayMs = 1000;
     private const int ConnectTimeoutMs = 3000;

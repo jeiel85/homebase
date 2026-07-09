@@ -18,9 +18,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$ServiceName = "LocalOpsBot.Agent"
-$EnvVarName  = "LOCALOPSBOT_TELEGRAM_TOKEN"
-$ConfigDir   = "C:\ProgramData\LocalOpsBot\config"
+$ServiceName = "Homebase.Agent"
+$EnvVarName  = "HOMEBASE_TELEGRAM_TOKEN"
+$ConfigDir   = "C:\ProgramData\Homebase\config"
 $ConfigFile  = Join-Path $ConfigDir "appsettings.json"
 
 function Test-BotToken($t) { return $t -match '^\d{6,10}:[A-Za-z0-9_-]{30,}$' }

@@ -4,6 +4,8 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <OutputType>WinExe</OutputType>
+    <!-- Output exe is Homebase.Tray.exe (brand); namespace/x:Class stay LocalOpsBot.Tray.* -->
+    <AssemblyName>Homebase.Tray</AssemblyName>
     <NoWarn>NU1701</NoWarn>
     <ApplicationIcon>Resources\homebase.ico</ApplicationIcon>
   </PropertyGroup>

@@ -10,7 +10,7 @@
 #Requires -RunAsAdministrator
 
 $Repo = "jeiel85/homebase"
-$TempDir = Join-Path $env:TEMP "LocalOpsBot-Bootstrap"
+$TempDir = Join-Path $env:TEMP "Homebase-Bootstrap"
 $SetupZip = Join-Path $TempDir "Homebase-Setup.zip"
 
 Write-Host "==============================================" -ForegroundColor Cyan

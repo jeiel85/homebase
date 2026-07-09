@@ -12,7 +12,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddLocalOpsData(
         this IServiceCollection services, IConfiguration config)
     {
-        var dbPathSetting = config["agent:databasePath"] ?? "%ProgramData%/LocalOpsBot/data/localops.db";
+        var dbPathSetting = config["agent:databasePath"] ?? "%ProgramData%/Homebase/data/localops.db";
         var dataOpts = new DataOptions { DatabasePath = dbPathSetting };
         var dbPath = Environment.ExpandEnvironmentVariables(dataOpts.DatabasePath);
         var dir = Path.GetDirectoryName(dbPath);

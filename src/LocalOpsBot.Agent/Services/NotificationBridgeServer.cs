@@ -14,7 +14,7 @@ public sealed class NotificationBridgeServer : INotificationBridgeServer, IHoste
     private NamedPipeServerStream? _pipe;
     private CancellationTokenSource? _cts;
     private readonly ILogger<NotificationBridgeServer> _logger;
-    private const string PipeName = "LocalOpsBot.NotificationPipe";
+    private const string PipeName = "Homebase.NotificationPipe";
 
     public event Action<ToastNotificationEvent>? NotificationReceived;
 

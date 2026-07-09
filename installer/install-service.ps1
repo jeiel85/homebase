@@ -22,15 +22,15 @@ param(
 
 #Requires -RunAsAdministrator
 
-$ServiceName = "LocalOpsBot.Agent"
+$ServiceName = "Homebase.Agent"
 $DisplayName = "Homebase"
-$AgentDir = "C:\Program Files\LocalOpsBot\Agent"
-$TrayDir = "C:\Program Files\LocalOpsBot\Tray"
-$AgentExe = Join-Path $AgentDir "LocalOpsBot.Agent.exe"
-$TrayExe = Join-Path $TrayDir "LocalOpsBot.Tray.exe"
-$ConfigDir = "C:\ProgramData\LocalOpsBot\config"
-$DataDir = "C:\ProgramData\LocalOpsBot\data"
-$LogDir = "C:\ProgramData\LocalOpsBot\logs"
+$AgentDir = "C:\Program Files\Homebase\Agent"
+$TrayDir = "C:\Program Files\Homebase\Tray"
+$AgentExe = Join-Path $AgentDir "Homebase.Agent.exe"
+$TrayExe = Join-Path $TrayDir "Homebase.Tray.exe"
+$ConfigDir = "C:\ProgramData\Homebase\config"
+$DataDir = "C:\ProgramData\Homebase\data"
+$LogDir = "C:\ProgramData\Homebase\logs"
 
 if (-not $AgentSource) { $AgentSource = Join-Path $PSScriptRoot "..\publish\Agent" }
 if (-not $TraySource) { $TraySource = Join-Path $PSScriptRoot "..\publish\Tray" }
@@ -39,11 +39,11 @@ $TraySource = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromP
 
 # --- Pre-flight checks ---
 if (-not (Test-Path $AgentSource)) {
-    Write-Error "Agent source not found: $AgentSource`nBuild first: dotnet publish src/LocalOpsBot.Agent -c Release -r win-x64 --self-contained true -o publish/Agent"
+    Write-Error "Agent source not found: $AgentSource`nBuild first: dotnet publish src/Homebase.Agent -c Release -r win-x64 --self-contained true -o publish/Agent"
     exit 1
 }
-if (-not (Test-Path (Join-Path $AgentSource "LocalOpsBot.Agent.exe"))) {
-    Write-Error "LocalOpsBot.Agent.exe not found in $AgentSource"
+if (-not (Test-Path (Join-Path $AgentSource "Homebase.Agent.exe"))) {
+    Write-Error "Homebase.Agent.exe not found in $AgentSource"
     exit 1
 }
 
@@ -96,15 +96,15 @@ Write-Host "Service started." -ForegroundColor Green
 
 # --- Register Tray auto-start ---
 if (Test-Path $TrayExe) {
-    $existingPath = (Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LocalOpsBot.Tray" -ErrorAction SilentlyContinue)."LocalOpsBot.Tray"
+    $existingPath = (Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Homebase.Tray" -ErrorAction SilentlyContinue)."Homebase.Tray"
     if (-not $existingPath) {
-        New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LocalOpsBot.Tray" -Value "`"$TrayExe`"" -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Homebase.Tray" -Value "`"$TrayExe`"" -PropertyType String -Force | Out-Null
         Write-Host "Tray auto-start registered for current user." -ForegroundColor Green
     }
 }
 
 # --- Summary ---
-Write-Host "`n=== LocalOpsBot Installation Complete ===" -ForegroundColor Green
+Write-Host "`n=== Homebase Installation Complete ===" -ForegroundColor Green
 Write-Host "Agent: $AgentDir"
 Write-Host "Tray:  $TrayDir"
 Write-Host "Config: $ConfigDir"
@@ -112,7 +112,7 @@ Write-Host "Data:  $DataDir"
 Write-Host "Logs:  $LogDir"
 Write-Host "`nNext steps:"
 Write-Host "  1. Set your Telegram bot token:"
-Write-Host "     [Environment]::SetEnvironmentVariable('LOCALOPSBOT_TELEGRAM_TOKEN', 'YOUR_TOKEN', 'Machine')"
+Write-Host "     [Environment]::SetEnvironmentVariable('HOMEBASE_TELEGRAM_TOKEN', 'YOUR_TOKEN', 'Machine')"
 Write-Host "  2. Edit config: $ConfigDir\appsettings.json"
 Write-Host "     - Set your chat_id in allowedChatIds"
 Write-Host "  3. Restart service: Restart-Service $ServiceName"

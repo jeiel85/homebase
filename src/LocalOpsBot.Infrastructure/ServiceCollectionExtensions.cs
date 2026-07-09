@@ -105,7 +105,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddHttpClient<UpdateService>("GitHub", client =>
         {
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("LocalOpsBot/0.1");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Homebase/0.1");
             client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
             client.Timeout = TimeSpan.FromSeconds(20);
         });

@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <!-- Output exe is Homebase.Agent.exe (brand); namespace/service code names stay LocalOpsBot.* -->
+    <AssemblyName>Homebase.Agent</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\LocalOpsBot.Core\LocalOpsBot.Core.csproj" />
