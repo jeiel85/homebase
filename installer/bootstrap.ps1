@@ -11,7 +11,7 @@
 
 $Repo = "jeiel85/localops-bot"
 $TempDir = Join-Path $env:TEMP "LocalOpsBot-Bootstrap"
-$SetupZip = Join-Path $TempDir "LocalOpsBot-Setup.zip"
+$SetupZip = Join-Path $TempDir "Homebase-Setup.zip"
 
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host "  Homebase — Bootstrap Installer" -ForegroundColor Cyan
@@ -34,13 +34,13 @@ try {
 }
 
 # --- Download Setup.zip ---
-$url = "https://github.com/$Repo/releases/$tag/download/LocalOpsBot-Setup.zip"
+$url = "https://github.com/$Repo/releases/$tag/download/Homebase-Setup.zip"
 Write-Host ">>> Downloading Setup.zip..." -ForegroundColor Cyan
 try {
     Invoke-WebRequest -Uri $url -OutFile $SetupZip -UseBasicParsing
 } catch {
     Write-Host "  Retrying with /latest/download..." -ForegroundColor Yellow
-    $url = "https://github.com/$Repo/releases/latest/download/LocalOpsBot-Setup.zip"
+    $url = "https://github.com/$Repo/releases/latest/download/Homebase-Setup.zip"
     Invoke-WebRequest -Uri $url -OutFile $SetupZip -UseBasicParsing
 }
 Write-Host "  Downloaded to $SetupZip" -ForegroundColor Green

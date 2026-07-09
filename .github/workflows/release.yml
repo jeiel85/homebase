@@ -42,9 +42,9 @@ jobs:
           Copy-Item "installer\setup.ps1" "publish\Setup\" -Force
           Copy-Item "installer\uninstall-service.ps1" "publish\Setup\" -Force
           Copy-Item "installer\register-startup-tray.ps1" "publish\Setup\" -Force
-          Compress-Archive -Path publish\Setup\* -DestinationPath LocalOpsBot-Setup.zip -Force
-          $hash = (Get-FileHash LocalOpsBot-Setup.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -Path LocalOpsBot-Setup.zip.sha256 -Value $hash
+          Compress-Archive -Path publish\Setup\* -DestinationPath Homebase-Setup.zip -Force
+          $hash = (Get-FileHash Homebase-Setup.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path Homebase-Setup.zip.sha256 -Value $hash
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
@@ -65,8 +65,8 @@ jobs:
           name: Homebase ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
           files: |
-            publish/LocalOpsBot-Setup.exe
-            LocalOpsBot-Setup.zip
-            LocalOpsBot-Setup.zip.sha256
+            publish/Homebase-Setup.exe
+            Homebase-Setup.zip
+            Homebase-Setup.zip.sha256
             installer/bootstrap.ps1
             config/appsettings.example.json

@@ -82,7 +82,7 @@ public sealed class UpdateService
                     // Target the combined installer package explicitly. Releases can carry
                     // several .zip assets, so matching "the first .zip" is order-dependent
                     // and unreliable — pin to the exact name the release workflow produces.
-                    const string setupZipName = "LocalOpsBot-Setup.zip";
+                    const string setupZipName = "Homebase-Setup.zip";
                     var setupAsset = r.Assets?.FirstOrDefault(a => string.Equals(a.Name, setupZipName, StringComparison.OrdinalIgnoreCase));
                     var shaAsset = r.Assets?.FirstOrDefault(a => string.Equals(a.Name, setupZipName + ".sha256", StringComparison.OrdinalIgnoreCase));
                     if (setupAsset?.BrowserDownloadUrl != null)
@@ -172,7 +172,7 @@ public sealed class UpdateService
 
     public void ApplyUpdate(string zipPath)
     {
-        // The update package is LocalOpsBot-Setup.zip, whose root contains Agent\ and
+        // The update package is Homebase-Setup.zip, whose root contains Agent\ and
         // Tray\ folders. Extract to a temp dir, then copy each component into place so
         // both the service and the tray app get updated. Uses a non-interpolated verbatim
         // string + Replace so PowerShell's own braces don't need doubling. The script

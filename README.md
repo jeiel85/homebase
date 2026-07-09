@@ -52,13 +52,13 @@
 
 | 파일 | 이럴 때 받으세요 |
 |---|---|
-| **`LocalOpsBot-Setup.exe`** | ⭐ **대부분 이것 하나면 됩니다.** 더블클릭하면 마법사가 토큰·chat ID를 묻고 설치를 끝냅니다 |
-| `LocalOpsBot-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1` 실행 |
+| **`Homebase-Setup.exe`** | ⭐ **대부분 이것 하나면 됩니다.** 더블클릭하면 마법사가 토큰·chat ID를 묻고 설치를 끝냅니다 |
+| `Homebase-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1` 실행 |
 | `bootstrap.ps1` | 명령 한 줄 설치 (아래 방법 B) |
 
 **방법 A — 설치 마법사 (권장)**
 
-1. `LocalOpsBot-Setup.exe`를 받아 더블클릭
+1. `Homebase-Setup.exe`를 받아 더블클릭
 2. **Windows SmartScreen** 경고("Windows의 PC 보호")가 뜨면 → **추가 정보** → **실행**을 누르세요. 서명되지 않은 개인용 앱이라 표시되는 정상 경고입니다
 3. 마법사가 물어보는 Telegram 봇 토큰과 chat ID 입력
 4. 설치가 끝나면 Telegram에서 봇에게 `/ping` 전송

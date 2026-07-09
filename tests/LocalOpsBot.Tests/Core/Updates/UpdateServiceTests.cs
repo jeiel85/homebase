@@ -24,12 +24,12 @@ public sealed class UpdateServiceTests
     public async Task CheckForUpdate_PicksSetupZip_EvenWhenOtherZipsPresent()
     {
         // Agent.zip is listed first — the old "first .zip wins" logic would have grabbed
-        // the wrong asset. The fix must pin to LocalOpsBot-Setup.zip regardless of order.
+        // the wrong asset. The fix must pin to Homebase-Setup.zip regardless of order.
         var handler = new FakeHttpMessageHandler();
         handler.QueueResponse(HttpStatusCode.OK, ReleasesJson("v99.0.0",
             ("LocalOpsBot-Agent.zip", "http://x/agent.zip"),
-            ("LocalOpsBot-Setup.zip", "http://x/setup.zip"),
-            ("LocalOpsBot-Setup.zip.sha256", "http://x/setup.sha")));
+            ("Homebase-Setup.zip", "http://x/setup.zip"),
+            ("Homebase-Setup.zip.sha256", "http://x/setup.sha")));
 
         var info = await CreateService(handler).CheckForUpdateAsync(CancellationToken.None);
 

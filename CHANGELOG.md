@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Release assets are renamed to the Homebase brand: `Homebase-Setup.exe`, `Homebase-Setup.zip`,
+  and `Homebase-Setup.zip.sha256` (previously `LocalOpsBot-Setup.*`). Internal names — the
+  install folder, Windows service, and binaries — are unchanged.
+
+> **Upgrade note:** the auto-updater in v0.5.1 and earlier looks for the old
+> `LocalOpsBot-Setup.zip` asset, so it cannot bridge this rename. Update **once manually** by
+> downloading the new `Homebase-Setup.exe`; auto-update resumes normally from then on.
+
 ## v0.5.1 — /events Fix & Event Log Failure Logging
 
 ### Fixed

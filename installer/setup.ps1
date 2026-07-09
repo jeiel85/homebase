@@ -210,7 +210,7 @@ if ($existingService) {
 }
 
 # --- Step 0: Verify binaries are present ---
-# setup.ps1 always ships inside the LocalOpsBot-Setup package (the .zip payload or
+# setup.ps1 always ships inside the Homebase-Setup package (the .zip payload or
 # the Setup.exe install dir), so the Agent/ and Tray/ folders sit next to it.
 # There are no standalone Agent/Tray zips to fall back to anymore.
 Write-Step "Step 0/7: Verifying binaries"
@@ -218,7 +218,7 @@ if ($HasAgentBinaries) {
     Write-Ok "Agent binaries found at $AgentSource"
 } else {
     Write-Host "  [X] Agent binaries not found next to setup.ps1." -ForegroundColor Red
-    Write-Host "      Download the full 'LocalOpsBot-Setup.zip', extract it, then run setup.ps1" -ForegroundColor Yellow
+    Write-Host "      Download the full 'Homebase-Setup.zip', extract it, then run setup.ps1" -ForegroundColor Yellow
     Write-Host "      from the extracted folder. Or use the one-liner installer instead:" -ForegroundColor Yellow
     Write-Host "      irm https://github.com/$GitHubRepo/releases/latest/download/bootstrap.ps1 | iex" -ForegroundColor Yellow
     exit 1
