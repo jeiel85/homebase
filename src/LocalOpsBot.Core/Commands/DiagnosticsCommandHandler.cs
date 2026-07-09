@@ -18,6 +18,8 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
     private readonly IReadOnlyList<TcpPortConfig> _tcpPorts;
     private readonly IConfiguration _config;
     private readonly ITelegramPollStatus _pollStatus;
+    private readonly TemperatureOptions _temperatureOptions;
+    private readonly ITemperatureCollector _temperature;
 
     public string CommandName => "diagnostics";
     public string Description => "Agent self-diagnostics";
@@ -30,7 +32,9 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
         IEnumerable<HttpEndpointConfig> httpEndpoints,
         IEnumerable<TcpPortConfig> tcpPorts,
         IConfiguration config,
-        ITelegramPollStatus pollStatus)
+        ITelegramPollStatus pollStatus,
+        TemperatureOptions temperatureOptions,
+        ITemperatureCollector temperature)
     {
         _stateStore = stateStore;
         _alertStore = alertStore;
@@ -40,6 +44,8 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
         _tcpPorts = tcpPorts.ToList();
         _config = config;
         _pollStatus = pollStatus;
+        _temperatureOptions = temperatureOptions;
+        _temperature = temperature;
     }
 
     public async Task<CommandResult> HandleAsync(BotCommand command, CancellationToken ct)
@@ -83,6 +89,27 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
 
         var forwarding = _config.GetSection("notificationForwarding").GetValue<bool>("enabled") ? Strings.On : Strings.Off;
 
+        // Temperature backend + live sensor count — makes "why are temps blank?" self-diagnosable
+        // (e.g. "Wmi, 0 sensors" on a desktop that doesn't expose ACPI zones → opt into full sensors).
+        string temperature;
+        if (!_temperatureOptions.Enabled)
+        {
+            temperature = Strings.Off;
+        }
+        else
+        {
+            try
+            {
+                var tempResult = await _temperature.CollectAsync(ct);
+                var count = tempResult.Success ? tempResult.Snapshot?.Sensors.Count ?? 0 : 0;
+                temperature = $"{_temperatureOptions.Source}, {count} sensor{(count == 1 ? "" : "s")}";
+            }
+            catch (Exception ex)
+            {
+                temperature = $"{_temperatureOptions.Source} (error: {ex.GetType().Name})";
+            }
+        }
+
         string lastPoll;
         var lastPollUtc = _pollStatus.LastSuccessfulPollUtc;
         if (lastPollUtc is null)
@@ -109,6 +136,7 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
             $"{Strings.WatchesLabel}: <code>{Strings.WatchesSummary(_processWatches.Count, _serviceWatches.Count, _httpEndpoints.Count, _tcpPorts.Count)}</code>",
             $"{Strings.AlertsSent24hLabel}: <code>{(alerts24h < 0 ? "?" : alerts24h.ToString())}</code>",
             $"{Strings.ForwardingLabel}: <code>{forwarding}</code>",
+            $"{Strings.TemperatureLabel}: <code>{temperature}</code>",
         };
 
         return new CommandResult(true, string.Join("\n", lines));

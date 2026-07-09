@@ -79,6 +79,16 @@ PC 상태 감시, 프로세스 감시, 알림 읽기, Telegram 통신을 하는 
 - 설치 경로와 로그 제공
 - code signing은 장기 목표
 
+### 8-1. 온도 센서 드라이버(WinRing0) 탐지 — 확인된 사례
+
+온도 모니터링에 LibreHardwareMonitor를 쓰면 하드웨어 센서 접근을 위해 **WinRing0 커널 드라이버**를 로드한다. 이 드라이버는 임의 커널 포트·메모리 I/O를 허용해 Microsoft **취약 드라이버 차단 목록**에 올라 있고, Windows Defender가 `VulnerableDriver:WinNT/Winring0`(심각/트로이)로 탐지한다. LHM이 호스트 프로세스명으로 드라이버를 추출하므로 파일명은 `Homebase.Agent.sys`로 보이지만, 탐지는 파일명이 아니라 **시그니처** 기준이라 이름을 바꿔도 회피되지 않는다.
+
+대응(현재 구현):
+
+- **기본 온도 백엔드를 드라이버 없는 WMI/ACPI(`temperature.source = "Wmi"`)로 전환** → 신규 설치에서 드라이버를 로드하지 않아 탐지가 뜨지 않는다. 다만 많은 데스크톱은 ACPI 존 온도를 노출하지 않아 값이 비어 있을 수 있다.
+- **정밀 센서는 opt-in**: `installer/enable-temperature.ps1`(관리자)이 `source`를 `LibreHardware`로 바꾸고 드라이버에 대한 Defender 예외를 등록하며, 언인스톨/`-Disable` 시 예외를 정리한다.
+- **한계**: Defender 예외는 AV *탐지*만 억제한다. 취약 드라이버 차단 목록·HVCI(메모리 무결성)·Smart App Control이 켜진 PC에서는 예외와 무관하게 드라이버 로드가 커널 수준에서 차단되어 온도가 여전히 비어 있을 수 있다. `enable-temperature.ps1`은 이 상태를 감지해 사전 경고한다.
+
 ## 9. 네트워크 단절
 
 Telegram API 접근이 안 되면 알림 전송이 불가능하다.

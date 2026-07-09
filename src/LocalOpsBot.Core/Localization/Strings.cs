@@ -201,6 +201,7 @@ public static class Strings
     public static string WatchesLabel => T("Watches", "감시");
     public static string AlertsSent24hLabel => T("Alerts sent (24h)", "발송된 알림 (24h)");
     public static string ForwardingLabel => T("Notification forwarding", "알림 전달");
+    public static string TemperatureLabel => T("Temperature", "온도");
     public static string Never => T("never", "없음");
     public static string TimeAgo(string age) => T($"{age} ago", $"{age} 전");
     public static string MuteUntil(string time) => T($"until {time}", $"{time} 까지");

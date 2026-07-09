@@ -178,6 +178,22 @@
           </StackPanel>
         </Border>
 
+        <!-- ═ TEMPERATURE (informational — enabling full sensors is a manual admin step) ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="TEMPERATURE · OPTIONAL"/>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap"
+                       Text="/status and advice show temperatures. By default Homebase uses a driver-free WMI sensor — many desktops don't expose it, so temps may be blank."/>
+            <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,6,0,0"
+                       Text="For full CPU/GPU sensors, run this as admin. It loads a driver that antivirus flags as vulnerable, and registers a Defender exclusion for it:"/>
+            <TextBlock FontFamily="Consolas" FontSize="12" Margin="0,3,0,0"
+                       Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap"
+                       Text="enable-temperature.ps1"/>
+          </StackPanel>
+        </Border>
+
         <!-- ═ GUIDANCE ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
           <TextBlock Style="{StaticResource Type.SectionLabel}" Text="FIRST TIME?"/>

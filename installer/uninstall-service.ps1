@@ -50,7 +50,23 @@ Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" 
 [Environment]::SetEnvironmentVariable($EnvVarName, $null, 'Machine')
 Write-Host "Tray auto-start and bot-token env var removed."
 
-# 4) Remove binaries from the default location and, if given, the actual install dir.
+# 4) Remove the Defender exclusion that enable-temperature.ps1 may have added for the driver.
+$driverRoots = @($DefaultRoot)
+if ($InstallDir) { $driverRoots += $InstallDir }
+foreach ($dr in ($driverRoots | Select-Object -Unique)) {
+    $sys = Join-Path $dr "Agent\Homebase.Agent.sys"
+    try {
+        $current = (Get-MpPreference -ErrorAction Stop).ExclusionPath
+        if ($current -and ($current -contains $sys)) {
+            Remove-MpPreference -ExclusionPath $sys -ErrorAction Stop
+            Write-Host "Removed Defender exclusion for $sys"
+        }
+    } catch {
+        # Defender cmdlets unavailable (e.g. third-party AV) — nothing to clean up.
+    }
+}
+
+# 5) Remove binaries from the default location and, if given, the actual install dir.
 $roots = @($DefaultRoot)
 if ($InstallDir) { $roots += $InstallDir }
 foreach ($root in ($roots | Select-Object -Unique)) {
@@ -63,7 +79,7 @@ foreach ($root in ($roots | Select-Object -Unique)) {
     }
 }
 
-# 5) Purge or keep data.
+# 6) Purge or keep data.
 if ($Purge) {
     if (Test-Path $ProgramData) {
         Remove-Item $ProgramData -Recurse -Force -ErrorAction SilentlyContinue

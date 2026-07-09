@@ -98,6 +98,23 @@ dotnet build LocalOpsBot.sln
 | `/unmute` | 알림 다시 활성화 |
 | `/diagnostics` | 에이전트 자체 진단 |
 
+## 🌡️ 온도 모니터링
+
+`/status`와 조언(`/advise`)에 CPU·보드 온도가 함께 표시됩니다. 센서 백엔드는 두 가지입니다.
+
+- **기본값 — WMI/ACPI 센서:** 커널 드라이버를 로드하지 않아 백신에 탐지되지 않습니다. 다만 메인보드 ACPI 존 온도만 제공하며, **많은 데스크톱은 이 값을 노출하지 않아** 온도가 표시되지 않을 수 있습니다.
+- **정밀 센서(opt-in) — LibreHardwareMonitor:** CPU 코어별·GPU·보드 온도까지 읽지만, 이를 위해 **WinRing0 커널 드라이버**를 로드합니다. Windows Defender는 이 드라이버를 취약 드라이버(`VulnerableDriver:WinNT/Winring0`)로 분류합니다.
+
+정밀 센서를 켜려면 **관리자 PowerShell**에서:
+
+```powershell
+& "C:\Program Files\Homebase\enable-temperature.ps1"
+```
+
+이 스크립트는 설정을 `LibreHardware`로 바꾸고, 드라이버에 대한 **Defender 예외를 자동 등록**한 뒤 서비스를 재시작합니다. 되돌리려면 `-Disable`을 붙여 실행하세요.
+
+> **보안 주의:** Defender 예외는 백신 *탐지*만 숨깁니다. 이 PC가 취약 드라이버 차단목록(메모리 무결성/HVCI/Smart App Control — 최신 Windows 11에서 기본 켜짐)을 적용 중이면, 예외와 무관하게 드라이버 로드가 커널 수준에서 차단되어 온도가 여전히 비어 있을 수 있습니다. 그 경우 기본 WMI 센서를 유지하세요.
+
 ## 🏗️ 아키텍처
 
 ```

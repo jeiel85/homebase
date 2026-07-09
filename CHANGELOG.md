@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.8.0 — Temperature: driver-free by default, full sensors opt-in
+
+### Changed
+- Temperature monitoring now defaults to a **driver-free WMI/ACPI sensor**, so a fresh install no
+  longer loads the WinRing0 kernel driver that Windows Defender flags as vulnerable
+  (`VulnerableDriver:WinNT/Winring0`). Controlled by the new `temperature.source` key (`"Wmi"` by
+  default). WMI exposes only coarse ACPI zone temperatures — and many desktops don't expose them at
+  all — so temperatures may be blank; use the opt-in below for full sensors.
+- `/diagnostics` now reports the active temperature backend and live sensor count (e.g.
+  `Wmi, 0 sensors`), so an empty temperature reading is self-diagnosable.
+
+### Added
+- **Opt-in full sensors:** run `enable-temperature.ps1` as administrator to switch to
+  LibreHardware (per-core CPU / GPU / board sensors). It registers a Defender exclusion for the
+  driver and restarts the service; `-Disable` reverts to WMI and removes the exclusion, and
+  uninstall removes it too. The script warns when Memory Integrity / the vulnerable-driver
+  blocklist is active, since the driver may then be blocked from loading regardless of the
+  exclusion.
+
 ## v0.7.5 — Bot replies in your language
 
 ### Added

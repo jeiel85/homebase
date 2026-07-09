@@ -60,6 +60,7 @@ Source: "..\config\appsettings.example.json"; DestDir: "{commonappdata}\Homebase
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "configure-telegram.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "enable-temperature.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Homebase"; Filename: "{app}\Tray\Homebase.Tray.exe"; Components: tray

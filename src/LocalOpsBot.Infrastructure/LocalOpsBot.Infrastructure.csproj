@@ -6,6 +6,9 @@
     <ProjectReference Include="..\LocalOpsBot.Core\LocalOpsBot.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="LocalOpsBot.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- 0.9.4 aligns with System.Management 9.0.0 (below); 0.9.5+ require System.Management 10.x (.NET 10). -->
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />

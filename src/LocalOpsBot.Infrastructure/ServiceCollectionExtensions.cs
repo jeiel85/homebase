@@ -11,6 +11,7 @@ using LocalOpsBot.Infrastructure.Telegram;
 using LocalOpsBot.Infrastructure.Windows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace LocalOpsBot.Infrastructure;
 
@@ -80,8 +81,19 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProcessCollector, WindowsProcessCollector>();
         services.AddSingleton<IWindowsServiceCollector, WindowsServiceCollector>();
         services.AddSingleton<IEventLogWatcher, WindowsEventLogWatcher>();
-        // Singleton so the LHM kernel driver opens once; the container disposes it on shutdown.
-        services.AddSingleton<ITemperatureCollector, LibreHardwareTemperatureCollector>();
+        // Pick the temperature backend from config. The default (WMI) loads no kernel driver; the
+        // LibreHardware backend is opt-in and loads WinRing0, which antivirus flags. Singleton so
+        // the LHM kernel driver opens at most once; the container disposes it on shutdown.
+        services.AddSingleton<ITemperatureCollector>(sp =>
+        {
+            var options = sp.GetService<TemperatureOptions>() ?? new TemperatureOptions();
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+            return options.Source == TemperatureSource.LibreHardware
+                ? new LibreHardwareTemperatureCollector(
+                    options, loggerFactory?.CreateLogger<LibreHardwareTemperatureCollector>())
+                : new WmiTemperatureCollector(
+                    options, loggerFactory?.CreateLogger<WmiTemperatureCollector>());
+        });
 
         services.AddSingleton<IHttpEndpointMonitor, HttpEndpointMonitor>();
         services.AddSingleton<ITcpPortMonitor, TcpPortMonitor>();
