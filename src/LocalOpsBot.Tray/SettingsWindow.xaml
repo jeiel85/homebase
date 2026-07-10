@@ -99,9 +99,9 @@
 
             <!-- App selection (visible only when forwarding is enabled). No elevation: applies live. -->
             <StackPanel x:Name="AppSelectionPanel" Margin="0,12,0,0" Visibility="Collapsed">
-              <TextBlock Style="{StaticResource Type.Label}" Text="FORWARD FROM"/>
+              <TextBlock Style="{StaticResource Type.Label}" Text="EXCLUDE THESE APPS"/>
               <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,2,0,6"
-                         Text="Check the apps to forward. None checked = forward everything. Leave a phone-mirroring app (e.g. Phone Link) unchecked to avoid a notification loop."/>
+                         Text="Check apps to NOT forward. Everything else forwards, including apps seen later. Check a phone-mirroring app (e.g. Phone Link / 휴대폰과 연결) to stop a notification loop."/>
               <Border BorderBrush="{StaticResource Brush.Hairline}" BorderThickness="1" MaxHeight="150"
                       Background="{StaticResource Brush.Surface}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">

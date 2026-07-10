@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.1 — App selection is an exclude-list
+
+### Changed
+- Notification app selection is now an **exclude-list**: check the apps you do NOT want forwarded
+  (e.g. Phone Link / 휴대폰과 연결, to stop a feedback loop). Everything else forwards — including
+  apps that first show up later — so a new app is never silently dropped. (v0.10.0 shipped this as
+  an allow-list, which would have hidden notifications from any app you hadn't explicitly checked.)
+
 ## v0.10.0 — Choose which apps forward, and only new notifications
 
 ### Added

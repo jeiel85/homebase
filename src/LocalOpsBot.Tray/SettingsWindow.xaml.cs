@@ -191,7 +191,7 @@ public partial class SettingsWindow : ThemedWindow
     {
         AppListPanel.Children.Clear();
         var seen = ForwardingApps.ReadSeenApps();
-        var allow = new HashSet<string>(ForwardingApps.ReadAllowList(), StringComparer.OrdinalIgnoreCase);
+        var blocked = new HashSet<string>(ForwardingApps.ReadBlockList(), StringComparer.OrdinalIgnoreCase);
 
         if (seen.Count == 0)
         {
@@ -209,7 +209,7 @@ public partial class SettingsWindow : ThemedWindow
             AppListPanel.Children.Add(new CheckBox
             {
                 Content = app,
-                IsChecked = allow.Contains(app),
+                IsChecked = blocked.Contains(app), // checked = excluded from forwarding
                 Margin = new Thickness(0, 2, 0, 2),
                 Foreground = (Brush)FindResource("Brush.Ink")
             });
@@ -220,15 +220,15 @@ public partial class SettingsWindow : ThemedWindow
     {
         try
         {
-            var chosen = AppListPanel.Children.OfType<CheckBox>()
+            var excluded = AppListPanel.Children.OfType<CheckBox>()
                 .Where(c => c.IsChecked == true)
                 .Select(c => c.Content?.ToString() ?? string.Empty)
                 .Where(s => s.Length > 0)
                 .ToList();
-            ForwardingApps.WriteAllowList(chosen);
-            AppsStatusText.Text = chosen.Count == 0
+            ForwardingApps.WriteBlockList(excluded);
+            AppsStatusText.Text = excluded.Count == 0
                 ? "Saved — forwarding all apps."
-                : $"Saved — {chosen.Count} app(s). Applies within seconds.";
+                : $"Saved — excluding {excluded.Count} app(s). Applies within seconds.";
         }
         catch (Exception ex)
         {
