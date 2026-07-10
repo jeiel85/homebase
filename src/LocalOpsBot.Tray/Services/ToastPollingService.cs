@@ -34,7 +34,16 @@ public sealed class ToastPollingService : BackgroundService
     {
         _logger.LogInformation("Toast polling service starting");
 
-        var accessStatus = await _listener.RequestAccessAsync();
+        UserNotificationListenerAccessStatus accessStatus;
+        try
+        {
+            accessStatus = await _listener.RequestAccessAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Requesting toast notification access threw");
+            return;
+        }
         if (accessStatus != UserNotificationListenerAccessStatus.Allowed)
         {
             _logger.LogWarning("Toast notification access denied: {Status}", accessStatus);
@@ -43,12 +52,19 @@ public sealed class ToastPollingService : BackgroundService
 
         _logger.LogInformation("Toast notification access granted");
 
+        var pollCount = 0;
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 await Task.Delay(3000, ct);
                 var notifications = await _listener.PollAsync(ct);
+
+                pollCount++;
+                if (notifications.Count > 0)
+                    _logger.LogInformation("Poll #{N} returned {Count} new notification(s)", pollCount, notifications.Count);
+                else if (pollCount % 20 == 0)
+                    _logger.LogInformation("Poll #{N}: alive, no new notifications", pollCount);
 
                 foreach (var notification in notifications)
                 {

@@ -1,5 +1,7 @@
 using System.IO.Pipes;
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using LocalOpsBot.Core.Notifications;
@@ -48,8 +50,7 @@ public sealed class NotificationBridgeServer : INotificationBridgeServer, IHoste
         {
             try
             {
-                _pipe = new NamedPipeServerStream(PipeName, PipeDirection.In, 1,
-                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                _pipe = CreatePipeServer();
                 await _pipe.WaitForConnectionAsync(ct);
                 _logger.LogInformation("Tray connected to notification pipe");
 
@@ -72,6 +73,23 @@ public sealed class NotificationBridgeServer : INotificationBridgeServer, IHoste
                 _pipe = null;
             }
         }
+    }
+
+    // The Agent runs as LocalSystem (session 0); the tray runs as the interactive user (session 1,
+    // medium integrity). A pipe created with the default DACL denies the tray's connect ("Access to
+    // the path is denied"), so forwarding could never connect. Grant Authenticated Users the
+    // write + synchronize access a client's GENERIC_WRITE open needs (validated against a
+    // PipeDirection.Out client). The server's own handle keeps full access regardless of the DACL.
+    private static NamedPipeServerStream CreatePipeServer()
+    {
+        var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize,
+            AccessControlType.Allow));
+        return NamedPipeServerStreamAcl.Create(
+            PipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous, 0, 0, security);
     }
 
     private async Task ReadLoopAsync(CancellationToken ct)

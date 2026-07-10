@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.1 — Notification forwarding actually delivers now
+
+### Fixed
+- **Notification forwarding could never reach Telegram.** The Agent runs as LocalSystem and created
+  its notification pipe with the default security, which denied the (non-elevated) tray's connection
+  — "Access to the path is denied". So the tray captured notifications correctly but they silently
+  never crossed to the Agent. The pipe now grants the interactive user connect/write access, so
+  forwarded notifications get through. (Forwarding shipped in v0.9.0 but had never actually worked.)
+
+### Added
+- The tray's forwarding pipeline now writes a diagnostic log to
+  `C:\ProgramData\Homebase\logs\tray-forwarding.log` (notification-access status, poll activity,
+  errors), so this headless feature can be diagnosed instead of failing invisibly.
+
 ## v0.9.0 — Update progress, dashboard update check, and working notification forwarding
 
 ### Added
