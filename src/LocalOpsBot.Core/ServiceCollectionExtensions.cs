@@ -46,16 +46,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IReadOnlyList<ServiceWatchConfig>>(serviceWatches);
         services.AddSingleton(serviceWatches.AsEnumerable());
 
-        var eventLogOpts = config.GetSection("eventLog").Get<EventLogOptions>() ?? new EventLogOptions();
-        // The .NET config binder appends to the default collection instead of
-        // replacing it, which duplicates entries (e.g. "Application, System,
-        // Application, System"). De-duplicate the bound arrays.
-        eventLogOpts = eventLogOpts with
-        {
-            Logs = eventLogOpts.Logs.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            Levels = eventLogOpts.Levels.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
-        };
-        services.AddSingleton(eventLogOpts);
+        // EventLogOptions.Bind reads each list with REPLACE semantics (the raw binder appends to
+        // the defaults, which would let users only extend the lists and could duplicate entries).
+        services.AddSingleton(EventLogOptions.Bind(config.GetSection("eventLog")));
 
         var collectorOpts = config.GetSection("collectors").Get<CollectorOptions>() ?? new CollectorOptions();
         services.AddSingleton(collectorOpts);

@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using LocalOpsBot.Core.Alerts;
+using LocalOpsBot.Core.Localization;
 using LocalOpsBot.Core.Monitoring;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,7 @@ public sealed class EventLogPollingService : BackgroundService
 {
     private readonly IEventLogWatcher _watcher;
     private readonly EventLogOptions _options;
+    private readonly EventAlertPolicy _policy;
     private readonly IAlertDispatcher _dispatcher;
     private readonly CollectorOptions _collectors;
     private readonly ILogger<EventLogPollingService> _logger;
@@ -25,6 +27,7 @@ public sealed class EventLogPollingService : BackgroundService
     {
         _watcher = watcher;
         _options = options;
+        _policy = new EventAlertPolicy(options);
         _dispatcher = dispatcher;
         _collectors = collectors;
         _logger = logger;
@@ -51,15 +54,20 @@ public sealed class EventLogPollingService : BackgroundService
 
                 _logger.LogInformation("Event log: {Count} new event(s)", events.Count);
 
+                var alerted = 0;
                 foreach (var e in events)
                 {
+                    // Level gate + repeat-suppression: keep recurring/low-priority events from flooding.
+                    if (!_policy.ShouldAlert(e, DateTimeOffset.UtcNow)) continue;
+                    alerted++;
+
                     var severity = string.Equals(e.Level, "Critical", StringComparison.OrdinalIgnoreCase)
                         ? AlertSeverity.Critical
                         : AlertSeverity.Warning;
 
-                    var title = $"{e.Level} event: {e.ProviderName ?? e.LogName}";
+                    var title = Strings.EventAlertTitle(Strings.EventLevel(e.Level), e.ProviderName ?? e.LogName);
                     var message = Truncate(e.Message, _options.MessageMaxChars);
-                    var body = $"Log: {e.LogName} · Event ID: {e.EventId} · {e.TimeCreated:yyyy-MM-dd HH:mm:ss}"
+                    var body = $"{Strings.EventLogLabel}: {e.LogName} · {Strings.EventIdLabel}: {e.EventId} · {e.TimeCreated:yyyy-MM-dd HH:mm:ss}"
                              + (string.IsNullOrWhiteSpace(message) ? string.Empty : $"\n{message}");
 
                     await _dispatcher.DispatchAsync(new AlertEvent(
@@ -72,6 +80,11 @@ public sealed class EventLogPollingService : BackgroundService
                         e.MachineName ?? _machineName,
                         DateTimeOffset.UtcNow), ct);
                 }
+
+                if (alerted < events.Count)
+                    _logger.LogInformation(
+                        "Event log: alerted {Alerted}/{Total} (others below alert level or repeat-suppressed)",
+                        alerted, events.Count);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

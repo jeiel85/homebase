@@ -16,15 +16,3 @@ public interface IEventLogWatcher
     /// </summary>
     Task<IReadOnlyList<WindowsEventLogItem>> ReadRecentAsync(EventLogOptions options, int limit, CancellationToken ct);
 }
-
-public sealed record EventLogOptions(
-    bool Enabled = true,
-    IReadOnlyList<string>? Logs = null,
-    IReadOnlyList<string>? Levels = null,
-    IReadOnlyList<string>? ProviderIncludes = null,
-    IReadOnlyList<string>? ProviderExcludes = null,
-    int MessageMaxChars = 500)
-{
-    public IReadOnlyList<string> Logs { get; init; } = Logs ?? new[] { "Application", "System" };
-    public IReadOnlyList<string> Levels { get; init; } = Levels ?? new[] { "Critical", "Error" };
-}

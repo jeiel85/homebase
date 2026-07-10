@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.8.6 — Quieter, configurable event-log alerts
+
+### Added
+- Event-log alerts are now prioritized and configurable, so a busy PC no longer floods Telegram:
+  - A recurring error (same source + event id) alerts at most once per `eventLog.repeatSuppressMinutes`
+    (default 60 minutes); Critical events are never suppressed.
+  - `eventLog.alertLevels` picks which levels actually push an alert (default Critical + Error) —
+    separate from `eventLog.levels`, which still controls what is read and shown by `/events`.
+
+### Fixed
+- Event-log list settings (`levels`, `alertLevels`, `logs`, provider filters) can now be narrowed,
+  not only extended — the configuration binder used to append your values onto the built-in defaults.
+- Event-log alert text is localized (Korean when the bot language is Korean), matching the other alerts.
+
 ## v0.8.5 — Rounded window corners and a drop shadow
 
 ### Changed

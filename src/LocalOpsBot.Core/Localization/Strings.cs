@@ -235,6 +235,21 @@ public static class Strings
     public static string TriggeredBy(string detail) => T($"Triggered by: {detail}", $"발생 원인: {detail}");
     public static string PcHealthAdvice => T("PC health advice", "PC 상태 조언");
 
+    // ── Event log alerts ──────────────────────────────────────────────────────
+    public static string EventLevel(string level) => level switch
+    {
+        "Critical" => T("Critical", "심각"),
+        "Error" => T("Error", "오류"),
+        "Warning" => T("Warning", "경고"),
+        "Information" => T("Information", "정보"),
+        _ => level,
+    };
+    public static string EventAlertTitle(string level, string source) => T(
+        $"{level} event: {source}",
+        $"{level} 이벤트: {source}");
+    public static string EventLogLabel => T("Log", "로그");
+    public static string EventIdLabel => T("Event ID", "이벤트 ID");
+
     // ── /ping ────────────────────────────────────────────────────────────────
     public static string Pong => T("🏓 Pong! Homebase is alive.", "🏓 퐁! Homebase 정상 작동 중.");
 }
