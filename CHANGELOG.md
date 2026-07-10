@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.12.0 — Configure monitors from the dashboard
+
+### Added
+- **Monitor configuration in the dashboard.** A new MONITORS card lets you set what the bot watches
+  — processes, Windows services, HTTP endpoints, and TCP ports (one entry per line) — instead of
+  hand-editing the config file. Saving applies with a single administrator prompt and restarts the
+  Agent. This is what `/process`, `/services`, `/http`, and `/ports` report on, so those commands are
+  now configurable without touching JSON.
+
 ## v0.11.0 — AI error interpretation + one-click Ollama
 
 ### Added

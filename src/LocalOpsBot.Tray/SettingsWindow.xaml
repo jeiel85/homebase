@@ -119,6 +119,44 @@
           </StackPanel>
         </Border>
 
+        <!-- ═ MONITORS ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="MONITORS"/>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                       Text="What the bot watches (/process /services /http /ports). One per line. Saving needs administrator approval and restarts the Agent."/>
+
+            <TextBlock Style="{StaticResource Type.Label}" Text="PROCESSES" Margin="0,8,0,0"/>
+            <TextBlock Style="{StaticResource Type.Micro}" Text="Process name, e.g. chrome"/>
+            <TextBox x:Name="ProcessesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
+
+            <TextBlock Style="{StaticResource Type.Label}" Text="SERVICES" Margin="0,8,0,0"/>
+            <TextBlock Style="{StaticResource Type.Micro}" Text="Service name, e.g. Spooler"/>
+            <TextBox x:Name="ServicesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
+
+            <TextBlock Style="{StaticResource Type.Label}" Text="HTTP ENDPOINTS" Margin="0,8,0,0"/>
+            <TextBlock Style="{StaticResource Type.Micro}" Text="URL, e.g. https://example.com/health"/>
+            <TextBox x:Name="HttpBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
+
+            <TextBlock Style="{StaticResource Type.Label}" Text="TCP PORTS" Margin="0,8,0,0"/>
+            <TextBlock Style="{StaticResource Type.Micro}" Text="host:port, e.g. localhost:5432"/>
+            <TextBox x:Name="TcpBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+              <Button x:Name="SaveMonitorsButton" Style="{StaticResource Button.Signal}"
+                      Content="SAVE MONITORS" Click="SaveMonitors_Click"/>
+              <TextBlock x:Name="MonitorsStatusText" VerticalAlignment="Center" Margin="8,0,0,0"
+                         Style="{StaticResource Type.Micro}"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
         <!-- ═ UPDATES ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
           <TextBlock Style="{StaticResource Type.SectionLabel}" Text="UPDATES"/>

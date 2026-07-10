@@ -215,8 +215,10 @@
           <Border x:Name="bd" Background="{TemplateBinding Background}"
                   BorderBrush="{TemplateBinding BorderBrush}"
                   BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2">
+            <!-- Stretch (not Center) so multi-line TextBoxes fill top-down; single-line inputs
+                 still look normal (text sits at the top of the padding). -->
             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                          VerticalAlignment="Center"/>
+                          VerticalAlignment="Stretch"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsKeyboardFocused" Value="True">

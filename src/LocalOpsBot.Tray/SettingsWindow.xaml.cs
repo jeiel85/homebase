@@ -33,7 +33,7 @@ public partial class SettingsWindow : ThemedWindow
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _timer.Tick += (_, _) => Refresh();
 
-        Loaded += (_, _) => { Refresh(); LoadForwardingState(); _timer.Start(); };
+        Loaded += (_, _) => { Refresh(); LoadForwardingState(); LoadMonitors(); _timer.Start(); };
         Closed += (_, _) => _timer.Stop();
     }
 
@@ -318,6 +318,45 @@ public partial class SettingsWindow : ThemedWindow
             CheckUpdateButton.IsEnabled = true;
         }
     }
+
+    // ── Monitors ─────────────────────────────────────────────────────────────────────────────────
+    private void LoadMonitors()
+    {
+        try
+        {
+            var m = MonitorsConfig.Read();
+            ProcessesBox.Text = string.Join(Environment.NewLine, m.Processes);
+            ServicesBox.Text = string.Join(Environment.NewLine, m.Services);
+            HttpBox.Text = string.Join(Environment.NewLine, m.HttpEndpoints);
+            TcpBox.Text = string.Join(Environment.NewLine, m.TcpPorts);
+        }
+        catch { /* leave blank if the config can't be read */ }
+    }
+
+    private async void SaveMonitors_Click(object sender, RoutedEventArgs e)
+    {
+        SaveMonitorsButton.IsEnabled = false;
+        MonitorsStatusText.Text = "Saving — approve the admin prompt…";
+        try
+        {
+            var saved = await MonitorsConfigurator.SaveAsync(
+                Lines(ProcessesBox), Lines(ServicesBox), Lines(HttpBox), Lines(TcpBox));
+            MonitorsStatusText.Text = saved
+                ? "Saved. The Agent is restarting to apply."
+                : "Not saved — administrator approval is required.";
+        }
+        catch (Exception ex)
+        {
+            MonitorsStatusText.Text = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            SaveMonitorsButton.IsEnabled = true;
+        }
+    }
+
+    private static IEnumerable<string> Lines(TextBox box) =>
+        box.Text.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
 
     // Tray-popup behaviour: anchor bottom-right above the taskbar and bring it to the foreground.
     // Closing (X or CLOSE) hides rather than destroys, so the same instance reopens on the next
