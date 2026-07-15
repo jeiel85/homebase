@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.13.1 — Single-instance guard
+
+### Fixed
+- **Prevent duplicate instances.** The tray app and the Agent now refuse to start a second copy of
+  themselves. The tray uses a session-local mutex (one tray per signed-in user), so autostart racing
+  a manual launch — or a relaunch after an update — no longer stacks duplicate tray icons and pipe
+  clients. The Agent uses a global mutex as a backstop against a second console-launched instance
+  double-polling Telegram.
+
 ## v0.13.0 — Transport-neutral outbound routing
 
 ### Changed

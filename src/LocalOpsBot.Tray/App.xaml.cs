@@ -5,6 +5,12 @@ namespace LocalOpsBot.Tray;
 
 public partial class App : Application
 {
+    // Single-instance guard (session-local): each signed-in user gets one tray, but a second
+    // launch in the same session — autostart racing a manual start, or a stale relaunch after an
+    // update — exits immediately instead of stacking a duplicate tray icon and pipe client.
+    private const string SingleInstanceMutexName = @"Local\Homebase.Tray.SingleInstance";
+    private Mutex? _singleInstanceMutex;
+
     private TrayIconManager? _trayIcon;
     private NotificationForwardingHost? _forwardingHost;
 
@@ -17,6 +23,17 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Hold the mutex for the process lifetime; createdNew == false means another tray in this
+        // session already owns it, so bail out before creating a second icon / pipe client.
+        _singleInstanceMutex = new Mutex(initiallyOwned: false, SingleInstanceMutexName, out bool createdNew);
+        if (!createdNew)
+        {
+            _singleInstanceMutex.Dispose();
+            _singleInstanceMutex = null;
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
         _trayIcon = new TrayIconManager();
 
@@ -30,6 +47,7 @@ public partial class App : Application
     {
         _forwardingHost?.Dispose();
         _trayIcon?.Dispose();
+        _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }
 }

@@ -42,6 +42,18 @@ Log.Logger = new LoggerConfiguration()
         retainedFileCountLimit: 14,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
+
+// Single-instance guard. The SCM already keeps the *service* single, but a second instance
+// launched directly (e.g. from a console) would double-poll Telegram and duplicate every alert.
+// Global\ so it spans sessions; refuse to start if another Agent already holds it.
+using var singleInstance = new Mutex(initiallyOwned: false, @"Global\Homebase.Agent.SingleInstance", out bool agentCreatedNew);
+if (!agentCreatedNew)
+{
+    Log.Warning("Another Homebase.Agent instance is already running; this instance will exit.");
+    Log.CloseAndFlush();
+    return;
+}
+
 builder.Services.AddSerilog(Log.Logger, dispose: true);
 
 // --- Bot response language -------------------------------------------------
