@@ -1,6 +1,7 @@
 using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Core.Alerts;
 using LocalOpsBot.Core.Commands;
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Monitoring;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddLocalOpsCore(this IServiceCollection services, IConfiguration config)
     {
         services.AddSingleton<ICommandRouter, CommandRouter>();
+        services.AddSingleton<IRemoteCommandRouter, LegacyRemoteCommandRouter>();
+        services.AddSingleton<IOutboundRouter, OutboundRouter>();
         services.AddSingleton<ITelegramPollStatus, TelegramPollStatus>();
         services.AddSingleton<ICommandHandler, PingCommandHandler>();
         services.AddSingleton<ICommandHandler, StatusCommandHandler>();

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.13.0 — Transport-neutral outbound routing
+
+### Changed
+- **Internal refactor: alerts and notification forwarding now route through a transport-neutral
+  outbound layer.** `AlertDispatcher` and `NotificationForwardingService` no longer depend on
+  `ITelegramClient` directly; they deliver through a new `IOutboundRouter` / `IOutboundChannel`
+  abstraction (new `LocalOpsBot.Protocol` project + `Core/Delivery`), groundwork for future device
+  channels. **Telegram output for automatic alerts is byte-for-byte unchanged.**
+- **Notification forwarding message format changed.** Forwarded Windows notifications now render as
+  `ℹ️ <b>App: Title</b>` + body, instead of the previous `🔔 <b>App</b>` with `Title:` / `Body:`
+  labels.
+
 ## v0.12.0 — Configure monitors from the dashboard
 
 ### Added

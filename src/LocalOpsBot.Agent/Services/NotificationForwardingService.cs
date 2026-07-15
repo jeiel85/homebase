@@ -1,9 +1,9 @@
 using System.Runtime.Versioning;
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Notifications;
-using LocalOpsBot.Infrastructure.Telegram;
+using LocalOpsBot.Protocol.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace LocalOpsBot.Agent.Services;
 
@@ -11,21 +11,18 @@ namespace LocalOpsBot.Agent.Services;
 public sealed class NotificationForwardingService : IHostedService
 {
     private readonly INotificationBridgeServer _bridgeServer;
-    private readonly ITelegramClient _telegram;
-    private readonly IOptions<TelegramOptions> _options;
+    private readonly IOutboundRouter _outbound;
     private readonly ITextMasker _masker;
     private readonly ILogger<NotificationForwardingService> _logger;
 
     public NotificationForwardingService(
         INotificationBridgeServer bridgeServer,
-        ITelegramClient telegram,
-        IOptions<TelegramOptions> options,
+        IOutboundRouter outbound,
         ITextMasker masker,
         ILogger<NotificationForwardingService> logger)
     {
         _bridgeServer = bridgeServer;
-        _telegram = telegram;
-        _options = options;
+        _outbound = outbound;
         _masker = masker;
         _logger = logger;
     }
@@ -42,37 +39,79 @@ public sealed class NotificationForwardingService : IHostedService
         return Task.CompletedTask;
     }
 
-    private async void OnNotificationReceived(ToastNotificationEvent notification)
+    private void OnNotificationReceived(
+        ToastNotificationEvent notification)
+    {
+        _ = ForwardAsync(notification);
+    }
+
+    private async Task ForwardAsync(
+        ToastNotificationEvent notification)
     {
         try
         {
-            // Defense in depth: even if a blocked notification reaches the Agent,
-            // never forward it to Telegram.
-            if (notification.Sensitivity == NotificationSensitivity.Blocked)
+            if (notification.Sensitivity ==
+                NotificationSensitivity.Blocked)
             {
-                _logger.LogInformation("Dropped blocked notification from {App}", notification.SourceApp);
+                _logger.LogInformation(
+                    "Dropped blocked notification from {App}",
+                    notification.SourceApp);
                 return;
             }
 
-            var targetChatId = _options.Value.AllowedChatIds.FirstOrDefault();
-            if (targetChatId == 0) return;
+            var title = _masker.Mask(
+                notification.Title ?? string.Empty);
+            var body = _masker.Mask(
+                notification.Body ?? string.Empty);
 
-            var title = _masker.Mask(notification.Title ?? string.Empty);
-            var body = _masker.Mask(notification.Body ?? string.Empty);
+            var outbound = new OutboundNotification(
+                Guid.TryParse(notification.EventId, out var id)
+                    ? id
+                    : Guid.NewGuid(),
+                "windows-toast",
+                OutboundPriority.Info,
+                string.IsNullOrWhiteSpace(title)
+                    ? notification.SourceApp
+                    : $"{notification.SourceApp}: {title}",
+                body,
+                $"toast:{notification.EventId}",
+                notification.Sensitivity ==
+                    NotificationSensitivity.Sensitive
+                    ? MessageSensitivity.Sensitive
+                    : MessageSensitivity.Normal,
+                DeliveryPolicy.LocalPreferred,
+                notification.CreatedAt,
+                Metadata: new Dictionary<string, string>
+                {
+                    ["sourceApp"] = notification.SourceApp,
+                    ["origin"] = "windows-toast",
+                    ["rawNotificationId"] =
+                        notification.RawNotificationId
+                });
 
-            var text = $"<b>\U0001f514 {HtmlEscape(notification.SourceApp)}</b>\n" +
-                       $"Title: {HtmlEscape(title)}\n" +
-                       $"Body: {HtmlEscape(body)}";
+            var result = await _outbound.DeliverAsync(
+                outbound,
+                CancellationToken.None);
 
-            await _telegram.SendMessageAsync(targetChatId, text, null, CancellationToken.None);
-            _logger.LogInformation("Forwarded notification from {App}", notification.SourceApp);
+            if (result.Delivered)
+            {
+                _logger.LogInformation(
+                    "Forwarded notification from {App}",
+                    notification.SourceApp);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "No channel delivered notification from {App}: {Error}",
+                    notification.SourceApp,
+                    result.CombinedError);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to forward notification");
+            _logger.LogError(
+                ex,
+                "Failed to forward notification");
         }
     }
-
-    private static string HtmlEscape(string value)
-        => value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 }

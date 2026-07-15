@@ -1,5 +1,6 @@
 using LocalOpsBot.Agent.Services;
 using LocalOpsBot.Core.Alerts;
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Infrastructure.Telegram;
 using LocalOpsBot.Tests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,11 +16,17 @@ public sealed class AlertDispatcherTests
     private readonly FakeTelegramClient _telegram = new();
     private readonly AlertingOptions _alerting = new() { DedupWindowSeconds = 600, MaxMessagesPerMinute = 10 };
 
+    // After the Phase-1 refactor the dispatcher no longer talks to Telegram directly;
+    // it routes through IOutboundRouter. We wire the real OutboundRouter + Telegram
+    // channel over the fake client so the sent-message and delivery-log assertions
+    // still exercise the whole path.
     private AlertDispatcher CreateDispatcher(params long[] chatIds)
     {
         var policy = new AlertPolicy(_state, _store, _alerting);
         var opts = Options.Create(new TelegramOptions { AllowedChatIds = chatIds });
-        return new AlertDispatcher(policy, _store, _telegram, opts, NullLogger<AlertDispatcher>.Instance);
+        var channel = new TelegramOutboundChannel(_telegram, opts, new TelegramNotificationRenderer());
+        var router = new OutboundRouter([channel]);
+        return new AlertDispatcher(policy, _store, router, NullLogger<AlertDispatcher>.Instance);
     }
 
     private static AlertEvent MakeAlert(string dedupKey = "k1", AlertSeverity sev = AlertSeverity.Warning)
@@ -73,14 +80,21 @@ public sealed class AlertDispatcherTests
         Assert.Single(_telegram.Sent); // second is deduped
     }
 
+    // Contract change (Phase-1 / GOAL-04): the dispatcher no longer selects the Telegram
+    // chat itself. With no chat configured the Telegram channel reports NotConfigured, so
+    // delivery fails and is recorded as "Failed" in the delivery log — whereas the
+    // pre-refactor dispatcher silently skipped. The preserved invariant is that nothing
+    // is sent to Telegram.
     [Fact]
-    public async Task Dispatch_skips_when_no_allowed_chat()
+    public async Task Dispatch_records_failure_when_no_allowed_chat()
     {
         var d = CreateDispatcher(); // empty allowlist
 
         await d.DispatchAsync(MakeAlert(), default);
 
         Assert.Empty(_telegram.Sent);
-        Assert.Empty(await _store.GetRecentAsync(10, default));
+        var recent = await _store.GetRecentAsync(10, default);
+        Assert.Single(recent);
+        Assert.Equal("Failed", recent[0].Status);
     }
 }

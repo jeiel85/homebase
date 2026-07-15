@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Core.Commands;
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Monitoring;
 using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Core.Updates;
@@ -27,6 +28,9 @@ public static class ServiceCollectionExtensions
         {
             client.Timeout = TimeSpan.FromSeconds(35);
         });
+
+        services.AddSingleton<TelegramNotificationRenderer>();
+        services.AddSingleton<IOutboundChannel, TelegramOutboundChannel>();
 
         services.AddSingleton<IChatAuthorizationPolicy, AllowedChatPolicy>();
 
