@@ -32,10 +32,12 @@ class PushReceiver : BroadcastReceiver() {
                 val endpoint = intent.getStringExtra(UnifiedPush.EXTRA_ENDPOINT)
                 if (id != null) UnifiedPush.ack(context, distributor, token, id)
                 if (endpoint.isNullOrBlank()) return
-                if (state.setEndpoint(endpoint)) {
-                    PushRegistrar.forgetSynced()
-                    registerWithAllPcs(context)
-                }
+                state.setEndpoint(endpoint)
+                // Also on an unchanged endpoint (the distributor's periodic ping): a PC that dropped
+                // the subscription after a 404/410 — e.g. the phone was off for days — gets it back.
+                // The PC doesn't rewrite its state for an unchanged subscription.
+                PushRegistrar.forgetSynced()
+                registerWithAllPcs(context)
             }
 
             UnifiedPush.ACTION_MESSAGE -> {

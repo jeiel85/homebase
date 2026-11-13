@@ -127,7 +127,7 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
     **Windows 알림은 Telegram으로 보내지 않습니다**(평문 클라우드). 예전처럼 받으려면 `notificationForwarding.telegramFallback: true`.
   - Windows 알림 포워딩은 이제 기본 켜짐이며 1Password·Bitwarden·Authy 등은 항상 차단, 6자리 코드·비밀번호·토큰은 마스킹합니다.
     같은 앱의 알림은 `bundleSeconds`(기본 60초) 동안 한 건으로 묶고, 하루 `maxPushesPerDay`(기본 150건)를 넘으면 버립니다.
-    ntfy.sh 익명 한도가 IP당 하루 250건이기 때문입니다(2026-11-13 `/v1/account` 확인). 설정 파일에 `"enabled": false`가 이미 적혀 있으면 그대로 꺼져 있습니다.
+    ntfy.sh 익명 한도가 휴대폰(구독자) IP당 하루 250건이고 모든 PC가 이를 나눠 쓰기 때문입니다(2026-11-13 확인). PC가 여러 대면 이 값을 줄이세요. 설정 파일에 `"enabled": false`가 이미 적혀 있으면 그대로 꺼져 있습니다.
 - 프로세스별 네트워크는 Agent가 관리자 권한(서비스)으로 돌 때만 집계되고, Claude 세션은 제목·폴더·시간만 읽습니다(대화 내용은 읽지 않음).
   설정의 `mobile.claudeSessions: false`로 끌 수 있습니다. 프로토콜은 [`docs/MOBILE_PROTOCOL.md`](docs/MOBILE_PROTOCOL.md)를 참고하세요.
 

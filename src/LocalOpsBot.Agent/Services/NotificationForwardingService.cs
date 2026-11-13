@@ -157,7 +157,7 @@ public sealed class NotificationForwardingService : BackgroundService
         }
     }
 
-    internal static OutboundNotification ToOutbound(ToastBatch batch, bool telegramFallback, DateTimeOffset now)
+    public static OutboundNotification ToOutbound(ToastBatch batch, bool telegramFallback, DateTimeOffset now)
     {
         string title;
         string? body;
