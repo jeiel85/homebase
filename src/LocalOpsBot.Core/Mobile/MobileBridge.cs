@@ -97,7 +97,7 @@ public sealed record SessionReport(
 public sealed record MobileDeviceInfo(string DeviceId, string Name, string? Model, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);
 
 /// <summary>
-/// What the Tray's "Connect Phone…" window shows. <c>Hosts</c> is the v1 Tailscale list;
+/// What the Tray's Settings › Phone tab shows. <c>Hosts</c> is the v1 Tailscale list;
 /// <c>Endpoints</c> covers every path. <c>Cloudflare</c> is null while the tunnel is off.
 /// </summary>
 public sealed record BridgeStatus(
