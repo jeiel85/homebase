@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,6 +54,8 @@ private data class PushView(
     val registeredPcs: Int,
     val canNotify: Boolean,
     val error: String?,
+    /** The distributor keeps its own connection; without a battery-optimization exemption Doze cuts it. */
+    val distributorOptimized: Boolean,
 )
 
 private fun readView(context: Context, store: PcStore): PushView {
@@ -67,6 +70,9 @@ private fun readView(context: Context, store: PcStore): PushView {
         registeredPcs = state.registeredPcs.count { it in pcIds },
         canNotify = PushNotifier.canNotify(context),
         error = state.lastError,
+        distributorOptimized = state.distributor?.let {
+            !context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(it)
+        } ?: false,
     )
 }
 
@@ -128,7 +134,8 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
         title = "푸시 알림",
         description = when {
             view.distributors.isEmpty() ->
-                "PC 경보와 Windows 알림을 받으려면 UnifiedPush 배포자 앱이 필요합니다. ntfy(무료, 계정 없음)를 설치한 뒤 돌아오세요."
+                "PC 경보와 Windows 알림을 받으려면 UnifiedPush 배포자 앱이 필요합니다. ntfy(무료, 계정 없음)를 설치한 뒤 돌아오세요. " +
+                    "Google Play 서비스가 없는 휴대폰은 F-Droid판을 쓰세요."
             !on -> "꺼져 있습니다. 켜면 PC 경보와 Windows 알림이 이 휴대폰으로 옵니다."
             view.registering -> "${UnifiedPush.label(context, view.distributor!!)}에 등록하는 중…"
             else -> "${UnifiedPush.label(context, view.distributor!!)} 경유 · PC ${view.registeredPcs}/$pcCount 대에 등록됨. " +
@@ -176,6 +183,17 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
                 openNotificationSettings(context)
             }
         }) { Text("알림 허용") }
+    }
+    if (on && view.endpoint != null && view.distributorOptimized) {
+        Text(
+            "${UnifiedPush.label(context, view.distributor!!)}이(가) 배터리 최적화 대상이라 휴대폰이 절전(Doze) 중일 때 알림이 늦게 올 수 있습니다. " +
+                "Google Play 서비스가 없는 휴대폰(F-Droid판 ntfy)이라면 배터리 최적화 예외를 켜 주세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = hb.danger,
+        )
+        TextButton(onClick = {
+            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }) { Text("배터리 최적화 설정 열기") }
     }
     if (on) {
         TextButton(onClick = { openNotificationSettings(context) }) { Text("PC·앱별 알림 켜고 끄기") }
