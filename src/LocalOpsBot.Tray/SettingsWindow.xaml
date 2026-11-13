@@ -29,7 +29,15 @@
       </StackPanel>
     </Border>
 
-    <TabControl x:Name="Tabs" Grid.Row="1" Style="{StaticResource Tabs.Console}">
+    <TabControl x:Name="Tabs" Grid.Row="1" Style="{StaticResource Tabs.Console}"
+                SelectionChanged="Tabs_SelectionChanged">
+
+      <!-- ═══ Phone (the primary channel: live view + push notifications) ═══ -->
+      <TabItem x:Name="PhoneTab" Header="{x:Static local:L.TabPhone}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <local:PhoneConnectPanel x:Name="PhonePanel"/>
+        </ScrollViewer>
+      </TabItem>
 
       <!-- ═══ Telegram ═══ -->
       <TabItem x:Name="TelegramTab" Header="{x:Static local:L.TabTelegram}">

@@ -12,3 +12,7 @@
 - [ ] **배포자 선택을 Link Activity(`unifiedpush://link`)로**: AND_3은 처음 고를 때 Link Activity를 권장한다. 지금은 설치된 배포자 목록에서 앱이 직접 고른다. 영향: 앱 PushSettings.
 - [ ] **토스트 예산 초과를 휴대폰에 알리기**: 일일 예산을 넘긴 토스트는 버리고 Agent 로그에만 남는다. 예산이 회복될 때 "N건 생략" 요약 한 건을 보내는 안이 있다. 영향: NotificationForwardingService.
 - [ ] **Tray 설정 UI에 묶음·예산·Telegram 대체 옵션 노출**: `bundleSeconds`, `maxPushesPerDay`, `telegramFallback`은 지금 설정 파일에서만 바꿀 수 있다. 영향: Tray 설정 창, NotificationForwardingConfigurator.
+
+## Tray 설정 창 일원화 이후 (2026-11-13, 휴대폰 탭 PR에서 이월)
+
+- [ ] **휴대폰 탭 문구 현지화**: 휴대폰 탭 본문(상태 안내, 경로 설명, 대화상자)은 예전 "휴대폰 연결" 창에서 옮긴 그대로 한글 고정이다. 다른 탭처럼 `L.cs`로 옮겨 영어 Windows에서도 영어로 보이게 한다. 영향: `PhoneConnectPanel`, `L.cs`.

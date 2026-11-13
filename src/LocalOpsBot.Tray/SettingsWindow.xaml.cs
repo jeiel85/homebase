@@ -7,7 +7,7 @@ using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
 
-public enum SettingsTab { Telegram, Forwarding, Monitors, Updates }
+public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Updates }
 
 /// <summary>
 /// Everything that changes how Homebase behaves, one tab per area. Each tab states what it does,
@@ -32,15 +32,26 @@ public partial class SettingsWindow : ThemedWindow
         UpdateVersionText.Text = L.UpdCurrent(_updates.CurrentVersion);
 
         Loaded += (_, _) => { RefreshTelegram(); LoadForwardingState(); LoadMonitors(); };
+        Closed += (_, _) => PhonePanel.Stop();
     }
 
     public void ShowTab(SettingsTab tab) => Tabs.SelectedItem = tab switch
     {
+        SettingsTab.Telegram => TelegramTab,
         SettingsTab.Forwarding => ForwardingTab,
         SettingsTab.Monitors => MonitorsTab,
         SettingsTab.Updates => UpdatesTab,
-        _ => TelegramTab,
+        _ => PhoneTab,
     };
+
+    // The phone tab talks to the Agent (status poll, pairing code) only while it is in view.
+    // SelectionChanged bubbles up from lists inside the tabs too, so only the TabControl's own counts.
+    private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
+        if (Tabs.SelectedItem == PhoneTab) PhonePanel.Show();
+        else PhonePanel.Hide();
+    }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 

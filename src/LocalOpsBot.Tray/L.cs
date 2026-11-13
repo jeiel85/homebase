@@ -18,7 +18,6 @@ public static class L
     // ── Tray menu ────────────────────────────────────────────────────────────
     public static string MenuOpen => T("Open Homebase", "Homebase 열기");
     public static string MenuSettings => T("Settings…", "설정…");
-    public static string MenuPhone => T("Connect phone…", "휴대폰 연결…");
     public static string MenuSetup => T("Setup checklist", "처음 설정 다시 보기");
     public static string MenuExit => T("Exit", "종료");
     public static string MenuCheckUpdates(string version) => T($"Check for updates (v{version})", $"업데이트 확인 (v{version})");
@@ -68,14 +67,15 @@ public static class L
     public static string UptimeHours(int h, int m) => T($"{h:00}h {m:00}m", $"{h}시간 {m}분");
     public static string TelegramConnected(long chatId) => T($"Connected — chat {chatId}", $"연결됨 — 채팅 {chatId}");
     public static string TelegramNotSetUp => T("Not set up — open Settings", "설정 필요 — 설정에서 연결하세요");
-    public static string ForwardingOn => T("On — Windows notifications go to Telegram", "켜짐 — Windows 알림을 텔레그램으로 보냄");
+    public static string ForwardingOn => T("On — Windows notifications go to your phone", "켜짐 — Windows 알림을 휴대폰으로 보냄");
     public static string ForwardingOff => T("Off", "꺼짐");
-    public static string PhoneOn => T("On — pair from Connect phone…", "켜짐 — 휴대폰 연결…에서 기기 추가");
-    public static string PhoneOff => T("Off — turn on from Connect phone…", "꺼짐 — 휴대폰 연결…에서 켜기");
+    public static string PhoneOn => T("On — pair in Settings › Phone", "켜짐 — 설정 › 휴대폰에서 기기 추가");
+    public static string PhoneOff => T("Off — turn on in Settings › Phone", "꺼짐 — 설정 › 휴대폰에서 켜기");
 
     // ── Settings window ──────────────────────────────────────────────────────
     public static string SettingsTitle => T("Homebase — Settings", "Homebase — 설정");
     public static string SettingsEyebrow => T("SETTINGS", "설정");
+    public static string TabPhone => T("Phone", "휴대폰");
     public static string TabTelegram => T("Telegram", "텔레그램");
     public static string TabForwarding => T("Notifications", "알림 전달");
     public static string TabMonitors => T("Watch list", "감시 대상");
@@ -116,11 +116,11 @@ public static class L
     public static string TgCancelled => T("Not saved — administrator approval was declined.", "저장하지 않았습니다 — 관리자 승인이 취소되었습니다.");
     public static string Failed(string message) => T($"Failed: {message}", $"실패: {message}");
 
-    public static string FwHeader => T("FORWARD WINDOWS NOTIFICATIONS", "Windows 알림을 텔레그램으로");
+    public static string FwHeader => T("FORWARD WINDOWS NOTIFICATIONS", "Windows 알림을 휴대폰으로");
     public static string FwWhat => T(
-        "Sends the title and text of notifications that pop up on this PC to your Telegram chat. Values that look like codes, passwords or tokens are masked.",
-        "이 PC에 뜨는 알림의 제목과 내용을 텔레그램으로 보냅니다. 인증 코드·비밀번호·토큰처럼 보이는 값은 가려서 보냅니다.");
-    public static string FwToggle => T("Forward notifications to Telegram", "알림을 텔레그램으로 보내기");
+        "Sends the title and text of notifications that pop up on this PC to the Homebase app as an end-to-end encrypted push (pair a phone in the Phone tab). They never go to Telegram by default. Values that look like codes, passwords or tokens are masked.",
+        "이 PC에 뜨는 알림의 제목과 내용을 Homebase 앱으로 종단 암호화 푸시해 보냅니다(휴대폰 탭에서 휴대폰을 연결하세요). 기본값으로는 텔레그램으로 보내지 않습니다. 인증 코드·비밀번호·토큰처럼 보이는 값은 가려서 보냅니다.");
+    public static string FwToggle => T("Forward notifications to my phone", "알림을 휴대폰으로 보내기");
     public static string FwApply => T("APPLY", "적용");
     public static string FwApplyNote => T(
         "Applying asks for administrator approval, then the tray restarts to start or stop listening.",
@@ -215,14 +215,16 @@ public static class L
             : T($"Sent through {channel}.", $"{channel}(으)로 보냈습니다.");
     public static string TestFailed(string m) => T($"Send failed: {m}", $"보내지 못했습니다: {m}");
 
-    // ── Connect phone window (static labels) ─────────────────────────────────
-    public static string PhoneTitle => T("Homebase — Connect phone", "Homebase — 휴대폰 연결");
+    // ── Settings › Phone tab (static labels) ─────────────────────────────────
     public static string PhoneHeader => T("CONNECT PHONE", "휴대폰 연결");
     public static string PhoneNewCode => T("NEW CODE", "새 코드");
     public static string PhonePaired => T("PAIRED PHONES", "연결된 휴대폰");
     public static string PhoneRevoke => T("REVOKE", "연결 해제");
     public static string PhonePaths => T("CONNECTION PATHS", "연결 경로");
     public static string PhonePathSettings => T("PATH SETTINGS", "경로 설정");
+    public static string PhoneApplyNote => T(
+        "Turning this on or changing paths asks for administrator approval, then the Homebase service restarts.",
+        "켜거나 경로를 바꾸면 관리자 승인 후 Homebase 서비스가 다시 시작됩니다.");
 
     // ── Updates (UpdateCoordinator / progress window) ────────────────────────
     public static string UpdChecking => T("Checking…", "확인하는 중…");

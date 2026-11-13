@@ -4,7 +4,7 @@ namespace LocalOpsBot.Tray.Services.Mobile;
 
 /// <summary>
 /// Owns the Tray's single <see cref="MobileBridgeClient"/>. Started at Tray startup only when
-/// <c>mobile:enabled</c> is set, or by the "Connect phone" window right after enabling.
+/// <c>mobile:enabled</c> is set, or by the Settings › Phone tab right after enabling.
 /// </summary>
 internal static class MobileHost
 {

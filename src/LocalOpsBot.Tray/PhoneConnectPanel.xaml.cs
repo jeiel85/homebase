@@ -4,6 +4,7 @@ using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -15,12 +16,13 @@ using QRCoder;
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// "Connect phone": picks the paths (LAN / Tailscale / Cloudflare Tunnel) and turns the feature on
-/// (one UAC step), shows the one-time pairing QR that carries every path, shows each path's state
-/// with an install button for a missing connector, and lists/revokes paired phones.
-/// Status is polled only while this window is open.
+/// The Settings window's "Phone" tab: picks the paths (LAN / Tailscale / Cloudflare Tunnel) and
+/// turns the feature on (one UAC step), shows the one-time pairing QR that carries every path,
+/// shows each path's state with an install button for a missing connector, and lists/revokes
+/// paired phones. Nothing runs until the tab is first shown; status is polled only while the tab
+/// is in view (<see cref="Show"/> / <see cref="Hide"/>) and stops for good on <see cref="Stop"/>.
 /// </summary>
-public partial class MobileConnectWindow : ThemedWindow
+public partial class PhoneConnectPanel : UserControl
 {
     private static readonly TimeSpan StatusPoll = TimeSpan.FromSeconds(5);
 
@@ -30,6 +32,8 @@ public partial class MobileConnectWindow : ThemedWindow
     private string _offerEndpointsKey = "";
     private bool _hasSavedToken;
     private bool _busy;
+    private bool _started;
+    private bool _inView;
 
     private sealed record DeviceRow(string DeviceId, string Name, string Detail);
 
@@ -38,13 +42,46 @@ public partial class MobileConnectWindow : ThemedWindow
         public Visibility ActionVisibility => ActionLabel is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    public MobileConnectWindow()
+    public PhoneConnectPanel()
     {
         InitializeComponent();
         _countdown.Tick += (_, _) => UpdateCountdown();
         _statusTimer.Tick += async (_, _) => await PollStatusAsync();
-        Loaded += async (_, _) => await RefreshAsync();
-        Closed += (_, _) => { _countdown.Stop(); _statusTimer.Stop(); };
+    }
+
+    /// <summary>The tab came into view: load everything the first time, then resume polling.</summary>
+    public async void Show()
+    {
+        if (_inView) return;
+        _inView = true;
+        if (!_started)
+        {
+            _started = true;
+            await RefreshAsync();
+            return;
+        }
+        if (!MobileHost.IsEnabled()) return;
+        // Restart the timer even while an install/apply runs: PollStatusAsync skips ticks while
+        // busy, and the timer must still be running when it finishes (the Agent can take up to a
+        // minute to notice a freshly installed connector).
+        _statusTimer.Start();
+        if (_busy) return;
+        await PollStatusAsync();
+        await LoadDevicesAsync();
+    }
+
+    /// <summary>The tab left view: stop polling (the QR countdown keeps its own cheap timer).</summary>
+    public void Hide()
+    {
+        _inView = false;
+        _statusTimer.Stop();
+    }
+
+    /// <summary>The Settings window closed.</summary>
+    public void Stop()
+    {
+        Hide();
+        _countdown.Stop();
     }
 
     private async Task RefreshAsync()
@@ -55,12 +92,12 @@ public partial class MobileConnectWindow : ThemedWindow
             StatusText.Text = "휴대폰 연결이 꺼져 있습니다. 쓸 경로를 고른 뒤 ENABLE을 누르세요.";
             IntroCard.Visibility = Visibility.Visible;
             PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = Visibility.Collapsed;
-            ApplyButton.Content = "ENABLE";
+            ApplyButtonText.Text = "ENABLE";
             return;
         }
 
         IntroCard.Visibility = Visibility.Collapsed;
-        ApplyButton.Content = "APPLY";
+        ApplyButtonText.Text = "APPLY";
         var client = MobileHost.EnsureStarted();
         StatusText.Text = "Homebase Agent에 연결하는 중…";
 
@@ -82,7 +119,7 @@ public partial class MobileConnectWindow : ThemedWindow
         PathsPanel.Visibility = Visibility.Visible;
         DevicesPanel.Visibility = Visibility.Visible;
         ShowPaths(status);
-        _statusTimer.Start();
+        if (_inView) _statusTimer.Start();
         await LoadDevicesAsync();
         if (status.Endpoints.Count == 0) { ShowNoPath(status); return; }
 
