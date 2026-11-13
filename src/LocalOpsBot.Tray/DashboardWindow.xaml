@@ -95,7 +95,7 @@
           <StackPanel x:Name="DiskPanel"/>
         </Border>
 
-        <!-- ═ CONNECTIONS — read-only summary; changes happen in Settings / Connect phone ═ -->
+        <!-- ═ CONNECTIONS — read-only summary; changes happen in Settings ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
           <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.DashConnections}"/>
         </Border>

@@ -24,7 +24,6 @@ public sealed class TrayIconManager : IDisposable
     private DashboardWindow? _popup;
     private SettingsWindow? _settings;
     private OnboardingWindow? _onboarding;
-    private MobileConnectWindow? _mobileConnect;
 
     public TrayIconManager()
     {
@@ -37,19 +36,15 @@ public sealed class TrayIconManager : IDisposable
         _trayIcon.MouseClick += OnTrayClick;
 
         var menu = new ContextMenuStrip();
-        // Look (dashboard) → change (settings) → phone, then housekeeping. Labels follow the UI
+        // Look (dashboard) → change (settings, phone included), then housekeeping. Labels follow the UI
         // language (see L); "Open Homebase" is bold as the left-click default.
         var openItem = new ToolStripMenuItem(L.MenuOpen) { Font = new Font(menu.Font, FontStyle.Bold) };
         openItem.Click += (_, _) => TogglePopup();
         menu.Items.Add(openItem);
 
         var settingsItem = new ToolStripMenuItem(L.MenuSettings);
-        settingsItem.Click += (_, _) => ShowSettings(SettingsTab.Telegram);
+        settingsItem.Click += (_, _) => ShowSettings(SettingsTab.Phone);
         menu.Items.Add(settingsItem);
-
-        var phoneItem = new ToolStripMenuItem(L.MenuPhone);
-        phoneItem.Click += (_, _) => ShowMobileConnect();
-        menu.Items.Add(phoneItem);
 
         menu.Items.Add(new ToolStripSeparator());
 
@@ -91,7 +86,7 @@ public sealed class TrayIconManager : IDisposable
         if (_popup is null)
         {
             _popup = new DashboardWindow();
-            _popup.OpenSettingsRequested += () => ShowSettings(SettingsTab.Telegram);
+            _popup.OpenSettingsRequested += () => ShowSettings(SettingsTab.Phone);
         }
         return _popup;
     }
@@ -125,19 +120,6 @@ public sealed class TrayIconManager : IDisposable
         if (_settings.WindowState == System.Windows.WindowState.Minimized)
             _settings.WindowState = System.Windows.WindowState.Normal;
         _settings.Activate();
-    }
-
-    private void ShowMobileConnect()
-    {
-        if (_mobileConnect is { IsVisible: true })
-        {
-            _mobileConnect.Activate();
-            return;
-        }
-        _mobileConnect = new MobileConnectWindow();
-        _mobileConnect.Closed += (_, _) => _mobileConnect = null;
-        _mobileConnect.Show();
-        _mobileConnect.Activate();
     }
 
     private void ShowOnboarding()

@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+### Changed
+- **One settings window.** "Connect phone" is now the first tab of Settings (Phone) instead of a
+  separate tray menu item; the tray menu's Settings… and the dashboard's settings button open it.
+  The phone tab polls the Agent only while it is in view.
+- The Notifications tab now says where forwarded Windows notifications go — the phone, as an
+  encrypted push — instead of Telegram, which they no longer reach by default since v0.16.0.
+
 ### Fixed
-- **The Connect phone window no longer runs off the bottom of the screen.** It opened centered at
-  its first, short size and then grew only downward as the QR code and connection paths filled in,
-  hiding its lower part. Content-sized windows now grow around their center, stay inside the work
-  area of the monitor they are on, and cap their height at it (the rest scrolls).
+- **Content-sized windows stay on screen as they grow.** A window that sizes itself to its content
+  (message, update and download dialogs) was placed once at its first size and then grew only
+  downward when more content filled in, which could push its lower part off the screen. It now grows
+  around its center, stays inside the work area of the monitor it is on, and caps its height there.
 
 ## v0.16.0 — Phone push notifications, self-installing updates
 
