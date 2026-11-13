@@ -30,9 +30,36 @@ internal sealed class UpdateCoordinator
     public Task<UpdateInfo?> CheckAsync(CancellationToken ct) => _updater.CheckForUpdateAsync(ct);
 
     /// <summary>
-    /// Check → confirm → download (with a progress window) → apply (UAC). <paramref name="status"/>
-    /// receives short phase strings so the caller can reflect them in its own affordance (the tray
-    /// menu item text or the dashboard's update label). Must be called on the UI thread.
+    /// Startup path: a newer release was found in the background, so pop the update dialog —
+    /// unless the user already chose "skip this version" for exactly this version, or another
+    /// update flow is already open. Must be called on the UI thread.
+    /// </summary>
+    public async Task<UpdateOutcome> OfferStartupUpdateAsync(UpdateInfo info, IProgress<string>? status = null)
+    {
+        if (_busy) return UpdateOutcome.Busy;
+        if (!ReleaseNotes.ShouldPrompt(info.Version, UpdateSkipState.Read()))
+        {
+            status?.Report($"v{info.Version} available (skipped)");
+            return UpdateOutcome.Declined;
+        }
+
+        _busy = true;
+        try
+        {
+            return await OfferAsync(info, status);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Manual path: check → update dialog → download (with a progress window) → apply (UAC). An
+    /// explicit check always shows the dialog, even for a skipped version — the user asked.
+    /// <paramref name="status"/> receives short phase strings so the caller can reflect them in its
+    /// own affordance (the tray menu item text or the dashboard's update label). Must be called on
+    /// the UI thread.
     /// </summary>
     public async Task<UpdateOutcome> RunInteractiveAsync(IProgress<string>? status = null)
     {
@@ -60,20 +87,32 @@ internal sealed class UpdateCoordinator
                 return UpdateOutcome.UpToDate;
             }
 
-            var confirmed = MessageDialog.Show("Update Available",
-                $"Update v{info.Version} available!\nPublished: {info.PublishedAt:yyyy-MM-dd}",
-                primary: "Download & Install", secondary: "Later");
-            if (!confirmed)
-            {
-                status?.Report($"v{info.Version} available");
-                return UpdateOutcome.Declined;
-            }
-
-            return await DownloadAndApplyAsync(info, status);
+            return await OfferAsync(info, status);
         }
         finally
         {
             _busy = false;
+        }
+    }
+
+    /// <summary>Shows the release notes with Update / Skip this version / Later and acts on the choice.</summary>
+    private async Task<UpdateOutcome> OfferAsync(UpdateInfo info, IProgress<string>? status)
+    {
+        switch (UpdateDialog.Show(info, CurrentVersion))
+        {
+            case UpdateDialogChoice.Update:
+                // Choosing to install supersedes an earlier skip of an older version.
+                UpdateSkipState.Write(null);
+                return await DownloadAndApplyAsync(info, status);
+
+            case UpdateDialogChoice.Skip:
+                UpdateSkipState.Write(info.Version);
+                status?.Report($"v{info.Version} available (skipped)");
+                return UpdateOutcome.Declined;
+
+            default:
+                status?.Report($"v{info.Version} available");
+                return UpdateOutcome.Declined;
         }
     }
 
