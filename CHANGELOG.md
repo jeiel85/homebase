@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **The Connect phone window no longer runs off the bottom of the screen.** It opened centered at
+  its first, short size and then grew only downward as the QR code and connection paths filled in,
+  hiding its lower part. Content-sized windows now grow around their center, stay inside the work
+  area of the monitor they are on, and cap their height at it (the rest scrolls).
+
 ## v0.16.0 — Phone push notifications, self-installing updates
 
 ### Added
