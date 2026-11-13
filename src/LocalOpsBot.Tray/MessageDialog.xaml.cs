@@ -18,8 +18,9 @@ public partial class MessageDialog : ThemedWindow
     /// pass <paramref name="secondary"/> to make it a confirm — the return value is <c>true</c> when
     /// the user clicks the primary button.
     /// </summary>
-    public static bool Show(string title, string message, string primary = "OK", string? secondary = null)
+    public static bool Show(string title, string message, string? primary = null, string? secondary = null)
     {
+        primary ??= L.Ok;
         var dlg = new MessageDialog();
         dlg.TitleText.Text = title.ToUpperInvariant();
         dlg.MessageText.Text = message;

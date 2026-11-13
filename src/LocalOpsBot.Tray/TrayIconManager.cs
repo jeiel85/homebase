@@ -21,7 +21,8 @@ public sealed class TrayIconManager : IDisposable
     private readonly NotifyIcon _trayIcon;
     private readonly UpdateCoordinator _updates = new();
     private readonly ToolStripMenuItem _updateItem;
-    private SettingsWindow? _popup;
+    private DashboardWindow? _popup;
+    private SettingsWindow? _settings;
     private OnboardingWindow? _onboarding;
     private MobileConnectWindow? _mobileConnect;
 
@@ -36,24 +37,32 @@ public sealed class TrayIconManager : IDisposable
         _trayIcon.MouseClick += OnTrayClick;
 
         var menu = new ContextMenuStrip();
-        var openItem = new ToolStripMenuItem("Open Homebase");
+        // Look (dashboard) → change (settings) → phone, then housekeeping. Labels follow the UI
+        // language (see L); "Open Homebase" is bold as the left-click default.
+        var openItem = new ToolStripMenuItem(L.MenuOpen) { Font = new Font(menu.Font, FontStyle.Bold) };
         openItem.Click += (_, _) => TogglePopup();
         menu.Items.Add(openItem);
 
-        var phoneItem = new ToolStripMenuItem("Connect Phone…");
+        var settingsItem = new ToolStripMenuItem(L.MenuSettings);
+        settingsItem.Click += (_, _) => ShowSettings(SettingsTab.Telegram);
+        menu.Items.Add(settingsItem);
+
+        var phoneItem = new ToolStripMenuItem(L.MenuPhone);
         phoneItem.Click += (_, _) => ShowMobileConnect();
         menu.Items.Add(phoneItem);
 
-        var setupItem = new ToolStripMenuItem("Setup / Welcome");
-        setupItem.Click += (_, _) => ShowOnboarding();
-        menu.Items.Add(setupItem);
+        menu.Items.Add(new ToolStripSeparator());
 
-        _updateItem = new ToolStripMenuItem($"v{_updates.CurrentVersion} — Check for Updates");
+        _updateItem = new ToolStripMenuItem(L.MenuCheckUpdates(_updates.CurrentVersion));
         _updateItem.Click += async (_, _) => await CheckForUpdatesAsync();
         menu.Items.Add(_updateItem);
 
+        var setupItem = new ToolStripMenuItem(L.MenuSetup);
+        setupItem.Click += (_, _) => ShowOnboarding();
+        menu.Items.Add(setupItem);
+
         menu.Items.Add(new ToolStripSeparator());
-        var exitItem = new ToolStripMenuItem("Exit");
+        var exitItem = new ToolStripMenuItem(L.MenuExit);
         exitItem.Click += (_, _) => Application.Current.Shutdown();
         menu.Items.Add(exitItem);
 
@@ -63,7 +72,7 @@ public sealed class TrayIconManager : IDisposable
 
         // First launch for this Windows user: walk them through the connection checklist
         // once. Guarded so a window failure can never take down the tray itself; it only
-        // ever shows again on demand from the "Setup / Welcome" menu item.
+        // ever shows again on demand from the "Setup checklist" menu item.
         try
         {
             if (!OnboardingState.IsCompleted())
@@ -77,21 +86,45 @@ public sealed class TrayIconManager : IDisposable
         if (e.Button == MouseButtons.Left) TogglePopup();
     }
 
+    private DashboardWindow Dashboard()
+    {
+        if (_popup is null)
+        {
+            _popup = new DashboardWindow();
+            _popup.OpenSettingsRequested += () => ShowSettings(SettingsTab.Telegram);
+        }
+        return _popup;
+    }
+
     private void TogglePopup()
     {
-        _popup ??= new SettingsWindow(_updates);
+        var popup = Dashboard();
         // Toggle only when it is already the foreground window; if it is hidden OR just behind
         // another window, bring it to the front instead of hiding it, so a tray click always
         // surfaces the dashboard rather than dismissing an out-of-sight one.
-        if (_popup is { IsVisible: true, IsActive: true }) _popup.Hide();
-        else _popup.ShowNearTray();
+        if (popup is { IsVisible: true, IsActive: true }) popup.Hide();
+        else popup.ShowNearTray();
     }
 
     private void ShowPopup()
     {
-        _popup ??= new SettingsWindow(_updates);
-        if (_popup.IsVisible) _popup.Activate();
-        else _popup.ShowNearTray();
+        var popup = Dashboard();
+        if (popup.IsVisible) popup.Activate();
+        else popup.ShowNearTray();
+    }
+
+    private void ShowSettings(SettingsTab tab)
+    {
+        if (_settings is not { IsVisible: true })
+        {
+            _settings = new SettingsWindow(_updates);
+            _settings.Closed += (_, _) => _settings = null;
+            _settings.Show();
+        }
+        _settings.ShowTab(tab);
+        if (_settings.WindowState == System.Windows.WindowState.Minimized)
+            _settings.WindowState = System.Windows.WindowState.Normal;
+        _settings.Activate();
     }
 
     private void ShowMobileConnect()
@@ -116,9 +149,10 @@ public sealed class TrayIconManager : IDisposable
         }
         _onboarding = new OnboardingWindow();
         // Open the dashboard only after onboarding has fully closed — deferring past the
-        // close avoids a focus race with SettingsWindow's hide-on-deactivate behaviour.
+        // close avoids a focus race with the dashboard's show-near-tray activation.
         _onboarding.GetStartedRequested += () =>
             Application.Current.Dispatcher.BeginInvoke(new Action(ShowPopup));
+        _onboarding.OpenTelegramSettingsRequested += () => ShowSettings(SettingsTab.Telegram);
         _onboarding.Closed += (_, _) => _onboarding = null;
         _onboarding.Show();
         _onboarding.Activate();
@@ -160,7 +194,7 @@ public sealed class TrayIconManager : IDisposable
             }
 
             if (info is null) return;
-            _updateItem.Text = $"📡 Update v{info.Version} available!";
+            _updateItem.Text = L.MenuUpdateAvailable(info.Version);
 
             // Don't stack the update dialog on top of first-run onboarding; the menu label is enough.
             if (_onboarding is not null) return;
@@ -172,7 +206,7 @@ public sealed class TrayIconManager : IDisposable
             }
             catch (Exception ex)
             {
-                MessageDialog.Show("Update Error", $"Couldn't show the update: {ex.Message}");
+                MessageDialog.Show(L.UpdErrorTitle, L.UpdShowFailed(ex.Message));
             }
             return;
         }

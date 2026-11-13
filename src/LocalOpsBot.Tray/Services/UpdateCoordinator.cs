@@ -39,7 +39,7 @@ internal sealed class UpdateCoordinator
         if (_busy) return UpdateOutcome.Busy;
         if (!ReleaseNotes.ShouldPrompt(info.Version, UpdateSkipState.Read()))
         {
-            status?.Report($"v{info.Version} available (skipped)");
+            status?.Report(L.UpdSkipped(info.Version));
             return UpdateOutcome.Declined;
         }
 
@@ -67,7 +67,7 @@ internal sealed class UpdateCoordinator
         _busy = true;
         try
         {
-            status?.Report("Checking…");
+            status?.Report(L.UpdChecking);
             UpdateInfo? info;
             try
             {
@@ -75,15 +75,15 @@ internal sealed class UpdateCoordinator
             }
             catch (Exception ex)
             {
-                status?.Report("Update check failed");
-                MessageDialog.Show("Update Error", $"Update check failed: {ex.Message}");
+                status?.Report(L.UpdCheckFailed);
+                MessageDialog.Show(L.UpdErrorTitle, L.UpdCheckFailedDetail(ex.Message));
                 return UpdateOutcome.Failed;
             }
 
             if (info is null)
             {
-                status?.Report($"v{CurrentVersion} — up to date");
-                MessageDialog.Show("Update Check", $"Homebase is up to date (v{CurrentVersion}).");
+                status?.Report(L.UpdUpToDate(CurrentVersion));
+                MessageDialog.Show(L.UpdUpToDateTitle, L.UpdUpToDateDetail(CurrentVersion));
                 return UpdateOutcome.UpToDate;
             }
 
@@ -107,11 +107,11 @@ internal sealed class UpdateCoordinator
 
             case UpdateDialogChoice.Skip:
                 UpdateSkipState.Write(info.Version);
-                status?.Report($"v{info.Version} available (skipped)");
+                status?.Report(L.UpdSkipped(info.Version));
                 return UpdateOutcome.Declined;
 
             default:
-                status?.Report($"v{info.Version} available");
+                status?.Report(L.UpdAvailableShort(info.Version));
                 return UpdateOutcome.Declined;
         }
     }
@@ -119,7 +119,7 @@ internal sealed class UpdateCoordinator
     private async Task<UpdateOutcome> DownloadAndApplyAsync(UpdateInfo info, IProgress<string>? status)
     {
         var window = new UpdateProgressWindow();
-        window.SetStatus("Downloading the update…");
+        window.SetStatus(L.UpdDownloading);
         window.Show();
         window.Activate();
         try
@@ -127,24 +127,24 @@ internal sealed class UpdateCoordinator
             string zip;
             try
             {
-                status?.Report("Downloading update…");
+                status?.Report(L.UpdDownloadingShort);
                 var progress = new Progress<int>(p =>
                 {
                     window.SetPercent(p);
                     // The checksum verification runs right after the byte loop hits 100%.
-                    if (p >= 100) window.SetStatus("Verifying…");
+                    if (p >= 100) window.SetStatus(L.UpdVerifying);
                 });
                 zip = await _updater.DownloadUpdateAsync(info, progress, window.Token);
             }
             catch (OperationCanceledException)
             {
-                status?.Report($"v{info.Version} available");
+                status?.Report(L.UpdAvailableShort(info.Version));
                 return UpdateOutcome.Cancelled;
             }
             catch (Exception ex)
             {
-                status?.Report("Update failed");
-                MessageDialog.Show("Update Error", $"Download failed: {ex.Message}");
+                status?.Report(L.UpdFailed);
+                MessageDialog.Show(L.UpdErrorTitle, L.UpdDownloadFailed(ex.Message));
                 return UpdateOutcome.Failed;
             }
 
@@ -152,9 +152,9 @@ internal sealed class UpdateCoordinator
             // so it needs admin — lock cancellation and launch the elevated helper. Only shut the
             // tray down once that helper is actually running (the user may still decline the UAC).
             window.SetPercent(100);
-            window.SetStatus("Installing… approve the administrator prompt.");
+            window.SetStatus(L.UpdInstalling);
             window.LockCancel();
-            status?.Report("Installing update…");
+            status?.Report(L.UpdInstallingShort);
 
             bool started;
             try
@@ -163,8 +163,8 @@ internal sealed class UpdateCoordinator
             }
             catch (Exception ex)
             {
-                status?.Report("Update failed");
-                MessageDialog.Show("Update Error", $"Couldn't launch the installer: {ex.Message}");
+                status?.Report(L.UpdFailed);
+                MessageDialog.Show(L.UpdErrorTitle, L.UpdLaunchFailed(ex.Message));
                 return UpdateOutcome.Failed;
             }
 
@@ -176,9 +176,8 @@ internal sealed class UpdateCoordinator
                 return UpdateOutcome.Updating;
             }
 
-            status?.Report($"v{info.Version} available");
-            MessageDialog.Show("Update Cancelled",
-                "Installing the update needs administrator approval. Nothing was changed — you can try again anytime.");
+            status?.Report(L.UpdAvailableShort(info.Version));
+            MessageDialog.Show(L.UpdCancelledTitle, L.UpdCancelledDetail);
             return UpdateOutcome.Cancelled;
         }
         finally

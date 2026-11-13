@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using LocalOpsBot.Tray.Services;
 
@@ -35,6 +36,7 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+        ApplyLanguage();
         _trayIcon = new TrayIconManager();
 
         // Start toast-notification forwarding if the user has enabled it. This is the tray half of
@@ -44,6 +46,26 @@ public partial class App : Application
 
         // Mobile monitoring bridge: connects to the Agent but collects nothing until a phone watches.
         Services.Mobile.MobileHost.StartIfEnabled();
+    }
+
+    /// <summary>
+    /// Use the same language as the bot: <c>agent:language</c> when set, otherwise the OS display
+    /// language (the default UI culture). An invalid code is ignored, as the Agent does.
+    /// </summary>
+    private static void ApplyLanguage()
+    {
+        try
+        {
+            var language = TrayConfig.Load()["agent:language"];
+            if (string.IsNullOrWhiteSpace(language)) return;
+            var culture = CultureInfo.GetCultureInfo(language.Trim());
+            CultureInfo.DefaultThreadCurrentUICulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+        }
+        catch (Exception)
+        {
+            // Unknown culture code or unreadable config: keep the OS display language.
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

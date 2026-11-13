@@ -2,8 +2,10 @@ package io.github.jeiel85.homebase
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +23,9 @@ import io.github.jeiel85.homebase.ui.PcListScreen
 /** Three screens — list, pair, detail — so plain state instead of a navigation library. */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Every screen starts with the carbon console bar, so the status bar always gets light
+        // icons; the navigation bar follows the system theme.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         val store = PcStore(this)
         val probe = NetworkProbe(this)

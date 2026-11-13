@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -10,10 +9,10 @@ using LocalOpsBot.Tray.Services;
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// First-run welcome window. It probes whether the machine is ready to talk to Telegram
-/// (Agent service, bot token, chat allowlist) and lets the user fire a test message — it
-/// never writes config, so it needs no elevation. Credential changes stay with the
-/// installer; onboarding only guides and verifies.
+/// First-run setup checklist. It probes what is ready (Agent service, Telegram connection,
+/// optional Ollama) and points at the next step for each item. It never writes config itself:
+/// the Telegram connection is entered in <see cref="SettingsWindow"/>, reached from the
+/// "Connect Telegram" button (<see cref="OpenTelegramSettingsRequested"/>).
 /// </summary>
 public partial class OnboardingWindow : ThemedWindow
 {
@@ -23,10 +22,15 @@ public partial class OnboardingWindow : ThemedWindow
     /// <summary>Raised when the user clicks "Get started"; the tray opens the dashboard.</summary>
     public event Action? GetStartedRequested;
 
+    /// <summary>Raised by "Connect Telegram" / "Change"; the tray opens Settings on the Telegram tab.</summary>
+    public event Action? OpenTelegramSettingsRequested;
+
     public OnboardingWindow()
     {
         InitializeComponent();
         Loaded += (_, _) => Refresh();
+        // Coming back from Settings: re-check so a just-saved connection shows as ready.
+        Activated += (_, _) => { if (IsLoaded && RecheckButton.IsEnabled) Refresh(); };
     }
 
     private enum Chip { Ready, Setup, Missing }
@@ -36,8 +40,7 @@ public partial class OnboardingWindow : ThemedWindow
         RecheckButton.IsEnabled = false;
         try
         {
-            var snapshot = await Task.Run(_readiness.Probe);
-            Apply(snapshot);
+            Apply(await Task.Run(_readiness.Probe));
         }
         catch
         {
@@ -67,74 +70,69 @@ public partial class OnboardingWindow : ThemedWindow
         {
             case AgentServiceState.Running:
                 SetChip(ServiceChip, ServiceChipText, Chip.Ready);
-                ServiceStatusText.Text = "Running — monitoring is active.";
+                ServiceStatusText.Text = L.SetupServiceRunning;
                 break;
             case AgentServiceState.Stopped:
                 SetChip(ServiceChip, ServiceChipText, Chip.Setup);
-                ServiceStatusText.Text = "Installed but stopped. Start the Homebase.Agent service.";
+                ServiceStatusText.Text = L.SetupServiceStopped;
                 break;
             default:
                 SetChip(ServiceChip, ServiceChipText, Chip.Missing);
-                ServiceStatusText.Text = "Not installed. Run the installer to set up the service.";
+                ServiceStatusText.Text = L.SetupServiceMissing;
                 break;
         }
 
-        if (s.TokenConfigured)
+        var ready = s is { TokenConfigured: true, ChatConfigured: true };
+        if (ready && s.PrimaryChatId is long chat)
         {
-            SetChip(TokenChip, TokenChipText, Chip.Ready);
-            TokenStatusText.Text = "Bot token is set.";
+            SetChip(TelegramChip, TelegramChipText, Chip.Ready);
+            TelegramStatusText.Text = L.TgStatusReady(chat);
         }
         else
         {
-            SetChip(TokenChip, TokenChipText, Chip.Setup);
-            TokenStatusText.Text = "No bot token yet. Create one with @BotFather, then re-run the installer.";
+            SetChip(TelegramChip, TelegramChipText, Chip.Setup);
+            TelegramStatusText.Text = s.TokenConfigured ? L.TgStatusNoChat : L.TgStatusNoToken;
         }
 
-        if (s.ChatConfigured)
-        {
-            SetChip(ChatChip, ChatChipText, Chip.Ready);
-            ChatStatusText.Text = $"Chat ID {s.PrimaryChatId} is allowed.";
-        }
-        else
-        {
-            SetChip(ChatChip, ChatChipText, Chip.Setup);
-            ChatStatusText.Text = "No chat ID yet. Message your bot, then re-run the installer.";
-        }
-
-        TestButton.IsEnabled = s is { TokenConfigured: true, ChatConfigured: true };
+        // Ready: the next useful step is proving it works; otherwise it is entering the details.
+        ConnectTelegramButton.Content = ready ? L.SetupChangeTelegram : L.SetupConnectTelegram;
+        ConnectTelegramButton.Style = (Style)FindResource(ready ? "Button.Carbon" : "Button.Signal");
+        TestButton.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
+        TestButton.Style = (Style)FindResource(ready ? "Button.Signal" : "Button.Carbon");
     }
 
     private void ApplyOllama(OllamaProbe p)
     {
         _ollamaModel = p.Model;
         OllamaInstallHint.Visibility = Visibility.Collapsed;
-        OllamaStartHint.Visibility = Visibility.Collapsed;
+        OllamaStartButton.Visibility = Visibility.Collapsed;
         OllamaPullHint.Visibility = Visibility.Collapsed;
 
         switch (p.Status)
         {
             case OllamaReadiness.Ready:
                 SetChip(OllamaChip, OllamaChipText, Chip.Ready);
-                OllamaStatusText.Text = $"Ready — model '{p.Model}' is installed.";
+                OllamaStatusText.Text = L.OllamaReady(p.Model);
                 break;
             case OllamaReadiness.ModelMissing:
                 SetChip(OllamaChip, OllamaChipText, Chip.Setup);
-                OllamaStatusText.Text = "Server is running, but the model isn't pulled yet.";
+                OllamaStatusText.Text = L.OllamaModelMissing;
                 OllamaPullCommand.Text = $"ollama pull {p.Model}";
                 OllamaPullHint.Visibility = Visibility.Visible;
                 OllamaPullButton.IsEnabled = IsSafeModelName(p.Model);
                 break;
             default: // Unreachable
-                SetChip(OllamaChip, OllamaChipText, Chip.Setup);
+                OllamaChip.Background = (Brush)FindResource("Brush.Hairline");
+                OllamaChipText.Text = L.ChipOptional;
                 if (OllamaSetup.IsInstalled())
                 {
                     // Installed but not running — the common case. One click starts it + autostart.
-                    OllamaStatusText.Text = "Installed but not running. Start it to enable AI advice.";
-                    OllamaStartHint.Visibility = Visibility.Visible;
+                    OllamaStatusText.Text = L.OllamaNotRunning;
+                    OllamaStartButton.Visibility = Visibility.Visible;
                 }
                 else
                 {
-                    OllamaStatusText.Text = "Not detected. Optional — install Ollama to enable AI advice.";
+                    OllamaStatusText.Text = L.OllamaNotInstalled;
                     OllamaInstallHint.Visibility = Visibility.Visible;
                 }
                 break;
@@ -145,7 +143,7 @@ public partial class OnboardingWindow : ThemedWindow
     {
         if (!IsSafeModelName(_ollamaModel))
         {
-            OllamaStatusText.Text = "Model name has unexpected characters — pull it manually.";
+            OllamaStatusText.Text = L.OllamaBadModel;
             return;
         }
         try
@@ -159,7 +157,7 @@ public partial class OnboardingWindow : ThemedWindow
         }
         catch (Exception ex)
         {
-            OllamaStatusText.Text = $"Couldn't start the pull: {ex.Message}";
+            OllamaStatusText.Text = L.OllamaPullFailed(ex.Message);
         }
     }
 
@@ -167,7 +165,7 @@ public partial class OnboardingWindow : ThemedWindow
     private async void OllamaStart_Click(object sender, RoutedEventArgs e)
     {
         OllamaStartButton.IsEnabled = false;
-        OllamaStatusText.Text = "Starting Ollama…";
+        OllamaStatusText.Text = L.OllamaStarting;
         try
         {
             OllamaSetup.StartAndEnableAutostart();
@@ -190,20 +188,21 @@ public partial class OnboardingWindow : ThemedWindow
     {
         var (key, label) = level switch
         {
-            Chip.Ready => ("Brush.StatusOnline", "READY"),
-            Chip.Setup => ("Brush.StatusWarn", "SETUP"),
-            _ => ("Brush.StatusBad", "MISSING"),
+            Chip.Ready => ("Brush.StatusOnline", L.ChipReady),
+            Chip.Setup => ("Brush.StatusWarn", L.ChipSetup),
+            _ => ("Brush.StatusBad", L.ChipMissing),
         };
         chip.Background = (Brush)FindResource(key);
         text.Text = label;
     }
 
+    private void ConnectTelegram_Click(object sender, RoutedEventArgs e) => OpenTelegramSettingsRequested?.Invoke();
+
     private async void TestMessage_Click(object sender, RoutedEventArgs e)
     {
         TestButton.IsEnabled = false;
-        RecheckButton.IsEnabled = false;
         TestResultText.Foreground = (Brush)FindResource("Brush.InkSoft");
-        TestResultText.Text = "Sending…";
+        TestResultText.Text = L.Sending;
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -214,111 +213,15 @@ public partial class OnboardingWindow : ThemedWindow
         catch (Exception ex)
         {
             TestResultText.Foreground = (Brush)FindResource("Brush.StatusBad");
-            TestResultText.Text = $"Send failed: {ex.Message}";
+            TestResultText.Text = L.TestFailed(ex.Message);
         }
         finally
         {
-            RecheckButton.IsEnabled = true;
-            Refresh(); // re-probe and re-enable the test button if still configured
+            TestButton.IsEnabled = true;
         }
     }
 
     private void Recheck_Click(object sender, RoutedEventArgs e) => Refresh();
-
-    private async void SaveApply_Click(object sender, RoutedEventArgs e)
-    {
-        var token = TokenInput.Text.Trim();
-        var chatId = ChatIdInput.Text.Trim();
-
-        if (!IsValidToken(token))
-        {
-            SetResult("Enter a valid bot token (looks like 123456:ABC-DEF…).", ok: false);
-            return;
-        }
-        if (!IsValidChatId(chatId))
-        {
-            SetResult("Enter a valid numeric chat ID (e.g. 123456789).", ok: false);
-            return;
-        }
-
-        var script = ResolveConfigureScriptPath();
-        if (script is null)
-        {
-            SetResult("configure-telegram.ps1 not found next to the app — reinstall Homebase.", ok: false);
-            return;
-        }
-
-        SaveApplyButton.IsEnabled = false;
-        RecheckButton.IsEnabled = false;
-        TestResultText.Foreground = (Brush)FindResource("Brush.InkSoft");
-        TestResultText.Text = "Applying — approve the admin prompt…";
-        try
-        {
-            // The one privileged step: elevate to set the machine token, write the chat allowlist,
-            // and restart the service. Inputs are format-validated above, so they carry no shell
-            // metacharacters. Verb=runas triggers the single UAC prompt.
-            var psi = new ProcessStartInfo("powershell.exe",
-                $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
-                $"-File \"{script}\" -Token \"{token}\" -ChatId \"{chatId}\"")
-            {
-                UseShellExecute = true,
-                Verb = "runas",
-                WindowStyle = ProcessWindowStyle.Hidden,
-            };
-            using var proc = Process.Start(psi);
-            if (proc is null)
-            {
-                SetResult("Couldn't start the configuration helper.", ok: false);
-                return;
-            }
-
-            await proc.WaitForExitAsync();
-            if (proc.ExitCode == 0)
-            {
-                TokenInput.Clear();
-                SetResult("Saved. The service is restarting — re-checking…", ok: true);
-                await Task.Delay(3000); // give the service time to come back up
-                Refresh();
-            }
-            else
-            {
-                SetResult($"Apply failed (exit {proc.ExitCode}). Double-check the token and chat ID.", ok: false);
-            }
-        }
-        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
-        {
-            SetResult("Cancelled — admin approval is needed to save credentials.", ok: false);
-        }
-        catch (Exception ex)
-        {
-            SetResult($"Apply failed: {ex.Message}", ok: false);
-        }
-        finally
-        {
-            SaveApplyButton.IsEnabled = true;
-            RecheckButton.IsEnabled = true;
-        }
-    }
-
-    private void SetResult(string message, bool ok)
-    {
-        TestResultText.Foreground = (Brush)FindResource(ok ? "Brush.StatusOnline" : "Brush.StatusBad");
-        TestResultText.Text = message;
-    }
-
-    // Same formats the installer validates: token "digits:base64ish", chat ID signed integer.
-    private static bool IsValidToken(string token) => Regex.IsMatch(token, @"^\d{6,10}:[A-Za-z0-9_-]{30,}$");
-    private static bool IsValidChatId(string chatId) => Regex.IsMatch(chatId, @"^-?\d{4,}$");
-
-    // The Tray runs from {app}\Tray; configure-telegram.ps1 is installed one level up at {app}.
-    private static string? ResolveConfigureScriptPath()
-    {
-        var trayDir = AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar);
-        var appDir = System.IO.Directory.GetParent(trayDir)?.FullName;
-        if (appDir is null) return null;
-        var path = System.IO.Path.Combine(appDir, "configure-telegram.ps1");
-        return System.IO.File.Exists(path) ? path : null;
-    }
 
     private void GetStarted_Click(object sender, RoutedEventArgs e)
     {
@@ -334,7 +237,7 @@ public partial class OnboardingWindow : ThemedWindow
         }
         catch
         {
-            // No browser / handler available — silently ignore.
+            // No browser / handler available — nothing to do.
         }
         e.Handled = true;
     }

@@ -1,0 +1,154 @@
+<local:ThemedWindow xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LocalOpsBot.Tray"
+        x:Class="LocalOpsBot.Tray.DashboardWindow"
+        Style="{StaticResource Window.Chrome}"
+        Title="Homebase"
+        Icon="pack://application:,,,/Resources/homebase.ico"
+        Width="460" Height="640"
+        ResizeMode="CanMinimize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Brush.Canvas}"
+        FontFamily="{StaticResource Font.Sans}"
+        TextOptions.TextFormattingMode="Display">
+  <!-- The dashboard only shows state. Everything that changes configuration lives in the
+       Settings window (tray menu "Settings…" or the button at the bottom). -->
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- ═ Masthead: carbon command slab with wordmark + live status badge ═ -->
+    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12" Padding="10,6">
+      <DockPanel LastChildFill="False">
+        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center"
+                   FontFamily="{StaticResource Font.Display}" FontWeight="Black"
+                   FontSize="16" Foreground="{StaticResource Brush.OnDark}" Text="HOMEBASE"/>
+        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="8,3,0,0"
+                   Style="{StaticResource Type.Micro}" Foreground="{StaticResource Brush.Amber}"
+                   Text="{x:Static local:L.DashEyebrow}"/>
+        <Border x:Name="StatusBadge" DockPanel.Dock="Right" VerticalAlignment="Center"
+                Background="#9E9E9E" CornerRadius="2" Padding="9,3">
+          <TextBlock x:Name="AgentStatusText" Text="{x:Static local:L.BadgeChecking}"
+                     Foreground="{StaticResource Brush.OnDark}" FontSize="11" FontWeight="Bold"/>
+        </Border>
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+
+        <!-- ═ THIS PC ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.DashThisPc}"/>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="80"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Type.Label}" Text="CPU" Margin="0,5" VerticalAlignment="Center"/>
+            <Grid Grid.Row="0" Grid.Column="1" Margin="0,5">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="150"/>
+              </Grid.ColumnDefinitions>
+              <ProgressBar x:Name="CpuBar" Style="{StaticResource Gauge}" Height="16"/>
+              <TextBlock x:Name="CpuText" Grid.Column="1" Text="—" Margin="10,0,0,0" VerticalAlignment="Center"
+                         Style="{StaticResource Type.BodyStrong}"/>
+            </Grid>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Type.Label}" Text="{x:Static local:L.DashMemory}" Margin="0,5" VerticalAlignment="Center"/>
+            <Grid Grid.Row="1" Grid.Column="1" Margin="0,5">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="150"/>
+              </Grid.ColumnDefinitions>
+              <ProgressBar x:Name="RamBar" Style="{StaticResource Gauge}" Height="16"/>
+              <TextBlock x:Name="RamText" Grid.Column="1" Text="—" Margin="10,0,0,0" VerticalAlignment="Center"
+                         Style="{StaticResource Type.BodyStrong}"/>
+            </Grid>
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Type.Label}" Text="{x:Static local:L.DashUptime}" Margin="0,5"/>
+            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="UptimeText" Style="{StaticResource Type.BodyStrong}" Text="—" Margin="0,5"/>
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource Type.Label}" Text="{x:Static local:L.DashNetwork}" Margin="0,5"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="NetworkText" Style="{StaticResource Type.Body}" Text="—" Margin="0,5"/>
+          </Grid>
+        </Border>
+
+        <!-- ═ DISKS — one gauge per drive (used share), free space beside it ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.DashDisks}"/>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel x:Name="DiskPanel"/>
+        </Border>
+
+        <!-- ═ CONNECTIONS — read-only summary; changes happen in Settings / Connect phone ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.DashConnections}"/>
+        </Border>
+        <Border Style="{StaticResource Card}">
+          <StackPanel>
+            <Grid Margin="0,3">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="TelegramChip" Style="{StaticResource Chip}">
+                <TextBlock x:Name="TelegramChipText" Style="{StaticResource ChipText}" Text="…"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.DashTelegram}"/>
+                <TextBlock x:Name="TelegramText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Text="—"/>
+              </StackPanel>
+            </Grid>
+            <Grid Margin="0,3">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="ForwardingChip" Style="{StaticResource Chip}">
+                <TextBlock x:Name="ForwardingChipText" Style="{StaticResource ChipText}" Text="…"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.DashForwarding}"/>
+                <TextBlock x:Name="ForwardingText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Text="—"/>
+              </StackPanel>
+            </Grid>
+            <Grid Margin="0,3">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="PhoneChip" Style="{StaticResource Chip}">
+                <TextBlock x:Name="PhoneChipText" Style="{StaticResource ChipText}" Text="…"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.DashPhone}"/>
+                <TextBlock x:Name="PhoneText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Text="—"/>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button Style="{StaticResource Button.Amber}" Content="{x:Static local:L.DashOpenSettings}" Click="OpenSettings_Click"/>
+      <Button Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.Close}" Margin="8,0,0,0" Click="Close_Click"/>
+    </StackPanel>
+  </Grid>
+</local:ThemedWindow>
