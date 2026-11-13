@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Runtime.Versioning;
 using LocalOpsBot.Agent.Services;
+using LocalOpsBot.Agent.Services.Mobile;
+using Microsoft.Extensions.Logging;
 using LocalOpsBot.Core;
 using LocalOpsBot.Core.Alerts;
 using LocalOpsBot.Core.Notifications;
@@ -113,6 +115,14 @@ if (forwardingEnabled)
     builder.Services.AddSingleton<INotificationBridgeServer>(sp => sp.GetRequiredService<NotificationBridgeServer>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationBridgeServer>());
     builder.Services.AddHostedService<NotificationForwardingService>();
+}
+
+// --- Mobile monitoring (opt-in, DECISIONS M-1..M-11) -----------------------
+// Off by default; the Tray's "휴대폰 연결" turns it on. Also keeps the Tailscale-only firewall
+// rule in step with the setting.
+using (var startupLoggerFactory = new Serilog.Extensions.Logging.SerilogLoggerFactory(Log.Logger))
+{
+    builder.Services.AddHomebaseMobile(builder.Configuration, startupLoggerFactory.CreateLogger("Homebase.Mobile"));
 }
 
 try

@@ -5,7 +5,90 @@ on:
     tags: [ 'v*' ]
 
 jobs:
+  # Android monitoring app (mobile/). Same tag, same version as the Windows build (DECISIONS M-4).
+  # Produces the signed APK and the update.json the in-app updater reads from
+  # releases/latest/download/update.json.
+  android:
+    runs-on: ubuntu-latest
+    env:
+      # Public fingerprint of the release signing certificate — a different key must fail the build,
+      # since phones refuse updates signed with another key.
+      HOMEBASE_RELEASE_CERT_SHA256: 4d9cbd4d68cd2ee792fd1f506cbfae9c2313186b668a5ca34d9020f5d23ef865
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Resolve version from tag
+        run: echo "VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Restore signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.HOMEBASE_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "HOMEBASE_RELEASE_KEYSTORE_BASE64 secret is missing"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/homebase-release.jks"
+
+      - name: Test and build signed APK
+        working-directory: mobile
+        env:
+          HOMEBASE_RELEASE_STORE_FILE: ${{ runner.temp }}/homebase-release.jks
+          HOMEBASE_RELEASE_STORE_PASSWORD: ${{ secrets.HOMEBASE_RELEASE_STORE_PASSWORD }}
+          HOMEBASE_RELEASE_KEY_ALIAS: ${{ secrets.HOMEBASE_RELEASE_KEY_ALIAS }}
+          HOMEBASE_RELEASE_KEY_PASSWORD: ${{ secrets.HOMEBASE_RELEASE_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease             -Phomebase.version="$VER" -Phomebase.requireReleaseSigning=true
+
+      - name: Verify signature and write update.json
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          mkdir -p dist
+          cp mobile/app/build/outputs/apk/release/app-release.apk dist/Homebase-Mobile.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs dist/Homebase-Mobile.apk > signing.txt
+          # apksigner prints either "Signer #1 certificate SHA-256 digest: <hex>" or
+          # "V2 Signer: certificate SHA-256 digest: <hex>" depending on version — take the last field.
+          ACTUAL="$(awk -F': ' '/certificate SHA-256 digest/ { print tolower($NF); exit }' signing.txt)"
+          echo "certificate: $ACTUAL"
+          test "$ACTUAL" = "$HOMEBASE_RELEASE_CERT_SHA256"
+
+          # Values come from the artifact itself (badging + bytes), never from the build script.
+          BADGING="$("$BUILD_TOOLS/aapt2" dump badging dist/Homebase-Mobile.apk)"
+          export VERSION_CODE="$(echo "$BADGING" | grep -o "[[:space:]]versionCode='[0-9]*'" | head -n 1 | tr -dc '0-9')"
+          export VERSION_NAME="$(echo "$BADGING" | grep -o "[[:space:]]versionName='[^']*'" | head -n 1 | sed "s/.*='//; s/'$//")"
+          export MIN_SDK="$(echo "$BADGING" | grep -o "^minSdkVersion:'[0-9]*'" | head -n 1 | tr -dc '0-9')"
+          export APK_SIZE="$(stat -c %s dist/Homebase-Mobile.apk)"
+          export APK_SHA256="$(sha256sum dist/Homebase-Mobile.apk | awk '{ print $1 }')"
+          test "$VERSION_NAME" = "$VER"
+          python3 - > dist/update.json <<'JSON'
+          import json, os
+          tag = os.environ["GITHUB_REF_NAME"]
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+          print(json.dumps({
+              "versionCode": int(os.environ["VERSION_CODE"]),
+              "versionName": os.environ["VERSION_NAME"],
+              "apkUrl": f"{base}/Homebase-Mobile.apk",
+              "apkSizeBytes": int(os.environ["APK_SIZE"]),
+              "sha256": os.environ["APK_SHA256"],
+              "minSdk": int(os.environ["MIN_SDK"]),
+              "releaseNotesUrl": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/tag/{tag}",
+          }, indent=2))
+          JSON
+          python3 -c "import json; d=json.load(open('dist/update.json')); assert d['versionCode']>0 and len(d['sha256'])==64 and d['apkUrl'].startswith('https://'), d"
+          cat dist/update.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-release
+          path: dist/
+          if-no-files-found: error
+
   build:
+    needs: android
     runs-on: windows-latest
     permissions:
       contents: write
@@ -64,6 +147,11 @@ jobs:
           $section = if ($match.Success) { $match.Value.TrimEnd() } else { $changelog.TrimEnd() }
           Set-Content -Path RELEASE_NOTES.md -Value ($header + "`r`n`r`n" + $section + "`r`n") -Encoding UTF8
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android-release
+          path: android
+
       - name: Create Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
@@ -75,3 +163,5 @@ jobs:
             Homebase-Setup.zip.sha256
             installer/bootstrap.ps1
             config/appsettings.example.json
+            android/Homebase-Mobile.apk
+            android/update.json

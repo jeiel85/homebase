@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PCs are reached over Tailscale (100.64.0.0/10 or *.ts.net); WireGuard encrypts that hop, so
+     plain HTTP/WS is allowed (DECISIONS M-2). The updater enforces https itself. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

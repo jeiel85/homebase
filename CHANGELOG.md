@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.14.0 — Homebase Mobile: live multi-PC monitoring
+
+### Added
+- **Android app (`Homebase-Mobile.apk`).** Pair any number of PCs by QR code, pick one from the list,
+  and watch it live: open windows (Chrome shows each window's active tab), per-app CPU / RAM / I/O /
+  network (an app's window-less child processes are summed in, e.g. a terminal running an agent),
+  the top 30 processes, and recently active Claude Code session titles. Refreshes every second.
+- **Tailscale-only, serverless connection.** The phone talks straight to the PC's Tailscale address
+  (MagicDNS name or fixed 100.x IP). The Agent listens only on that address, behind a firewall rule
+  limited to 100.64.0.0/10 and the Agent executable — nothing is opened to the internet or the LAN.
+- **"Connect Phone…" in the tray menu** — one admin prompt to enable, then a one-time QR code (5
+  minutes) and a list of paired phones you can revoke.
+- **In-app sideload updates** (ported from Markleaf): daily check of the release's `update.json`,
+  SHA-256-verified download, handed to the Android installer.
+
+### Notes
+- Collection runs only while a phone is watching; otherwise the feature adds no measurable load.
+- Off by default (`mobile.enabled: false`). Per-process network needs the Agent running as the
+  service (ETW); Claude session reading can be turned off with `mobile.claudeSessions: false`.
+
 ## v0.13.2 — Reliable boot notification
 
 ### Fixed
