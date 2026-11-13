@@ -21,7 +21,18 @@ HTTP/1.1 + WebSocket, 요청당 연결 하나(`Connection: close`). 경로(`tran
 
 ## 페어링 QR
 
-QR 텍스트는 JSON이다([`pairing-offer.v1.json`](mobile-protocol/pairing-offer.v1.json)).
+QR 텍스트는 링크다(M-19, [`pairing-link.v1.txt`](mobile-protocol/pairing-link.v1.txt)).
+
+```
+https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName, code, expiresAt, endpoints})>
+```
+
+- 앱이 있으면 링크가 앱의 페어링 화면을 연다(App Link). 앱이 없으면 [`docs/pair/`](pair/index.html) 설치 안내 페이지가 열린다.
+  그 페이지의 **앱에서 열기**는 같은 payload를 `homebase://pair/<payload>`로 앱에 넘긴다.
+- payload는 fragment에만 있어 서버로 가지 않는다. 링크로 열린 경우 앱은 내용을 채워 두고 사용자가 **연결**을 눌러야 페어링한다.
+- 앱은 아래의 이전 JSON 원문 QR도 계속 읽는다.
+
+이전(그리고 붙여넣기용) JSON 형식([`pairing-offer.v1.json`](mobile-protocol/pairing-offer.v1.json)):
 
 ```json
 { "hb": 1, "pcId": "…", "pcName": "HOME-PC", "hosts": ["home-pc.tailXXXX.ts.net", "100.x.y.z"],

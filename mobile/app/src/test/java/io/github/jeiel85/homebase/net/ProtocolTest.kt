@@ -65,6 +65,28 @@ class ProtocolTest {
     }
 
     @Test
+    fun pairing_link_fixture_parses_to_the_same_offer() {
+        val link = fixture("pairing-link.v1.txt").trim()
+        val fromLink = PairingOffer.parse(link)!!
+        val fromJson = PairingOffer.parse(fixture("pairing-offer.v1.json"))!!
+        assertEquals(fromJson, fromLink)
+
+        // The install page hands the same payload to the app as homebase://pair/<payload>.
+        val payload = PairingLink.payload(link)!!
+        assertEquals(fromJson, PairingOffer.parse("homebase://pair/$payload"))
+        assertTrue(PairingLink.isLink("homebase://pair/$payload"))
+    }
+
+    @Test
+    fun other_urls_and_broken_links_are_not_offers() {
+        assertFalse(PairingLink.isLink("https://jeiel85.github.io/homebase/"))
+        assertFalse(PairingLink.isLink("https://jeiel85.github.io/homebase/pair/"))
+        assertFalse(PairingLink.isLink("https://evil.example/homebase/pair/#abc"))
+        assertNull(PairingOffer.parse("https://jeiel85.github.io/homebase/pair/#!!!not-base64"))
+        assertNull(PairingOffer.parse("homebase://pair/"))
+    }
+
+    @Test
     fun v1_qr_without_endpoints_becomes_tailscale_paths() {
         val legacy = """{"hb":1,"pcId":"p","pcName":"PC","hosts":["pc.ts.net","100.1.2.3"],"port":47820,"code":"c"}"""
         val offer = PairingOffer.parse(legacy)!!

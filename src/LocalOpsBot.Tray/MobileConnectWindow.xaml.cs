@@ -208,7 +208,8 @@ public partial class MobileConnectWindow : ThemedWindow
                 StatusText.Text = "페어링 코드를 만들지 못했습니다: " + ((string?)r["error"] ?? "unknown");
                 return;
             }
-            QrImage.Source = RenderQr(JsonSerializer.Serialize(offer, MobileProtocol.Json));
+            // An https link (M-19): the phone's own camera opens the app, or the install guide when it's missing.
+            QrImage.Source = RenderQr(PairingLink.Build(offer));
             _offerEndpointsKey = EndpointsKey(offer.Endpoints);
             _expiresAt = offer.ExpiresAt;
             UpdateCountdown();
@@ -255,7 +256,8 @@ public partial class MobileConnectWindow : ThemedWindow
     private static BitmapImage RenderQr(string text)
     {
         using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.M);
+        // Shown on a screen, never printed or scuffed: level L keeps the ~750-char link at version 19.
+        using var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.L);
         var png = new PngByteQRCode(data).GetGraphic(6);
         var image = new BitmapImage();
         image.BeginInit();
