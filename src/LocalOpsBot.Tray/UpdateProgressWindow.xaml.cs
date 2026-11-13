@@ -30,6 +30,13 @@ public partial class UpdateProgressWindow : ThemedWindow
     /// <summary>Disable cancellation once the download is done and the elevated apply is launching.</summary>
     public void LockCancel() => CancelButton.IsEnabled = false;
 
+    /// <summary>Un-minimizes the window (the user may have set the download aside) and brings it forward.</summary>
+    public void RestoreAndActivate()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+    }
+
     private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
 
     protected override void OnClosing(CancelEventArgs e)

@@ -6,8 +6,8 @@
         Title="{x:Static local:L.UpdProgressTitle}"
         Icon="pack://application:,,,/Resources/homebase.ico"
         Width="420" SizeToContent="Height"
-        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="False"
+        ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="True"
         Background="{StaticResource Brush.Canvas}"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
