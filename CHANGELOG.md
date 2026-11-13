@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.16.0 — Phone push notifications, self-installing updates
 
 ### Added
 - **Push notifications in the Homebase app.** PC alerts (process/service/HTTP/port down, event log,
@@ -28,6 +28,11 @@
 - **The update download window can be minimized.** It now has a taskbar button and a minimize
   caption button; the download keeps going, and the window comes back to the front when the
   administrator prompt is next.
+
+### Notes
+- **Push needs both the PC and the app on v0.16.0.** Until both are updated, alerts keep going to
+  Telegram as before. Phones without Google Play services can use the F-Droid build of ntfy; give it
+  a battery-optimization exemption so notifications are not delayed.
 
 ## v0.15.0 — Phone connection without Tailscale, console look, tray settings
 
