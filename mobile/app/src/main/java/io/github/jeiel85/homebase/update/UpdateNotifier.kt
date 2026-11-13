@@ -26,10 +26,16 @@ internal object UpdateNotifier {
     // 알림 ID는 고정이다 — 새 버전이 또 나오면 이전 알림을 덮어쓴다(쌓이지 않는다).
     private const val NOTIFICATION_ID = 0x0b_0001
 
-    /** 권한이 없으면(API 33+ 거부, 앱 알림 꺼짐) 아무것도 하지 않고 false. 그때는 앱 안 배너만 남는다. */
+    /**
+     * 권한이 없거나(API 33+ 거부, 앱 알림 꺼짐) 이 채널만 꺼져 있으면 아무것도 하지 않고 false.
+     * 그때는 앱 안 배너만 남는다. 채널을 따로 봐야 하는 이유: 꺼진 채널에 게시해도 Android는 예외 없이
+     * 조용히 버리므로, 성공으로 치면 그 버전을 "알렸다"고 기억해 채널을 다시 켜도 영영 알리지 않는다.
+     */
     fun show(context: Context, manifest: UpdateManifest): Boolean {
         if (!PushNotifier.canNotify(context)) return false
         ensureChannel(context)
+        val channel = context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL_ID)
+        if (channel == null || channel.importance == NotificationManager.IMPORTANCE_NONE) return false
         val open = PendingIntent.getActivity(
             context,
             NOTIFICATION_ID,

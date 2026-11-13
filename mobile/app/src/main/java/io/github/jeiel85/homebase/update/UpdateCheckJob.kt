@@ -7,6 +7,7 @@ import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
 import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.TimeUnit
 
 /**
@@ -19,11 +20,16 @@ import java.util.concurrent.TimeUnit
  */
 class UpdateCheckJobService : JobService() {
 
+    // onStopJob(설정을 꺼서 잡이 취소된 경우 포함)이 켠다. 블로킹 GET은 중간에 끊을 수 없으므로,
+    // 작업 스레드가 알림을 띄우기 직전에 이 값을 보고 멈춘다.
+    private val stopped = AtomicBoolean(false)
+
     override fun onStartJob(params: JobParameters): Boolean {
+        stopped.set(false)
         // onStartJob은 메인 스레드다. 확인은 블로킹 GET이라 스레드로 넘긴다.
         Thread({
             try {
-                runCheck(applicationContext)
+                runCheck(applicationContext, isStopped = stopped::get)
             } catch (e: Exception) {
                 // 배경 확인의 실패는 알릴 일이 아니다(UpdateChecker와 같은 계약). 다음 주기에 다시 돈다.
                 Log.w(TAG, "background update check failed", e)
@@ -34,8 +40,12 @@ class UpdateCheckJobService : JobService() {
         return true
     }
 
-    // 잡이 중단되면(네트워크 끊김 등) 다시 예약할 필요는 없다 — 주기 잡이라 다음 주기에 돈다.
-    override fun onStopJob(params: JobParameters): Boolean = false
+    // 잡이 중단되면(네트워크 끊김, 설정을 꺼서 취소 등) 진행 중인 확인이 알림을 띄우지 않게 한다.
+    // 다시 예약할 필요는 없다 — 주기 잡이라 다음 주기에 돈다.
+    override fun onStopJob(params: JobParameters): Boolean {
+        stopped.set(true)
+        return false
+    }
 
     internal companion object {
         private const val TAG = "HbUpdateJob"
@@ -43,10 +53,14 @@ class UpdateCheckJobService : JobService() {
         /**
          * 확인 한 번. 알릴 버전이 있고 아직 알리지 않았다면 알림을 띄우고 그 버전을 기억한다.
          * 알림 권한이 없어 못 띄웠으면 기억하지 않는다 — 나중에 권한을 주면 그때 알린다.
+         *
+         * GET 뒤에 설정과 [isStopped]를 다시 본다: 확인하는 사이 사용자가 "업데이트 확인"을 껐다면
+         * `UpdateCheckScheduler.sync`가 이미 잡과 알림을 지웠고, 여기서 알림을 띄우면 그 선택을 되돌린다.
          */
-        fun runCheck(context: Context) {
+        fun runCheck(context: Context, isStopped: () -> Boolean = { false }) {
             val preferences = UpdatePreferences(context)
             val manifest = UpdateRefresh.run(preferences) ?: return
+            if (isStopped() || !preferences.isEnabled()) return
             if (!UpdateDecision.shouldNotify(manifest.versionCode, preferences.notifiedVersionCode())) return
             if (UpdateNotifier.show(context, manifest)) {
                 preferences.setNotifiedVersionCode(manifest.versionCode)
