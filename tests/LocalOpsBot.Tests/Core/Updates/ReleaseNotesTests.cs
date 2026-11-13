@@ -56,4 +56,14 @@ public sealed class ReleaseNotesTests
     {
         Assert.Equal(expected, ReleaseNotes.ShouldPrompt(Version.Parse(available), skipped));
     }
+
+    [Theory]
+    [InlineData("0.15.1", "0.15.1", false)] // the unattended install of this version didn't take → wait for a click
+    [InlineData("0.15.1", "0.15.0", true)]  // a newer release than the last attempt counts down again
+    [InlineData("0.15.1", null, true)]
+    [InlineData("0.15.1", "garbage", true)]
+    public void ShouldAutoInstall_StopsRepeatingTheSameUnattendedInstall(string available, string? attempted, bool expected)
+    {
+        Assert.Equal(expected, ReleaseNotes.ShouldAutoInstall(Version.Parse(available), attempted));
+    }
 }
