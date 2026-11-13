@@ -61,8 +61,8 @@ public class MiniHttpAndBridgeTests
     [Fact]
     public void MagicDns_name_is_read_from_status_json()
     {
-        Assert.Equal("log-win11.tail1234.ts.net",
-            TailscaleAddressResolver.ParseSelfDnsName("{\"Self\":{\"DNSName\":\"log-win11.tail1234.ts.net.\"}}"));
+        Assert.Equal("home-pc.tail1234.ts.net",
+            TailscaleAddressResolver.ParseSelfDnsName("{\"Self\":{\"DNSName\":\"home-pc.tail1234.ts.net.\"}}"));
         Assert.Null(TailscaleAddressResolver.ParseSelfDnsName("{\"Self\":{}}"));
     }
 

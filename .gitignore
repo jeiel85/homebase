@@ -59,3 +59,14 @@ release/
 ## Test
 coverage/
 *.trx
+
+## Android (mobile/)
+mobile/.gradle/
+mobile/build/
+mobile/app/build/
+mobile/local.properties
+mobile/.kotlin/
+mobile/release-signing.properties
+.keystore/
+*.jks
+*.keystore

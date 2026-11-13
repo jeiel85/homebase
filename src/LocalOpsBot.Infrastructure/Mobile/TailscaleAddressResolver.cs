@@ -46,7 +46,7 @@ public sealed class TailscaleAddressResolver
     }
 
     /// <summary>
-    /// The MagicDNS name (e.g. <c>log-win11.tail1234.ts.net</c>) from <c>tailscale status --json</c>,
+    /// The MagicDNS name (e.g. <c>home-pc.tail1234.ts.net</c>) from <c>tailscale status --json</c>,
     /// or <c>null</c> when the CLI is missing or MagicDNS is off. Best effort: the IP alone works.
     /// </summary>
     public string? FindMagicDnsName()
