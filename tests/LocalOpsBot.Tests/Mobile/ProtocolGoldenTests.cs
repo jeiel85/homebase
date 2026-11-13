@@ -75,6 +75,26 @@ public class ProtocolGoldenTests
         Assert.True(JsonNode.DeepEquals(expected, actual), $"{file} drifted from the serialized contract:\n{actual}");
     }
 
+    /// <summary>The QR text (M-20). The Android app parses the same file back into the offer fixture's paths.</summary>
+    [Fact]
+    public void Pairing_link_matches_the_shared_fixture_and_round_trips()
+    {
+        var link = PairingLink.Build(SampleOffer());
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "pairing-link.v1.txt");
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1") File.WriteAllText(path, link + "\n");
+
+        Assert.Equal(File.ReadAllText(path).Trim(), link);
+        Assert.StartsWith("https://jeiel85.github.io/homebase/pair/#", link);
+        Assert.DoesNotContain("?", link); // nothing outside the fragment reaches the web server
+
+        var json = JsonNode.Parse(PairingLink.DecodeJson(link)!)!;
+        Assert.Equal("q8V3k1yZp0Wm2LrT5nXa9Q", (string?)json["code"]);
+        Assert.Null(json["hosts"]);
+        Assert.True(JsonNode.DeepEquals(
+            JsonSerializer.SerializeToNode(SampleEndpoints(), MobileProtocol.Json), json["endpoints"]));
+        Assert.Null(PairingLink.DecodeJson("https://example.com/#abc"));
+    }
+
     [Fact]
     public void Endpoints_without_a_pin_omit_the_field()
     {

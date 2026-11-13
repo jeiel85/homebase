@@ -23,9 +23,9 @@ data class PairingOffer(
     val code: String,
 ) {
     companion object {
-        /** QR text → offer, or null when the text isn't a Homebase pairing code. */
+        /** QR text (pairing link, or the raw JSON of earlier PCs) → offer, or null when it isn't a Homebase code. */
         fun parse(text: String): PairingOffer? = try {
-            val o = JSONObject(text.trim())
+            val o = JSONObject(PairingLink.decode(text) ?: text.trim())
             if (o.optInt("hb") != 1) {
                 null
             } else {

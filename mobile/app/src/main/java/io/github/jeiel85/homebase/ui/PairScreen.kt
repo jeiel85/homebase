@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,7 +70,7 @@ import kotlinx.coroutines.withContext
  * the phone) and pasting the QR text are fallbacks for when the camera can't be used.
  */
 @Composable
-fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBack: () -> Unit) {
+fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBack: () -> Unit, link: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -99,6 +100,14 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
                 busy = false
             }
         }
+    }
+
+    // Opened from a pairing link: fill it in but let the user confirm — any web page can send a link.
+    LaunchedEffect(link) {
+        if (link == null) return@LaunchedEffect
+        pasted = link
+        message = PairingOffer.parse(link)?.let { "${it.pcName} 연결 링크를 열었습니다. 아래 '붙여넣은 코드로 연결'을 누르면 연결합니다." }
+            ?: "Homebase 페어링 링크가 아니거나 손상되었습니다."
     }
 
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result -> handle(result.contents) }
