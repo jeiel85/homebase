@@ -50,8 +50,16 @@ internal class UpdatePreferences(context: Context) {
         prefs.edit().putInt(KEY_SKIPPED_VERSION_CODE, versionCode).apply()
     }
 
+    /** 백그라운드 확인이 Android 알림을 띄운 versionCode. 없으면 0 ([UpdateDecision.shouldNotify]). */
+    fun notifiedVersionCode(): Int = prefs.getInt(KEY_NOTIFIED_VERSION_CODE, 0)
+
+    fun setNotifiedVersionCode(versionCode: Int) {
+        prefs.edit().putInt(KEY_NOTIFIED_VERSION_CODE, versionCode).apply()
+    }
+
     private companion object {
         const val NAME = "homebase_update"
+        const val KEY_NOTIFIED_VERSION_CODE = "notified_version_code"
         const val KEY_ENABLED = "enabled"
         const val KEY_LAST_CHECKED_AT = "last_checked_at"
         const val KEY_SKIPPED_VERSION_CODE = "skipped_version_code"

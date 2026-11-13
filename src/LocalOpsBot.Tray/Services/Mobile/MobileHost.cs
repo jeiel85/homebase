@@ -12,6 +12,15 @@ internal static class MobileHost
 
     public static MobileBridgeClient? Client => _client;
 
+    /// <summary>A phone is viewing this PC right now (the Agent said <c>watch on</c>).</summary>
+    public static bool IsWatching => _client?.IsWatching == true;
+
+    /// <summary>
+    /// <see cref="IsWatching"/> changed. Static so the tray icon can subscribe at startup, before the
+    /// client exists (it is created later when the Phone tab enables the feature). Background thread.
+    /// </summary>
+    public static event Action<bool>? WatchingChanged;
+
     public static bool IsEnabled() => TrayConfig.Load().GetSection("mobile").GetValue<bool>("enabled");
 
     public static MobileBridgeClient EnsureStarted()
@@ -19,6 +28,7 @@ internal static class MobileHost
         if (_client is not null) return _client;
         var claude = TrayConfig.Load().GetSection("mobile").GetValue("claudeSessions", true);
         _client = new MobileBridgeClient(claude);
+        _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
         return _client;
     }
 
@@ -29,7 +39,9 @@ internal static class MobileHost
 
     public static void Stop()
     {
+        var wasWatching = IsWatching;
         _client?.Dispose();
         _client = null;
+        if (wasWatching) WatchingChanged?.Invoke(false);
     }
 }

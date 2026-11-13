@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Update notification on the phone.** The Homebase app now checks for a new version in the
+  background (still one download of `update.json` a day) and shows a notification once per version;
+  tapping it opens the update dialog. Turning off "업데이트 확인" stops the check and clears the
+  notification. If notifications are blocked, the setting offers a button to allow them.
+- **"A phone is viewing this PC" in the tray.** While a phone has this PC open, the tray icon shows a
+  green dot, and the tooltip and the top of the tray menu say so. The PC collects per-process data and
+  window reports only during that time.
+
 ## v0.17.0 — One settings window
 
 ### Changed

@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,11 +24,17 @@ import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.PairScreen
 import io.github.jeiel85.homebase.ui.PcDetailScreen
 import io.github.jeiel85.homebase.ui.PcListScreen
+import io.github.jeiel85.homebase.update.UpdateCheckScheduler
+import io.github.jeiel85.homebase.update.UpdateNotifier
+import io.github.jeiel85.homebase.update.UpdateSurface
 
 /** Three screens — list, pair, detail — so plain state instead of a navigation library. */
 class MainActivity : ComponentActivity() {
     /** A pairing link the app was opened with (camera → App Link, or the install page's button). */
     private var pairingLink by mutableStateOf<String?>(null)
+
+    /** Bumped when an update notification is tapped while the app is already open: back to the list, where the banner opens the dialog. */
+    private var updateTapped by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Every screen starts with the carbon console bar, so the status bar always gets light
@@ -36,6 +43,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // A pending (unconfirmed) link survives rotation and other recreation; the first launch reads the intent.
         pairingLink = if (savedInstanceState == null) intent.pairingLink() else savedInstanceState.getString(KEY_PAIRING_LINK)
+        if (savedInstanceState == null && intent.isUpdateTap()) UpdateSurface.requestOpen()
+        // Keeps the background update check (DECISIONS M-22) scheduled — or cancelled — to match the setting.
+        UpdateCheckScheduler.sync(this)
         val store = PcStore(this)
         val probe = NetworkProbe(this)
         val api = HomebaseApi(networks = probe::current)
@@ -48,6 +58,7 @@ class MainActivity : ComponentActivity() {
                     val pc = remember(route) { route.takeIf { it.length > 1 }?.let(store::get) }
                     BackHandler(enabled = route.isNotEmpty()) { route = ""; pairingLink = null }
                     LaunchedEffect(pairingLink) { if (pairingLink != null) route = "+" }
+                    LaunchedEffect(updateTapped) { if (updateTapped > 0) route = "" }
                     when {
                         route == "+" -> PairScreen(
                             store, api,
@@ -71,11 +82,17 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.pairingLink()?.let { pairingLink = it }
+        if (intent.isUpdateTap()) {
+            UpdateSurface.requestOpen()
+            updateTapped++
+        }
     }
 
     private companion object {
         const val KEY_PAIRING_LINK = "pairingLink"
     }
+
+    private fun Intent?.isUpdateTap(): Boolean = this?.getBooleanExtra(UpdateNotifier.EXTRA_OPEN_UPDATE, false) == true
 
     private fun Intent?.pairingLink(): String? =
         this?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString?.takeIf(PairingLink::isLink)

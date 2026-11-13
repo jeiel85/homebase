@@ -36,6 +36,19 @@ internal sealed class MobileBridgeClient : IDisposable
 
     public bool IsConnected => _pipe?.IsConnected == true;
 
+    /// <summary>True between the Agent's <c>watch on</c> and <c>watch off</c> (or a lost pipe): a phone is viewing this PC.</summary>
+    public bool IsWatching { get; private set; }
+
+    /// <summary>Raised on a background thread whenever <see cref="IsWatching"/> changes.</summary>
+    public event Action<bool>? WatchingChanged;
+
+    private void SetWatching(bool on)
+    {
+        if (IsWatching == on) return;
+        IsWatching = on;
+        WatchingChanged?.Invoke(on);
+    }
+
     /// <summary>Sends a request and waits for the Agent's response (10 s timeout).</summary>
     public async Task<JsonObject> RequestAsync(string op, object? payload = null, CancellationToken ct = default)
     {
@@ -81,6 +94,8 @@ internal sealed class MobileBridgeClient : IDisposable
             finally
             {
                 StopReporting();
+                // No Agent, no watcher we can vouch for — the tray indicator must not stay lit.
+                SetWatching(false);
                 _pipe?.Dispose();
                 _pipe = null;
                 foreach (var p in _pending.Values) p.TrySetException(new IOException("Mobile bridge disconnected."));
@@ -100,8 +115,16 @@ internal sealed class MobileBridgeClient : IDisposable
             switch ((string?)msg["op"])
             {
                 case MobileBridge.OpWatch:
-                    if ((bool?)msg["payload"]?["on"] == true) StartReporting(pipe);
-                    else StopReporting();
+                    if ((bool?)msg["payload"]?["on"] == true)
+                    {
+                        StartReporting(pipe);
+                        SetWatching(true);
+                    }
+                    else
+                    {
+                        StopReporting();
+                        SetWatching(false);
+                    }
                     break;
                 case MobileBridge.OpResponse when msg["id"] is JsonValue idNode && _pending.TryRemove((string)idNode!, out var tcs):
                     tcs.TrySetResult(msg);

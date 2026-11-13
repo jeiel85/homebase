@@ -59,4 +59,15 @@ internal object UpdateDecision {
         if (deviceSdk < manifest.minSdk) return false
         return true
     }
+
+    /**
+     * Input : 알릴 만하다고 판정된 versionCode, 이미 알림을 띄운 versionCode(없으면 0)
+     * Output: 지금 Android 알림을 띄워야 하는지
+     *
+     * 핵심 로직: **한 버전에 알림은 한 번**이다. 백그라운드 확인은 하루에도 여러 번 돌 수 있고
+     * 캐시된 manifest로 같은 판정을 반복하므로, 이 규칙이 없으면 같은 새 버전을 매번 다시 알린다.
+     * 사용자가 알림을 지웠다면 그것도 답이다 — 앱 안 배너는 계속 남는다.
+     */
+    fun shouldNotify(offeredVersionCode: Int, notifiedVersionCode: Int): Boolean =
+        offeredVersionCode != notifiedVersionCode
 }
