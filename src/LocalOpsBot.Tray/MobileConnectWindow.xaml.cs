@@ -100,6 +100,8 @@ public partial class MobileConnectWindow : ThemedWindow
     private void ShowNoPath(BridgeStatus status)
     {
         PairPanel.Visibility = Visibility.Collapsed;
+        // Forget the shown offer so the QR comes back even when the very same paths return.
+        _offerEndpointsKey = "";
         StatusText.Text = status.Cloudflare is { State: "starting" }
             ? "Cloudflare Tunnel을 여는 중입니다. 잠시 후 QR 코드가 나타납니다."
             : "지금 열린 연결 경로가 없습니다. 아래 CONNECTION PATHS에서 원인을 확인하세요.";
