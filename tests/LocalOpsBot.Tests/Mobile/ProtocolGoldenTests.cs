@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using Xunit;
 
 namespace LocalOpsBot.Tests.Mobile;
@@ -46,7 +47,21 @@ public class ProtocolGoldenTests
         new[] { "home-pc.tail1234.ts.net", "100.101.102.103" }, 47820, "q8V3k1yZp0Wm2LrT5nXa9Q",
         new DateTimeOffset(2026, 11, 13, 9, 35, 0, TimeSpan.Zero), SampleEndpoints());
 
+    // RFC 8291 Appendix A keys, so the Kotlin test can also check they decode to a P-256 point.
+    public static PushSubscriptionRequest SampleSubscription() => new(MobileProtocol.Schema,
+        "https://ntfy.sh/upK3x9QeZt0b2Wm7?up=1",
+        "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+        "BTBZMqHH6r4Tts7J_aSIgg");
+
+    public static PushMessage SamplePushMessage() => new(MobileProtocol.Schema,
+        "5b0e1c2d3f4a49b8a1c2d3e4f5a6b7c8", "6f1c0d2e9b8a4c7d", "HOME-PC", "windows-toast", PushPriority.Info,
+        "KakaoTalk: 알림 3건", "엄마: 저녁 먹었니?\n팀장: 회의 10분 뒤", "KakaoTalk", 3,
+        new DateTimeOffset(2026, 11, 13, 9, 31, 0, TimeSpan.Zero));
+
     [Theory]
+    [InlineData("push-subscription.v1.json")]
+    [InlineData("push-subscription-response.v1.json")]
+    [InlineData("push-message.v1.json")]
     [InlineData("snapshot.v1.json")]
     [InlineData("pairing-offer.v1.json")]
     [InlineData("endpoints.v1.json")]
@@ -56,6 +71,9 @@ public class ProtocolGoldenTests
         {
             "snapshot.v1.json" => SampleSnapshot(),
             "pairing-offer.v1.json" => SampleOffer(),
+            "push-subscription.v1.json" => SampleSubscription(),
+            "push-subscription-response.v1.json" => new PushSubscriptionResponse(MobileProtocol.Schema, "a1b2c3d4e5f6", true),
+            "push-message.v1.json" => SamplePushMessage(),
             _ => new EndpointsResponse(MobileProtocol.Schema, SampleEndpoints()),
         };
         var actual = JsonSerializer.SerializeToNode(sample, sample.GetType(), MobileProtocol.Json)!;
@@ -93,6 +111,31 @@ public class ProtocolGoldenTests
         Assert.True(JsonNode.DeepEquals(
             JsonSerializer.SerializeToNode(SampleEndpoints(), MobileProtocol.Json), json["endpoints"]));
         Assert.Null(PairingLink.DecodeJson("https://example.com/#abc"));
+    }
+
+    /// <summary>
+    /// <c>push-message.v1.aes128gcm.txt</c>: the push-message fixture as the PC encrypts it (RFC 8291,
+    /// Appendix A server key and salt, so the output is deterministic). The Kotlin test decrypts it with
+    /// the Appendix A phone key, proving the two implementations agree end to end.
+    /// </summary>
+    [Fact]
+    public void Encrypted_push_fixture_matches_the_pc_encryption()
+    {
+        using var asKey = LocalOpsBot.Tests.Push.WebPushEncryptionTests.Key(
+            LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPrivate, LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPublic);
+        var body = WebPushEncryption.Encrypt(
+            PushPayload.Serialize(SamplePushMessage()),
+            Base64Url.Decode(LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic),
+            Base64Url.Decode(LocalOpsBot.Tests.Push.WebPushEncryptionTests.AuthSecret),
+            asKey,
+            Base64Url.Decode(LocalOpsBot.Tests.Push.WebPushEncryptionTests.Salt));
+        var actual = Base64Url.Encode(body);
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "push-message.v1.aes128gcm.txt");
+
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual + "\n");
+
+        Assert.Equal(File.ReadAllText(path).Trim(), actual);
     }
 
     [Fact]

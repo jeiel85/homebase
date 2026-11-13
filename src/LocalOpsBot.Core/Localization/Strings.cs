@@ -229,6 +229,16 @@ public static class Strings
     public static string ConnectionFailed => T("connection failed", "연결 실패");
 
     // ── Boot notification ────────────────────────────────────────────────────
+    // ── Push / forwarded toasts (DECISIONS M-19) ─────────────────────────────
+    public static string ToastBundleTitle(string app, int count) => T(
+        $"{app}: {count} notifications", $"{app}: 알림 {count}건");
+    public static string ToastBundleMore(int more) => T($"…and {more} more", $"…외 {more}건");
+    public static string TestNotificationTitle(string host) => T(
+        $"Homebase test notification from {host}", $"{host}에서 보낸 Homebase 테스트 알림");
+    public static string TestNotificationBody => T(
+        "If you can read this, notifications from this PC reach you.",
+        "이 알림이 보이면 이 PC의 알림이 잘 도착합니다.");
+
     public static string BootDetected(string host) => T($"{host} boot detected", $"{host} 부팅 감지");
 
     // ── Active health advice alert ───────────────────────────────────────────

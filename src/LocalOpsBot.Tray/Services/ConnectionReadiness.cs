@@ -1,4 +1,6 @@
+using System.IO;
 using System.Net.Http;
+using System.Text.Json;
 using System.ServiceProcess;
 using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Infrastructure.Telegram;
@@ -44,7 +46,36 @@ internal sealed class ConnectionReadiness
             PrimaryChatId: chatId);
     }
 
+    /// <summary>
+    /// Sends a test notification. When the Agent is reachable over the mobile bridge, it goes through
+    /// the Agent's router like a real alert — phone push first, Telegram as the fallback (DECISIONS M-19).
+    /// Otherwise (Agent not running yet during setup, or the mobile feature off) it falls back to a
+    /// direct Telegram send so the setup wizard can still verify the bot.
+    /// </summary>
     public async Task<TestSendResult> SendTestMessageAsync(CancellationToken ct)
+    {
+        if (Mobile.MobileHost.Client is { IsConnected: true } bridge)
+        {
+            try
+            {
+                var response = await bridge.RequestAsync(LocalOpsBot.Core.Mobile.MobileBridge.OpNotifyTest, ct: ct);
+                var result = response["payload"]?.Deserialize<LocalOpsBot.Core.Mobile.NotifyTestResult>(
+                    LocalOpsBot.Core.Mobile.MobileProtocol.Json);
+                if (result is { Delivered: true })
+                    return new TestSendResult(true, L.TestSentVia(result.Channel ?? "?"));
+                if (result is not null)
+                    return new TestSendResult(false, L.TestFailed(result.Error ?? "?"));
+            }
+            catch (Exception ex) when (ex is IOException or OperationCanceledException or System.Text.Json.JsonException)
+            {
+                // Bridge dropped mid-request: fall through to the direct Telegram check.
+            }
+        }
+
+        return await SendTelegramTestAsync(ct);
+    }
+
+    private async Task<TestSendResult> SendTelegramTestAsync(CancellationToken ct)
     {
         var config = LoadConfig();
         var token  = ResolveToken(config);

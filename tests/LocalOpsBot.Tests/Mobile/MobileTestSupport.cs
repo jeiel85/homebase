@@ -1,4 +1,5 @@
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 
 namespace LocalOpsBot.Tests.Mobile;
 
@@ -22,7 +23,33 @@ internal sealed class InMemoryDeviceStore : IMobileDeviceStore
         return info;
     }
 
-    public bool Revoke(string deviceId) { lock (_devices) return _devices.RemoveAll(d => d.Info.DeviceId == deviceId) > 0; }
+    private readonly Dictionary<string, PushSubscription> _push = new();
+
+    public bool Revoke(string deviceId)
+    {
+        lock (_devices)
+        {
+            _push.Remove(deviceId);
+            return _devices.RemoveAll(d => d.Info.DeviceId == deviceId) > 0;
+        }
+    }
+
+    public bool SetPushSubscription(string deviceId, PushSubscription? subscription)
+    {
+        lock (_devices)
+        {
+            if (!_devices.Any(d => d.Info.DeviceId == deviceId)) return false;
+            if (subscription is null) _push.Remove(deviceId); else _push[deviceId] = subscription;
+            return true;
+        }
+    }
+
+    public IReadOnlyList<PushTarget> PushTargets()
+    {
+        lock (_devices)
+            return _devices.Where(d => _push.ContainsKey(d.Info.DeviceId))
+                .Select(d => new PushTarget(d.Info.DeviceId, d.Info.Name, _push[d.Info.DeviceId])).ToList();
+    }
 
     public bool IsPaired(string deviceId) { lock (_devices) return _devices.Any(d => d.Info.DeviceId == deviceId); }
 

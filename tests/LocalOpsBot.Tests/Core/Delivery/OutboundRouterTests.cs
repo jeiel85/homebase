@@ -52,6 +52,99 @@ public sealed class OutboundRouterTests
         Assert.Equal(0, telegram.SendCount);
     }
 
+    private static FakeChannel Ok(string id) => new(id, new OutboundAttemptResult(id, true));
+
+    private static FakeChannel Fail(string id, OutboundFailureKind kind = OutboundFailureKind.Transient) =>
+        new(id, new OutboundAttemptResult(id, false, kind));
+
+    [Theory]
+    [InlineData(DeliveryPolicy.TelegramFallback)]
+    [InlineData(DeliveryPolicy.LocalPreferred)]
+    [InlineData(DeliveryPolicy.Both)]
+    public async Task Push_is_preferred_and_telegram_is_not_used_when_push_succeeds(DeliveryPolicy policy)
+    {
+        var push = Ok("unifiedpush");
+        var telegram = Ok("telegram");
+
+        var result = await new OutboundRouter([telegram, push]).DeliverAsync(CreateNotification(policy), default);
+
+        Assert.True(result.Delivered);
+        Assert.Equal(1, push.SendCount);
+        Assert.Equal(0, telegram.SendCount);
+    }
+
+    [Theory]
+    [InlineData(OutboundFailureKind.RateLimited)]
+    [InlineData(OutboundFailureKind.Transient)]
+    [InlineData(OutboundFailureKind.Expired)]
+    public async Task Telegram_takes_over_when_push_fails(OutboundFailureKind kind)
+    {
+        var push = Fail("unifiedpush", kind);
+        var telegram = Ok("telegram");
+
+        var result = await new OutboundRouter([push, telegram]).DeliverAsync(
+            CreateNotification(DeliveryPolicy.TelegramFallback), default);
+
+        Assert.True(result.Delivered);
+        Assert.Equal(new[] { "unifiedpush", "telegram" }, result.Attempts.Select(a => a.ChannelId));
+    }
+
+    [Fact]
+    public async Task Both_still_delivers_to_the_local_channel_and_the_remote_chain()
+    {
+        var local = Ok("kdeconnect");
+        var push = Fail("unifiedpush");
+        var telegram = Ok("telegram");
+
+        var result = await new OutboundRouter([local, push, telegram]).DeliverAsync(
+            CreateNotification(DeliveryPolicy.Both), default);
+
+        Assert.Equal(new[] { "kdeconnect", "unifiedpush", "telegram" }, result.Attempts.Select(a => a.ChannelId));
+        Assert.Equal(1, local.SendCount);
+        Assert.Equal(1, telegram.SendCount);
+    }
+
+    [Fact]
+    public async Task Local_success_still_short_circuits_push_and_telegram()
+    {
+        var local = Ok("kdeconnect");
+        var push = Ok("unifiedpush");
+        var telegram = Ok("telegram");
+
+        await new OutboundRouter([local, push, telegram]).DeliverAsync(
+            CreateNotification(DeliveryPolicy.TelegramFallback), default);
+
+        Assert.Equal(0, push.SendCount);
+        Assert.Equal(0, telegram.SendCount);
+    }
+
+    [Fact]
+    public async Task EncryptedOnly_never_falls_back_to_telegram()
+    {
+        var push = Fail("unifiedpush");
+        var telegram = Ok("telegram");
+
+        var result = await new OutboundRouter([push, telegram]).DeliverAsync(
+            CreateNotification(DeliveryPolicy.EncryptedOnly), default);
+
+        Assert.False(result.Delivered);
+        Assert.Equal(0, telegram.SendCount);
+    }
+
+    [Fact]
+    public async Task TelegramOnly_and_OriginOnly_skip_push()
+    {
+        var push = Ok("unifiedpush");
+        var telegram = Ok("telegram");
+        var router = new OutboundRouter([push, telegram]);
+
+        await router.DeliverAsync(CreateNotification(DeliveryPolicy.TelegramOnly), default);
+        await router.DeliverAsync(CreateNotification(DeliveryPolicy.OriginOnly), default);
+
+        Assert.Equal(0, push.SendCount);
+        Assert.Equal(2, telegram.SendCount);
+    }
+
     private static OutboundNotification CreateNotification(
         DeliveryPolicy policy)
         => new(

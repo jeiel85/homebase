@@ -8,8 +8,17 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Sideload-only app: the in-app updater hands the verified APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- PC alerts and forwarded Windows notifications arrive by UnifiedPush (DECISIONS M-19). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Find installed UnifiedPush distributors (ntfy, …); package visibility on API 30+. -->
+    <queries>
+        <intent>
+            <action android:name="org.unifiedpush.android.distributor.REGISTER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -51,6 +60,28 @@
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="portrait"
             tools:replace="android:screenOrientation" />
+
+        <!-- UnifiedPush connector (AND_3). Exported because the distributor is another app;
+             broadcasts are checked against our token and must decrypt with our key. -->
+        <receiver
+            android:name=".push.PushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+                <action android:name="org.unifiedpush.android.connector.TEMP_UNAVAILABLE" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".push.RaiseToForegroundService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.RAISE_TO_FOREGROUND" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

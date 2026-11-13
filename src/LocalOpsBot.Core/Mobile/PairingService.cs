@@ -19,6 +19,15 @@ public interface IMobileDeviceStore
 
     /// <summary>Whether the device is still paired (not revoked). Cheap; checked before every live push.</summary>
     bool IsPaired(string deviceId);
+
+    /// <summary>
+    /// Stores (or with <c>null</c> clears) the device's UnifiedPush subscription. Returns <c>false</c>
+    /// when the device is not paired. Revoking a device drops its subscription with it.
+    /// </summary>
+    bool SetPushSubscription(string deviceId, LocalOpsBot.Core.Push.PushSubscription? subscription);
+
+    /// <summary>Every paired device that has a push subscription.</summary>
+    IReadOnlyList<LocalOpsBot.Core.Push.PushTarget> PushTargets();
 }
 
 public enum PairOutcome { Paired, InvalidCode, Expired, Locked }

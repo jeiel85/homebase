@@ -59,6 +59,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.net.PairException
 import io.github.jeiel85.homebase.net.PairingOffer
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +92,7 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
                 val (res, endpoint) = api.pair(offer, deviceName(context), "${Build.MANUFACTURER} ${Build.MODEL}")
                 val pc = PcEntry(res.pcId, res.pcName, offer.endpoints, res.deviceId, res.token, endpoint.key)
                 store.upsert(pc)
+                PushRegistrar.ensureAsync(context, api, pc)
                 onDone(pc)
             } catch (e: PairException) {
                 message = e.message

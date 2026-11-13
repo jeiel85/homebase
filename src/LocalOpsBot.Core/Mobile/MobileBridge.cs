@@ -23,6 +23,7 @@ public static class MobileBridge
     public const string OpDevicesList = "devices.list";       // request → MobileDeviceInfo[]
     public const string OpDevicesRevoke = "devices.revoke";   // request {deviceId} → bool
     public const string OpStatus = "status";                  // request → BridgeStatus
+    public const string OpNotifyTest = "notify.test";         // request → NotifyTestResult (sent through the router)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on} — collect only while a phone watches
@@ -30,7 +31,7 @@ public static class MobileBridge
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
-        OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus,
+        OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
@@ -78,6 +79,12 @@ public static class MobileBridge
         return msg;
     }
 }
+
+/// <summary>
+/// Outcome of the Tray's test notification. <c>Channel</c> is the channel that delivered it
+/// (<c>unifiedpush</c>, <c>telegram</c>, …); <c>Error</c> is set when none did.
+/// </summary>
+public sealed record NotifyTestResult(bool Delivered, string? Channel, string? Error);
 
 /// <summary>A visible top-level window as seen from the user's session.</summary>
 public sealed record SessionWindow(long Hwnd, int Pid, string Title, bool Foreground);

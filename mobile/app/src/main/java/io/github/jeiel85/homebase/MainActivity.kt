@@ -18,6 +18,7 @@ import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
+import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.PairScreen
 import io.github.jeiel85.homebase.ui.PcDetailScreen
@@ -42,7 +43,8 @@ class MainActivity : ComponentActivity() {
             HomebaseTheme {
                 Surface {
                     // "" = list, "+" = pair, otherwise a pcId.
-                    var route by rememberSaveable { mutableStateOf("") }
+                    // A tapped push notification opens its PC.
+                    var route by rememberSaveable { mutableStateOf(intent?.getStringExtra(PushNotifier.EXTRA_PC_ID) ?: "") }
                     val pc = remember(route) { route.takeIf { it.length > 1 }?.let(store::get) }
                     BackHandler(enabled = route.isNotEmpty()) { route = ""; pairingLink = null }
                     LaunchedEffect(pairingLink) { if (pairingLink != null) route = "+" }

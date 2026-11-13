@@ -1,6 +1,6 @@
 # Homebase Mobile Protocol v1
 
-휴대폰 앱(`mobile/`)과 각 PC의 Agent 사이 계약이다. 결정 배경은 [`DECISIONS.md`](../DECISIONS.md) M-1~M-18, M-20에 있다.
+휴대폰 앱(`mobile/`)과 각 PC의 Agent 사이 계약이다. 결정 배경은 [`DECISIONS.md`](../DECISIONS.md) M-1~M-21에 있다.
 형식은 [`mobile-protocol/`](mobile-protocol/)의 픽스처로 고정한다. .NET(`ProtocolGoldenTests`)과 Kotlin(`ProtocolTest`)이 같은 파일을 검증한다.
 의도적으로 스키마를 바꿀 때는 `HOMEBASE_UPDATE_GOLDEN=1 dotnet test`로 픽스처를 다시 쓰고, 호환이 깨지면 `schema`를 올린다.
 
@@ -54,8 +54,53 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | POST | `/api/v1/pair` | 본문의 `code` | 200 `{schema, deviceId, token, pcId, pcName}` · 400 `invalid_code` · 410 `code_expired` · 429 `locked` |
 | GET | `/api/v1/endpoints` | `Authorization: Bearer <token>` | 200 `{schema, endpoints}`([`endpoints.v1.json`](mobile-protocol/endpoints.v1.json)) · 401 |
 | GET | `/api/v1/snapshot` | `Authorization: Bearer <token>` | 200 `LiveSnapshot` · 401 `unauthorized` |
+| POST | `/api/v1/push` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, registered: true}` · 400 `invalid_subscription` · 401 |
+| DELETE | `/api/v1/push` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, registered: false}` · 401 |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel" }`이다. 오류 응답은 항상 `{schema, error, message}` 형태다.
+
+## 푸시 알림 (UnifiedPush, M-19 · M-21)
+
+앱이 UnifiedPush 배포자(ntfy 등)에서 받은 엔드포인트와 RFC 8291 구독 키를 페어링된 각 PC에 등록한다.
+PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 앱에 브로드캐스트로 넘긴다. 중계 서버는 평문을 보지 않는다.
+
+- **등록** `POST /api/v1/push` 본문([`push-subscription.v1.json`](mobile-protocol/push-subscription.v1.json)):
+  `{schema: 1, endpoint, p256dh, auth}`. `endpoint`는 `https://` URL, 1000바이트 이하이며 사용자 정보(`user:pw@`)는 거부한다.
+  `p256dh`는 P-256 비압축 점 65바이트, `auth`는 16바이트이고 둘 다 패딩 없는 base64url이다. 곡선 위의 점이 아니면 400이다.
+  응답은 [`push-subscription-response.v1.json`](mobile-protocol/push-subscription-response.v1.json).
+  구독은 기기당 하나이며 `state.json`의 그 기기 항목에 저장한다. 같은 값으로 다시 등록하면 파일을 다시 쓰지 않는다.
+  Tray에서 기기를 철회하면 구독도 함께 지워진다. 앱은 엔드포인트가 바뀔 때, 페어링 직후, PC가 응답할 때(목록 확인·실시간 연결)마다 다시 등록한다.
+- **해제** `DELETE /api/v1/push`: 앱에서 푸시를 끄거나 PC를 목록에서 지울 때 보낸다.
+- **전송**(PC → 엔드포인트): `Content-Encoding: aes128gcm`, `Content-Type: application/octet-stream`, `TTL`(Windows 알림 21600초, 그 밖 86400초),
+  `Urgency`(Critical·Warning은 `high`, 나머지 `normal`). 본문은 RFC 8291(ECDH P-256 + HKDF-SHA-256 + AES-128-GCM, 레코드 하나, rs 4096)이고
+  4096바이트 이하다. 평문 JSON이 3993바이트를 넘으면 본문을, 그래도 넘으면 제목을 줄인다(끝에 `…`). VAPID는 보내지 않는다(ntfy는 요구하지 않음).
+  응답 처리: 2xx 성공, 429는 `Retry-After`(없으면 60초, 최대 1시간) 동안 그 엔드포인트를 쉬게 하고, 404·410은 구독을 지운다. 그 밖의 실패는 다음 채널(Telegram)로 넘어간다.
+- **복호화된 메시지**([`push-message.v1.json`](mobile-protocol/push-message.v1.json)):
+
+| 필드 | 의미 |
+|---|---|
+| `schema` | 1. 다르면 앱은 버린다 |
+| `id` | 알림 id(32 hex) |
+| `pcId`, `pcName` | 보낸 PC. 앱은 페어링된 PC가 아니면 버린다 |
+| `category` | `windows-toast`, `process_watch`, `service_watch`, `http_monitor`, `port_monitor`, `event_log`, `advisor`, `boot`, `test` |
+| `priority` | `info`·`warning`·`critical`·`recovery` |
+| `title`, `body?` | 표시할 텍스트(평문, HTML 아님) |
+| `source` | 알림 채널 키. Windows 알림은 원래 앱 이름, 그 밖은 `category`와 같다 |
+| `count` | 묶음 건수(앱별 묶음이면 2 이상) |
+| `ts` | 생성 시각(ISO 8601) |
+
+- 앱의 Android 알림 채널은 PC(채널 그룹)마다, `source`마다 하나씩이다. 사용자가 PC·앱 단위로 끌 수 있다.
+- 두 구현이 맞는지는 [`push-message.v1.aes128gcm.txt`](mobile-protocol/push-message.v1.aes128gcm.txt)로 확인한다.
+  .NET이 RFC 8291 부록 A의 서버 키·salt로 위 메시지를 암호화해 쓰고, Kotlin 테스트가 부록 A의 휴대폰 키로 복호화해 같은 메시지인지 본다.
+
+### 앱 쪽 UnifiedPush 규약 (AND_3.1.0, 라이브러리 없이)
+
+- 배포자 찾기: `queryBroadcastReceivers(org.unifiedpush.android.distributor.REGISTER)`(매니페스트 `<queries>`). 하나면 자동으로 쓰고, 여럿이면 고르게 하고, 없으면 ntfy 설치를 안내한다.
+- 등록: `REGISTER`에 `token`(UUID, 등록마다 새로), `message`, `pi`(`org.unifiedpush.dummy_app`을 향한 IMMUTABLE PendingIntent), 구버전 호환용 `application`을 넣는다. API 34+는 `BroadcastOptions.setShareIdentityEnabled(true)`로 보낸다.
+- 수신(`PushReceiver`, exported): `NEW_ENDPOINT`, `MESSAGE`(`bytesMessage`), `REGISTRATION_FAILED`, `UNREGISTERED`, `TEMP_UNAVAILABLE`. 현재 `token`이 아니면 무시하고, `id`가 있으면 `MESSAGE_ACK`로 답한다.
+  `MESSAGE`는 이 휴대폰 키·auth로 복호화되어야(GCM 태그) 표시되므로, 다른 앱이 보낸 가짜 브로드캐스트는 아무것도 띄우지 못한다. 송신 측 공개키는 곡선 위의 점인지 먼저 검사한다.
+- `RAISE_TO_FOREGROUND` 서비스는 바인드만 받는다(규약 요구).
+- 키: P-256 키쌍과 auth secret은 설치마다 하나이고 모든 PC가 같이 쓴다. 개인키(PKCS#8)와 auth는 Android Keystore AES-GCM 키로 감싸 SharedPreferences에 둔다.
 
 ## Live (WebSocket)
 
@@ -84,5 +129,6 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 
 프레임은 4바이트 LE 길이 + UTF-8 JSON `{op, id?, payload?}`이고 최대 1MiB다.
 - Agent → Tray: `watch {on}`, `response {id, ok, payload?, error?}`.
-- Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`.
+- Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`,
+  `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`).
 - 그 밖의 op는 연결을 끊는다.

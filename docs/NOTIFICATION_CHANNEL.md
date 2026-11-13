@@ -1,6 +1,6 @@
 # 알림 채널 결정: Telegram 봇 → Homebase Mobile 앱 푸시?
 
-작성 2026-11-13 · 상태 **제안 — 사용자 답변 반영(2026-11-13), 방식 승인 대기** · 관련 결정 [`DECISIONS.md`](../DECISIONS.md) M-1·M-3·M-13·M-17, M-19
+작성 2026-11-13 · 상태 **확정 — 1단계 구현(UnifiedPush 추가, Telegram은 대체 채널)** · 관련 결정 [`DECISIONS.md`](../DECISIONS.md) M-1·M-3·M-13·M-17, M-19, M-21 · 프로토콜 [`MOBILE_PROTOCOL.md`](MOBILE_PROTOCOL.md#푸시-알림-unifiedpush-m-19--m-21)
 
 질문: "Telegram 봇 알림을 없애고 앱 푸시 알림으로 가면 어때?"
 
@@ -107,7 +107,11 @@ Telegram 봇 대화는 비밀 대화가 아니라 클라우드 채팅이라 **�
 3. **토스트 포워딩을 많이 보내려면 PC 쪽에 다음이 필요하다.**
    - 기본값을 켜짐·BlockList로 하되, 비밀번호 관리자·OTP 앱 차단 목록과 마스킹은 유지한다.
    - 지금 토스트 경로는 `AlertPolicy`(중복·분당 제한)를 거치지 않는다. 그래서 앱별 묶음·속도 제한을 새로 둬야 한다.
-   - ntfy.sh 익명 사용에는 버스트·일일 한도가 있고 초과하면 429를 받는다. v2.37부터 UnifiedPush 메시지는 구독자(휴대폰 IP 또는 계정) 기준으로 센다. 기본 설정 문서는 방문자당 60건 버스트에 10초당 1건 보충이지만, ntfy.sh 실제 값은 다를 수 있다. **착수 전에 `/v1/account`로 실제 한도를 확인한다.**
+   - ntfy.sh 익명 사용에는 버스트·일일 한도가 있고 초과하면 429를 받는다. v2.37부터 UnifiedPush 메시지는 `visitor-subscriber-rate-limiting`이 켜진 서버에서 구독자(휴대폰 IP 또는 계정) 기준으로 센다(기본값은 게시자 기준). 버스트는 문서에 따라 60건에 5초 또는 10초당 1건 보충으로 적혀 있어 일치하지 않는다.
+     **실측(2026-11-13, 익명 `GET https://ntfy.sh/v1/account`, 개인정보 없이)**: `basis: "ip"`, `messages: 250`(하루), `messages_expiry_duration: 43200`(12시간 보관). 게시자 기준으로 세면 같은 공인 IP 뒤의 PC들이 이 250건을 나눠 쓴다.
+     **E2E로 확인한 ntfy.sh 동작(2026-11-13)**: `?up=1` 게시는 그 토픽에 활성 구독자가 없으면 `507`(코드 50701, "cannot publish to UnifiedPush topic without previously active subscriber")로 거절된다. 즉 ntfy.sh는 UP 메시지를 **구독자(휴대폰) 기준**으로 센다.
+     따라서 하루 250건은 휴대폰 한 대가 모든 PC와 나눠 쓰는 한도다. 응답에는 `RateLimit-Policy: "requests";q=60;w=300`(300초에 60건 버스트)도 붙는다.
+     그래서 토스트 예산 기본값을 PC당 하루 150건으로 두어 경보 몫을 남겼다(M-21). PC가 여러 대면 `maxPushesPerDay`를 나눠 줄인다. 429에는 `Retry-After`가 오고 PC가 이를 따른다. 그동안 경보는 Telegram으로 넘어간다.
    - 페이로드는 4KB 안이어야 하므로 본문을 자른다.
    - 앱 쪽에서는 PC·앱별로 알림 채널과 그룹을 나눠, 사용자가 Android 설정에서 원하는 앱만 끌 수 있게 한다.
 4. **(b) FCM은 기각한다.** 공개 사이드로드 APK에서는 서비스 계정 키를 배포하거나 중계 서버를 둬야 해서 M-1에 걸린다. Firebase 의존성으로 M-3에도 걸린다. 배터리 이점은 (c)의 FCM판 배포자로 이미 얻을 수 있다.
@@ -126,8 +130,23 @@ Telegram 봇 대화는 비밀 대화가 아니라 클라우드 채팅이라 **�
    안 쓰거나 조회만 한다면 완전 대체의 걸림돌은 알림 이력 화면 정도로 줄어든다. 상태 변경 명령을 쓴다면 Telegram을 유지하거나 앱 명령 원칙을 개정해야 한다.
    → **답(2026-11-13): 거의 안 쓴다. 실험으로 넣어 본 기능이다.** 그래서 앱에 명령을 만들지 않고, 전환 뒤 Telegram 명령은 제거한다(§3-2).
 3. (부수) 휴대폰에 배포자 앱(ntfy)을 하나 더 설치하는 것을 받아들일 수 있는가? 휴대폰에 Google Play 서비스가 있는가? 이 답으로 ntfy의 F-Droid판과 Play판 중 무엇을 쓸지 정해진다.
+   → **답(2026-11-13): 설치 가능, Play 서비스 없음.** F-Droid판 ntfy를 쓰고, ntfy에 배터리 최적화 예외를 준다(§5).
 
 ---
+
+## 5. 1단계 구현 현황 (2026-11-13)
+
+- PC: `unifiedpush` 채널(RFC 8291, 의존성 0), `POST`/`DELETE /api/v1/push`, router 우선순위 변경, 부팅·테스트 메시지 router 경유, 토스트 기본 켜짐·앱별 묶음·일일 예산. 세부 결정은 M-21에 있다.
+- 앱: 라이브러리 없는 UnifiedPush 수신, Keystore로 감싼 키, PC·앱별 알림 채널, 알림 권한 요청, ntfy 설치 안내.
+- E2E(에뮬레이터 `homebase-phone-api36`, API 36, 무음): 개발용 Agent 호스트(loopback, `adb reverse`) ↔ 앱 페어링 → 배포자 REGISTER(`pi` 생성자와 API 34+ identity 공유 확인) → NEW_ENDPOINT → PC에 `POST /api/v1/push` → PC가 **실제 ntfy.sh**로 암호문 전송 → 배포자 MESSAGE → 앱이 복호화해 경보 1건과 토스트 2건(묶음 1건 포함)을 PC·앱별 채널에 표시했다. 앱에서 푸시를 끄면 PC 구독 삭제와 배포자 UNREGISTER까지 확인했다. 이 동안 샘플러는 켜지지 않았다.
+  처음에는 AND_3만 구현한 테스트용 최소 배포자(스크래치, 저장소 밖)로 확인했다. 이어서 사용자 승인을 받아 **실제 ntfy F-Droid판 1.25.2**(`io.heckel.ntfy_63.apk`, F-Droid 서명 확인)를 에뮬레이터에만 설치해 다시 확인했다.
+  ntfy가 유일한 배포자로 자동 선택되었고, 엔드포인트가 PC에 등록되었다. 실제 ntfy.sh를 거친 경보 1건과 토스트 2건이 PC·앱별 채널에 표시되었다. ntfy의 상시 알림("Subscribed to one topic")도 떴다.
+  ntfy를 배터리 최적화 예외에서 빼면 푸시 알림 행에 경고와 설정 버튼이 뜨는 것도 확인했다.
+- M-13: 푸시 등록·전송은 `LiveSnapshotHub`를 구독하지 않는다. 알림은 원래 상시로 만들어지므로 샘플러·ETW·Tray 보고가 켜지지 않는다. 등록 API 테스트에서 샘플러가 꺼져 있음을 확인한다.
+- §4-3 답(2026-11-13): **ntfy 설치는 괜찮고, 휴대폰에 Google Play 서비스가 없다.** 그래서 ntfy **F-Droid판**을 쓴다.
+  F-Droid판은 자체 상시 연결 하나와 상시 알림 하나를 둔다. §2 Doze 행대로 포그라운드 서비스만으로는 Doze 중 네트워크가 끊기므로, **ntfy 앱에 배터리 최적화 예외**가 필요하다.
+  예외는 배포자 하나만 받으면 되고, Homebase 앱은 예외가 필요 없다. 앱은 `PowerManager.isIgnoringBatteryOptimizations(<배포자>)`로 이를 확인해, 예외가 없으면 푸시 알림 행에 안내와 설정 버튼을 띄운다. README에도 적었다.
+- 2단계(Telegram 제거)와 남은 개선점은 [`BACKLOG.md`](../BACKLOG.md)에 있다.
 
 ## 근거·출처
 

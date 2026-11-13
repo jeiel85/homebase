@@ -5,6 +5,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -44,6 +45,8 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         public string TokenSha256 { get; set; } = "";
         public DateTimeOffset PairedAt { get; set; }
         public DateTimeOffset? LastSeenAt { get; set; }
+        /// <summary>UnifiedPush endpoint and RFC 8291 keys (public key + auth secret); not secret-free, so ACL'd like the rest.</summary>
+        public PushSubscription? Push { get; set; }
     }
 
     public MobileDeviceStore(string directory, TimeProvider time, bool restrictAcl, ILogger? logger = null)
@@ -106,6 +109,30 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
     public bool IsPaired(string deviceId)
     {
         lock (_gate) return _state.Devices.Exists(d => d.DeviceId == deviceId);
+    }
+
+    public bool SetPushSubscription(string deviceId, PushSubscription? subscription)
+    {
+        lock (_gate)
+        {
+            var device = _state.Devices.Find(d => d.DeviceId == deviceId);
+            if (device is null) return false;
+            if (device.Push == subscription) return true;
+            device.Push = subscription;
+            Save();
+            return true;
+        }
+    }
+
+    public IReadOnlyList<PushTarget> PushTargets()
+    {
+        lock (_gate)
+        {
+            return _state.Devices
+                .Where(d => d.Push is not null)
+                .Select(d => new PushTarget(d.DeviceId, d.Name, d.Push!))
+                .ToList();
+        }
     }
 
     public MobileDeviceInfo? Authenticate(string token)

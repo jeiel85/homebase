@@ -1,19 +1,11 @@
 package io.github.jeiel85.homebase.data
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.LocalNetworks
 import io.github.jeiel85.homebase.net.RouteSelector
 import org.json.JSONArray
 import org.json.JSONObject
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 /** A paired PC and every path to it (from the QR, refreshed from the PC after each connect). */
 data class PcEntry(
@@ -30,13 +22,13 @@ data class PcEntry(
 }
 
 /**
- * Paired PCs in SharedPreferences. The bearer token is encrypted with an AES-GCM key that never
- * leaves the Android Keystore, so a backup or file copy doesn't carry usable credentials
- * (backups are also disabled in the manifest).
+ * Paired PCs in SharedPreferences. The bearer token is encrypted with [KeystoreCipher], so a backup
+ * or file copy doesn't carry usable credentials.
  */
 class PcStore(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+    private val cipher = KeystoreCipher(KEY_ALIAS)
 
     @Synchronized
     fun all(): List<PcEntry> {
@@ -101,35 +93,10 @@ class PcStore(context: Context) {
         )
     }
 
-    private fun key(): SecretKey {
-        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-        gen.init(
-            KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
-        return gen.generateKey()
-    }
-
-    private fun encrypt(plain: String): String {
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val out = cipher.iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
-        return Base64.encodeToString(out, Base64.NO_WRAP)
-    }
+    private fun encrypt(plain: String): String = cipher.encrypt(plain.toByteArray(Charsets.UTF_8))
 
     /** null when the Keystore key is gone (e.g. app data restored elsewhere) — the PC must be re-paired. */
-    private fun decrypt(encoded: String): String? = try {
-        val bytes = Base64.decode(encoded, Base64.NO_WRAP)
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes, 0, IV_SIZE))
-        String(cipher.doFinal(bytes, IV_SIZE, bytes.size - IV_SIZE), Charsets.UTF_8)
-    } catch (_: Exception) {
-        null
-    }
+    private fun decrypt(encoded: String): String? = cipher.decrypt(encoded)?.toString(Charsets.UTF_8)
 
     companion object {
         /**
@@ -148,9 +115,6 @@ class PcStore(context: Context) {
 
         private const val NAME = "homebase_pcs"
         private const val KEY_PCS = "pcs"
-        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "homebase_pc_tokens"
-        private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val IV_SIZE = 12
     }
 }
