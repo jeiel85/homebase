@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.13.2 — Reliable boot notification
 
 ### Fixed
 - **Boot notification now survives a slow network at startup.** The Agent service starts before the
