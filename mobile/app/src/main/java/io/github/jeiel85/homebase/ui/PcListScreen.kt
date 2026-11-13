@@ -185,7 +185,7 @@ fun PcListScreen(
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
             title = { Text("PC 삭제") },
-            text = { Text("${pc.name}을(를) 목록에서 지울까요? PC 쪽 연결 해제는 PC의 \"휴대폰 연결…\" 창에서 합니다.") },
+            text = { Text("${pc.name}을(를) 목록에서 지울까요? PC 쪽 연결 해제는 PC의 \"설정…\" → \"휴대폰\" 탭에서 합니다.") },
             confirmButton = {
                 TextButton(onClick = {
                     // Best effort: stop this PC pushing to the phone, then drop its notification channels.
@@ -229,7 +229,7 @@ private fun EmptyBay(onAdd: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "PC 트레이 아이콘 메뉴의 \"휴대폰 연결…\"에서 QR 코드를 띄운 뒤 아래 버튼을 누르세요. 같은 Wi-Fi면 바로 연결되고, 밖에서는 PC의 Tailscale 또는 Cloudflare 경로로 자동 연결됩니다.",
+            "PC 트레이 아이콘 메뉴의 \"설정…\" → \"휴대폰\" 탭에서 QR 코드를 띄운 뒤 아래 버튼을 누르세요. 같은 Wi-Fi면 바로 연결되고, 밖에서는 PC의 Tailscale 또는 Cloudflare 경로로 자동 연결됩니다.",
             style = MaterialTheme.typography.bodyMedium,
             color = hb.inkSoft,
         )
