@@ -324,14 +324,18 @@ public partial class SettingsWindow : ThemedWindow
     {
         SaveMonitorsButton.IsEnabled = false;
         SetResult(MonitorsStatusText, L.MonSaving, null);
+        // Baseline is what was submitted, not what the boxes hold after the (slow, elevated) save:
+        // edits made while it runs must still show as unsaved.
+        var submitted = MonitorsFingerprint();
         try
         {
             var saved = await MonitorsConfigurator.SaveAsync(
                 Lines(ProcessesBox), Lines(ServicesBox), Lines(HttpBox), Lines(TcpBox));
             if (saved)
             {
-                _monitorsLoaded = MonitorsFingerprint();
-                SetResult(MonitorsStatusText, L.MonSaved, true);
+                _monitorsLoaded = submitted;
+                if (MonitorsFingerprint() == submitted) SetResult(MonitorsStatusText, L.MonSaved, true);
+                else UpdateMonitorsDirty(); // edited during the save: still unsaved
             }
             else
             {

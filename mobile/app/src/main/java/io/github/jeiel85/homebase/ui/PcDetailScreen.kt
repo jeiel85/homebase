@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -526,7 +527,9 @@ private fun LazyListScope.sessionItems(s: LiveSnapshot) {
         }
         return
     }
-    items(s.claudeSessions, key = { "c${it.title}${it.project}" }) { c ->
+    // Positional keys: the protocol has no session id, and title + folder can repeat (two
+    // untitled sessions in one folder), which would crash LazyColumn with a duplicate key.
+    itemsIndexed(s.claudeSessions, key = { i, _ -> "c$i" }) { _, c ->
         val hb = Hb.colors
         val secs = agoSeconds(c.lastActivity, s.ts)
         val active = secs != null && secs < 60
