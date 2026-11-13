@@ -139,7 +139,9 @@ Telegram 봇 대화는 비밀 대화가 아니라 클라우드 채팅이라 **�
 - PC: `unifiedpush` 채널(RFC 8291, 의존성 0), `POST`/`DELETE /api/v1/push`, router 우선순위 변경, 부팅·테스트 메시지 router 경유, 토스트 기본 켜짐·앱별 묶음·일일 예산. 세부 결정은 M-21에 있다.
 - 앱: 라이브러리 없는 UnifiedPush 수신, Keystore로 감싼 키, PC·앱별 알림 채널, 알림 권한 요청, ntfy 설치 안내.
 - E2E(에뮬레이터 `homebase-phone-api36`, API 36, 무음): 개발용 Agent 호스트(loopback, `adb reverse`) ↔ 앱 페어링 → 배포자 REGISTER(`pi` 생성자와 API 34+ identity 공유 확인) → NEW_ENDPOINT → PC에 `POST /api/v1/push` → PC가 **실제 ntfy.sh**로 암호문 전송 → 배포자 MESSAGE → 앱이 복호화해 경보 1건과 토스트 2건(묶음 1건 포함)을 PC·앱별 채널에 표시했다. 앱에서 푸시를 끄면 PC 구독 삭제와 배포자 UNREGISTER까지 확인했다. 이 동안 샘플러는 켜지지 않았다.
-  배포자는 실제 ntfy 앱이 아니라 AND_3만 구현한 테스트용 최소 배포자(스크래치, 저장소 밖)였다. ntfy 앱 자체와의 연동은 아직 검증하지 않았다.
+  처음에는 AND_3만 구현한 테스트용 최소 배포자(스크래치, 저장소 밖)로 확인했다. 이어서 사용자 승인을 받아 **실제 ntfy F-Droid판 1.25.2**(`io.heckel.ntfy_63.apk`, F-Droid 서명 확인)를 에뮬레이터에만 설치해 다시 확인했다.
+  ntfy가 유일한 배포자로 자동 선택되었고, 엔드포인트가 PC에 등록되었다. 실제 ntfy.sh를 거친 경보 1건과 토스트 2건이 PC·앱별 채널에 표시되었다. ntfy의 상시 알림("Subscribed to one topic")도 떴다.
+  ntfy를 배터리 최적화 예외에서 빼면 푸시 알림 행에 경고와 설정 버튼이 뜨는 것도 확인했다.
 - M-13: 푸시 등록·전송은 `LiveSnapshotHub`를 구독하지 않는다. 알림은 원래 상시로 만들어지므로 샘플러·ETW·Tray 보고가 켜지지 않는다. 등록 API 테스트에서 샘플러가 꺼져 있음을 확인한다.
 - §4-3 답(2026-11-13): **ntfy 설치는 괜찮고, 휴대폰에 Google Play 서비스가 없다.** 그래서 ntfy **F-Droid판**을 쓴다.
   F-Droid판은 자체 상시 연결 하나와 상시 알림 하나를 둔다. §2 Doze 행대로 포그라운드 서비스만으로는 Doze 중 네트워크가 끊기므로, **ntfy 앱에 배터리 최적화 예외**가 필요하다.
