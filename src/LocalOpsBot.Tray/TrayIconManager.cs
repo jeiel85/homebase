@@ -23,6 +23,7 @@ public sealed class TrayIconManager : IDisposable
     private readonly ToolStripMenuItem _updateItem;
     private SettingsWindow? _popup;
     private OnboardingWindow? _onboarding;
+    private MobileConnectWindow? _mobileConnect;
 
     public TrayIconManager()
     {
@@ -38,6 +39,10 @@ public sealed class TrayIconManager : IDisposable
         var openItem = new ToolStripMenuItem("Open Homebase");
         openItem.Click += (_, _) => TogglePopup();
         menu.Items.Add(openItem);
+
+        var phoneItem = new ToolStripMenuItem("Connect Phone…");
+        phoneItem.Click += (_, _) => ShowMobileConnect();
+        menu.Items.Add(phoneItem);
 
         var setupItem = new ToolStripMenuItem("Setup / Welcome");
         setupItem.Click += (_, _) => ShowOnboarding();
@@ -87,6 +92,19 @@ public sealed class TrayIconManager : IDisposable
         _popup ??= new SettingsWindow(_updates);
         if (_popup.IsVisible) _popup.Activate();
         else _popup.ShowNearTray();
+    }
+
+    private void ShowMobileConnect()
+    {
+        if (_mobileConnect is { IsVisible: true })
+        {
+            _mobileConnect.Activate();
+            return;
+        }
+        _mobileConnect = new MobileConnectWindow();
+        _mobileConnect.Closed += (_, _) => _mobileConnect = null;
+        _mobileConnect.Show();
+        _mobileConnect.Activate();
     }
 
     private void ShowOnboarding()

@@ -41,10 +41,14 @@ public partial class App : Application
         // the pipeline (listener → pipe → Agent → Telegram); it stays dormant until enabled.
         _forwardingHost = new NotificationForwardingHost();
         _forwardingHost.StartIfEnabled();
+
+        // Mobile monitoring bridge: connects to the Agent but collects nothing until a phone watches.
+        Services.Mobile.MobileHost.StartIfEnabled();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        Services.Mobile.MobileHost.Stop();
         _forwardingHost?.Dispose();
         _trayIcon?.Dispose();
         _singleInstanceMutex?.Dispose();
