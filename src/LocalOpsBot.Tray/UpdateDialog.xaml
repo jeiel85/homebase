@@ -3,7 +3,7 @@
         xmlns:local="clr-namespace:LocalOpsBot.Tray"
         x:Class="LocalOpsBot.Tray.UpdateDialog"
         Style="{StaticResource Window.Chrome}"
-        Title="Homebase Update"
+        Title="{x:Static local:L.UpdProgressTitle}"
         Icon="pack://application:,,,/Resources/homebase.ico"
         Width="520" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
@@ -20,7 +20,7 @@
     </Grid.RowDefinitions>
 
     <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,8">
-      <TextBlock x:Name="TitleText" Style="{StaticResource Type.SectionLabel}" Text="UPDATE AVAILABLE"/>
+      <TextBlock x:Name="TitleText" Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.UpdDlgHeader}"/>
     </Border>
 
     <TextBlock Grid.Row="1" x:Name="MetaText" Style="{StaticResource Type.Label}"
@@ -42,11 +42,11 @@
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
       <Button Grid.Column="0" x:Name="SkipButton" Style="{StaticResource Button.Carbon}"
-              Content="SKIP THIS VERSION" Click="Skip_Click"/>
+              Content="{x:Static local:L.UpdDlgSkip}" Click="Skip_Click"/>
       <Button Grid.Column="2" x:Name="LaterButton" Style="{StaticResource Button.Carbon}"
-              Content="LATER" Margin="0,0,8,0" Click="Later_Click" IsCancel="True"/>
+              Content="{x:Static local:L.UpdDlgLater}" Margin="0,0,8,0" Click="Later_Click" IsCancel="True"/>
       <Button Grid.Column="3" x:Name="UpdateButton" Style="{StaticResource Button.Signal}"
-              Content="UPDATE NOW" Click="Update_Click" IsDefault="True"/>
+              Content="{x:Static local:L.UpdDlgUpdate}" Click="Update_Click" IsDefault="True"/>
     </Grid>
   </Grid>
 </local:ThemedWindow>

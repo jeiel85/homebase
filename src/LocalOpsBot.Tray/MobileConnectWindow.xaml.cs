@@ -208,7 +208,7 @@ public partial class MobileConnectWindow : ThemedWindow
                 StatusText.Text = "페어링 코드를 만들지 못했습니다: " + ((string?)r["error"] ?? "unknown");
                 return;
             }
-            // An https link (M-19): the phone's own camera opens the app, or the install guide when it's missing.
+            // An https link (M-20): the phone's own camera opens the app, or the install guide when it's missing.
             QrImage.Source = RenderQr(PairingLink.Build(offer));
             _offerEndpointsKey = EndpointsKey(offer.Endpoints);
             _expiresAt = offer.ExpiresAt;

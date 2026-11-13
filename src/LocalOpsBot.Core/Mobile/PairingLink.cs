@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace LocalOpsBot.Core.Mobile;
 
 /// <summary>
-/// The pairing QR as an https link (DECISIONS M-19):
+/// The pairing QR as an https link (DECISIONS M-20):
 /// <c>https://jeiel85.github.io/homebase/pair/#&lt;base64url(JSON)&gt;</c>.
 /// <list type="bullet">
 /// <item>App installed → the link opens the app's pairing screen (App Link, or the page's

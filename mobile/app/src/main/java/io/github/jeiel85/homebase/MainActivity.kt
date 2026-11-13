@@ -3,8 +3,10 @@ package io.github.jeiel85.homebase
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,8 +29,12 @@ class MainActivity : ComponentActivity() {
     private var pairingLink by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Every screen starts with the carbon console bar, so the status bar always gets light
+        // icons; the navigation bar follows the system theme.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) pairingLink = intent.pairingLink()
+        // A pending (unconfirmed) link survives rotation and other recreation; the first launch reads the intent.
+        pairingLink = if (savedInstanceState == null) intent.pairingLink() else savedInstanceState.getString(KEY_PAIRING_LINK)
         val store = PcStore(this)
         val probe = NetworkProbe(this)
         val api = HomebaseApi(networks = probe::current)
@@ -55,9 +61,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pairingLink?.let { outState.putString(KEY_PAIRING_LINK, it) }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.pairingLink()?.let { pairingLink = it }
+    }
+
+    private companion object {
+        const val KEY_PAIRING_LINK = "pairingLink"
     }
 
     private fun Intent?.pairingLink(): String? =

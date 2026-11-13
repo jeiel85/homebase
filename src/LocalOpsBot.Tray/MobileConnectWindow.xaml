@@ -3,7 +3,7 @@
         xmlns:local="clr-namespace:LocalOpsBot.Tray"
         x:Class="LocalOpsBot.Tray.MobileConnectWindow"
         Style="{StaticResource Window.Chrome}"
-        Title="Homebase — 휴대폰 연결"
+        Title="{x:Static local:L.PhoneTitle}"
         Icon="pack://application:,,,/Resources/homebase.ico"
         Width="460" SizeToContent="Height" MaxHeight="900"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
@@ -13,7 +13,7 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto">
   <StackPanel Margin="14">
     <Border Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12">
-      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="CONNECT PHONE"/>
+      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhoneHeader}"/>
     </Border>
 
     <Border Style="{StaticResource Card}">
@@ -36,13 +36,13 @@
         <Image x:Name="QrImage" Width="260" Height="260" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
       </Border>
       <TextBlock x:Name="CountdownText" Style="{StaticResource Type.BodyStrong}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-      <Button x:Name="NewCodeButton" Style="{StaticResource Button.Carbon}" Content="NEW CODE"
+      <Button x:Name="NewCodeButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneNewCode}"
               HorizontalAlignment="Center" Margin="0,10,0,0" Click="NewCode_Click"/>
     </StackPanel>
 
     <StackPanel x:Name="PathsPanel" Visibility="Collapsed">
       <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
-        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="CONNECTION PATHS"/>
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePaths}"/>
       </Border>
       <ItemsControl x:Name="PathList">
         <ItemsControl.ItemTemplate>
@@ -66,7 +66,7 @@
 
     <StackPanel x:Name="DevicesPanel" Visibility="Collapsed">
       <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
-        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="PAIRED PHONES"/>
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePaired}"/>
       </Border>
       <TextBlock x:Name="NoDevicesText" Style="{StaticResource Type.Body}" Text="아직 연결된 휴대폰이 없습니다."/>
       <ItemsControl x:Name="DeviceList">
@@ -74,7 +74,7 @@
           <DataTemplate>
             <Border Style="{StaticResource Card}" Margin="0,0,0,6">
               <DockPanel>
-                <Button DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}" Content="REVOKE"
+                <Button DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneRevoke}"
                         Tag="{Binding DeviceId}" Click="Revoke_Click" VerticalAlignment="Center"/>
                 <StackPanel>
                   <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{Binding Name}"/>
@@ -89,7 +89,7 @@
 
     <!-- Which paths to open; shown in both states (ENABLE when off, APPLY when on) -->
     <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
-      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="PATH SETTINGS"/>
+      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePathSettings}"/>
     </Border>
     <Border Style="{StaticResource Card}">
       <StackPanel>

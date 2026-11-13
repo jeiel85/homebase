@@ -51,9 +51,9 @@ internal sealed class ConnectionReadiness
         var chatId = ReadPrimaryChatId(config);
 
         if (string.IsNullOrWhiteSpace(token))
-            return new TestSendResult(false, "Bot token is not configured yet.");
+            return new TestSendResult(false, L.TestNoToken);
         if (chatId is null)
-            return new TestSendResult(false, "No Telegram chat ID is configured yet.");
+            return new TestSendResult(false, L.TestNoChat);
 
         try
         {
@@ -64,16 +64,16 @@ internal sealed class ConnectionReadiness
             var client  = new TelegramClient(http, options);
             await client.SendMessageAsync(
                 chatId.Value,
-                "✅ Homebase test — your PC is connected to Telegram.",
+                L.TestMessageBody,
                 new TelegramSendOptions(ParseMode: null), // plain text: no HTML entity pitfalls
                 ct);
-            return new TestSendResult(true, $"Sent to chat {chatId.Value}. Check Telegram.");
+            return new TestSendResult(true, L.TestSent(chatId.Value));
         }
         catch (Exception ex)
         {
             // Defensive: the bot token is embedded in the Telegram request URL, so scrub it
             // from any exception text before it reaches the UI.
-            return new TestSendResult(false, $"Send failed: {Redact(ex.Message, token)}");
+            return new TestSendResult(false, L.TestFailed(Redact(ex.Message, token)));
         }
     }
 

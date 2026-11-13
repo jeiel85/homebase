@@ -3,14 +3,16 @@
         xmlns:local="clr-namespace:LocalOpsBot.Tray"
         x:Class="LocalOpsBot.Tray.OnboardingWindow"
         Style="{StaticResource Window.Chrome}"
-        Title="Homebase — Welcome"
+        Title="{x:Static local:L.SetupTitle}"
         Icon="pack://application:,,,/Resources/homebase.ico"
-        Width="460" Height="640"
+        Width="460" Height="620"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Brush.Canvas}"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
+  <!-- A checklist only: each row is state + what to do next. Inputs live in Settings so there is
+       exactly one place to enter or change the Telegram connection. -->
   <Grid Margin="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -18,222 +20,128 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <!-- ═ Masthead: carbon command slab ═ -->
-    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12">
+    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12" Padding="10,6">
       <StackPanel Orientation="Horizontal">
-        <TextBlock VerticalAlignment="Center"
-                   FontFamily="{StaticResource Font.Display}" FontWeight="Black"
+        <TextBlock VerticalAlignment="Center" FontFamily="{StaticResource Font.Display}" FontWeight="Black"
                    FontSize="16" Foreground="{StaticResource Brush.OnDark}" Text="HOMEBASE"/>
-        <TextBlock VerticalAlignment="Center" Margin="8,3,0,0"
-                   Style="{StaticResource Type.Micro}" Foreground="{StaticResource Brush.Amber}"
-                   Text="WELCOME"/>
+        <TextBlock VerticalAlignment="Center" Margin="8,3,0,0" Style="{StaticResource Type.Micro}"
+                   Foreground="{StaticResource Brush.Amber}" Text="{x:Static local:L.SetupEyebrow}"/>
       </StackPanel>
     </Border>
 
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel>
-
-        <!-- ═ Welcome bubble (mascot-style rounded card) ═ -->
         <Border Background="{StaticResource Brush.Surface}" CornerRadius="10" Padding="12"
                 BorderBrush="{StaticResource Brush.Hairline}" BorderThickness="1" Margin="0,0,0,12">
-          <StackPanel>
-            <TextBlock Style="{StaticResource Type.BodyStrong}" Text="Welcome to Homebase!"/>
-            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Margin="0,4,0,0"
-                       Text="Let's make sure your PC is talking to Telegram. Here's what's ready and what still needs setup."/>
-          </StackPanel>
+          <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.SetupIntro}"/>
         </Border>
 
-        <!-- ═ CONNECTION checklist ═ -->
+        <!-- ═ REQUIRED ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="CONNECTION"/>
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.SetupRequired}"/>
         </Border>
         <Border Style="{StaticResource Card}" Margin="0,0,0,12">
           <StackPanel>
-
-            <!-- Agent service -->
             <Grid Margin="0,4">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
-              <Border x:Name="ServiceChip" Grid.Column="0" Width="76" Padding="7,3" CornerRadius="2"
-                      VerticalAlignment="Center" Background="{StaticResource Brush.Hairline}">
-                <TextBlock x:Name="ServiceChipText" Text="…" HorizontalAlignment="Center"
-                           Foreground="{StaticResource Brush.OnDark}" FontSize="10" FontWeight="Bold"/>
+              <Border x:Name="ServiceChip" Style="{StaticResource Chip}">
+                <TextBlock x:Name="ServiceChipText" Style="{StaticResource ChipText}" Text="…"/>
               </Border>
               <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="Agent service"/>
-                <TextBlock x:Name="ServiceStatusText" Style="{StaticResource Type.Micro}"
-                           TextWrapping="Wrap" Text="checking…"/>
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupService}"/>
+                <TextBlock x:Name="ServiceStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                           Text="{x:Static local:L.BadgeChecking}"/>
               </StackPanel>
             </Grid>
 
-            <!-- Bot token -->
-            <Grid Margin="0,4">
+            <Grid Margin="0,10,0,4">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
-              <Border x:Name="TokenChip" Grid.Column="0" Width="76" Padding="7,3" CornerRadius="2"
-                      VerticalAlignment="Center" Background="{StaticResource Brush.Hairline}">
-                <TextBlock x:Name="TokenChipText" Text="…" HorizontalAlignment="Center"
-                           Foreground="{StaticResource Brush.OnDark}" FontSize="10" FontWeight="Bold"/>
+              <Border x:Name="TelegramChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
+                <TextBlock x:Name="TelegramChipText" Style="{StaticResource ChipText}" Text="…"/>
               </Border>
-              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="Bot token"/>
-                <TextBlock x:Name="TokenStatusText" Style="{StaticResource Type.Micro}"
-                           TextWrapping="Wrap" Text="checking…"/>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupTelegram}"/>
+                <TextBlock x:Name="TelegramStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                           Text="{x:Static local:L.BadgeChecking}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                  <Button x:Name="ConnectTelegramButton" Style="{StaticResource Button.Signal}"
+                          Content="{x:Static local:L.SetupConnectTelegram}" Click="ConnectTelegram_Click"/>
+                  <Button x:Name="TestButton" Style="{StaticResource Button.Carbon}" Margin="6,0,0,0"
+                          Content="{x:Static local:L.SendTest}" Click="TestMessage_Click" Visibility="Collapsed"/>
+                </StackPanel>
+                <TextBlock x:Name="TestResultText" Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap" Margin="0,6,0,0"/>
               </StackPanel>
             </Grid>
-
-            <!-- Telegram chat -->
-            <Grid Margin="0,4">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Border x:Name="ChatChip" Grid.Column="0" Width="76" Padding="7,3" CornerRadius="2"
-                      VerticalAlignment="Center" Background="{StaticResource Brush.Hairline}">
-                <TextBlock x:Name="ChatChipText" Text="…" HorizontalAlignment="Center"
-                           Foreground="{StaticResource Brush.OnDark}" FontSize="10" FontWeight="Bold"/>
-              </Border>
-              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="Telegram chat"/>
-                <TextBlock x:Name="ChatStatusText" Style="{StaticResource Type.Micro}"
-                           TextWrapping="Wrap" Text="checking…"/>
-              </StackPanel>
-            </Grid>
-
-            <!-- Credential entry: applied via a one-time elevation (writes machine env + config) -->
-            <StackPanel Margin="0,10,0,0">
-              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                         Text="Enter your bot token and chat ID, then Save &amp; apply — this asks for admin once and restarts the service."/>
-              <TextBlock Style="{StaticResource Type.Micro}" Margin="0,6,0,0" Text="Bot token"/>
-              <TextBox x:Name="TokenInput" Margin="0,2,0,0" Padding="5,3"
-                       FontFamily="Consolas" FontSize="12"/>
-              <TextBlock Style="{StaticResource Type.Micro}" Margin="0,5,0,0" Text="Chat ID"/>
-              <TextBox x:Name="ChatIdInput" Margin="0,2,0,0" Padding="5,3"
-                       FontFamily="Consolas" FontSize="12"/>
-              <Button x:Name="SaveApplyButton" Style="{StaticResource Button.Signal}"
-                      Content="SAVE &amp; APPLY" Margin="0,7,0,0" HorizontalAlignment="Left"
-                      Click="SaveApply_Click"/>
-            </StackPanel>
-
-            <!-- Actions -->
-            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-              <Button x:Name="TestButton" Style="{StaticResource Button.Signal}"
-                      Content="SEND TEST MESSAGE" Click="TestMessage_Click"/>
-              <Button x:Name="RecheckButton" Style="{StaticResource Button.Amber}"
-                      Content="RE-CHECK" Margin="8,0,0,0" Click="Recheck_Click"/>
-            </StackPanel>
-            <TextBlock x:Name="TestResultText" Style="{StaticResource Type.Micro}"
-                       TextWrapping="Wrap" Margin="0,8,0,0"/>
           </StackPanel>
         </Border>
 
-        <!-- ═ AI ADVICE (Ollama) checklist ═ -->
+        <!-- ═ OPTIONAL ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="AI ADVICE · OPTIONAL"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
-          <StackPanel>
-
-            <!-- Ollama status -->
-            <Grid Margin="0,4">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Border x:Name="OllamaChip" Grid.Column="0" Width="76" Padding="7,3" CornerRadius="2"
-                      VerticalAlignment="Center" Background="{StaticResource Brush.Hairline}">
-                <TextBlock x:Name="OllamaChipText" Text="…" HorizontalAlignment="Center"
-                           Foreground="{StaticResource Brush.OnDark}" FontSize="10" FontWeight="Bold"/>
-              </Border>
-              <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="Local AI (Ollama)"/>
-                <TextBlock x:Name="OllamaStatusText" Style="{StaticResource Type.Micro}"
-                           TextWrapping="Wrap" Text="checking…"/>
-              </StackPanel>
-            </Grid>
-
-            <!-- Install hint: not installed -->
-            <StackPanel x:Name="OllamaInstallHint" Visibility="Collapsed" Margin="0,8,0,0">
-              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                         Text="Install Ollama and start it to enable /advise and automatic health advice."/>
-              <TextBlock Margin="0,4,0,0" FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
-                <Hyperlink NavigateUri="https://ollama.com/download"
-                           RequestNavigate="Hyperlink_RequestNavigate"
-                           Foreground="{StaticResource Brush.InkSoft}">Get Ollama</Hyperlink>
-              </TextBlock>
-            </StackPanel>
-
-            <!-- Start hint: installed but not running (one click to start + run at login) -->
-            <StackPanel x:Name="OllamaStartHint" Visibility="Collapsed" Margin="0,8,0,0">
-              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                         Text="Ollama is installed but not running. Start it and keep it running at login:"/>
-              <Button x:Name="OllamaStartButton" Style="{StaticResource Button.Signal}"
-                      Content="START OLLAMA" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OllamaStart_Click"/>
-            </StackPanel>
-
-            <!-- Pull hint: model not installed -->
-            <StackPanel x:Name="OllamaPullHint" Visibility="Collapsed" Margin="0,8,0,0">
-              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                         Text="The server is running — pull the model to finish:"/>
-              <TextBlock x:Name="OllamaPullCommand" FontFamily="Consolas" FontSize="12" Margin="0,3,0,0"
-                         Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap" Text="ollama pull …"/>
-              <Button x:Name="OllamaPullButton" Style="{StaticResource Button.Amber}"
-                      Content="RUN PULL" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OllamaPull_Click"/>
-            </StackPanel>
-
-          </StackPanel>
-        </Border>
-
-        <!-- ═ TEMPERATURE (informational — enabling full sensors is a manual admin step) ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="TEMPERATURE · OPTIONAL"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
-          <StackPanel>
-            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap"
-                       Text="/status and advice show temperatures. By default Homebase uses a driver-free WMI sensor — many desktops don't expose it, so temps may be blank."/>
-            <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,6,0,0"
-                       Text="For full CPU/GPU sensors, run this as admin. It loads a driver that antivirus flags as vulnerable, and registers a Defender exclusion for it:"/>
-            <TextBlock FontFamily="Consolas" FontSize="12" Margin="0,3,0,0"
-                       Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap"
-                       Text="enable-temperature.ps1"/>
-          </StackPanel>
-        </Border>
-
-        <!-- ═ GUIDANCE ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="FIRST TIME?"/>
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.SetupOptional}"/>
         </Border>
         <Border Style="{StaticResource Card}">
           <StackPanel>
-            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap"
-                       Text="1. Create a bot with BotFather and copy its token."/>
-            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Margin="0,3,0,0"
-                       Text="2. Send your bot any message so it can learn your chat ID."/>
-            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Margin="0,3,0,0"
-                       Text="3. Enter your token and chat ID above, then click Save &amp; apply."/>
-            <TextBlock Margin="0,8,0,0" FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
-              <Hyperlink NavigateUri="https://t.me/botfather"
-                         RequestNavigate="Hyperlink_RequestNavigate"
-                         Foreground="{StaticResource Brush.InkSoft}">Open @BotFather</Hyperlink>
-            </TextBlock>
+            <Grid Margin="0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="OllamaChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
+                <TextBlock x:Name="OllamaChipText" Style="{StaticResource ChipText}" Text="…"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupAi}"/>
+                <TextBlock x:Name="OllamaStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                           Text="{x:Static local:L.BadgeChecking}"/>
+
+                <TextBlock x:Name="OllamaInstallHint" Visibility="Collapsed" Margin="0,6,0,0"
+                           FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
+                  <Hyperlink NavigateUri="https://ollama.com/download" RequestNavigate="Hyperlink_RequestNavigate"
+                             Foreground="{StaticResource Brush.InkSoft}"><Run Text="{x:Static local:L.OllamaGet}"/></Hyperlink>
+                </TextBlock>
+
+                <Button x:Name="OllamaStartButton" Visibility="Collapsed" Style="{StaticResource Button.Amber}"
+                        Content="{x:Static local:L.OllamaStart}" Margin="0,6,0,0" HorizontalAlignment="Left"
+                        Click="OllamaStart_Click"/>
+
+                <StackPanel x:Name="OllamaPullHint" Visibility="Collapsed" Margin="0,6,0,0">
+                  <TextBlock x:Name="OllamaPullCommand" FontFamily="Consolas" FontSize="12"
+                             Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap" Text="ollama pull …"/>
+                  <Button x:Name="OllamaPullButton" Style="{StaticResource Button.Amber}"
+                          Content="{x:Static local:L.OllamaPull}" Margin="0,6,0,0" HorizontalAlignment="Left"
+                          Click="OllamaPull_Click"/>
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,12,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource Chip}" Background="{StaticResource Brush.Hairline}" VerticalAlignment="Top" Margin="0,2,0,0">
+                <TextBlock Style="{StaticResource ChipText}" Text="{x:Static local:L.ChipOptional}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupTemp}"/>
+                <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Text="{x:Static local:L.SetupTempText}"/>
+              </StackPanel>
+            </Grid>
           </StackPanel>
         </Border>
 
       </StackPanel>
     </ScrollViewer>
 
-    <!-- ═ Footer ═ -->
-    <DockPanel Grid.Row="2" Margin="0,12,0,0" LastChildFill="False">
-      <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" MaxWidth="250"
-                 Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                 Text="To change your token or chat ID later, update them above and Save &amp; apply."/>
-      <Button DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}"
-              Content="GET STARTED" Click="GetStarted_Click"/>
-    </DockPanel>
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button x:Name="RecheckButton" Style="{StaticResource Button.Amber}" Content="{x:Static local:L.Recheck}" Click="Recheck_Click"/>
+      <Button Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.SetupGetStarted}" Margin="8,0,0,0" Click="GetStarted_Click"/>
+    </StackPanel>
   </Grid>
 </local:ThemedWindow>

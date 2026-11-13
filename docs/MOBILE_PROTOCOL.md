@@ -1,6 +1,6 @@
 # Homebase Mobile Protocol v1
 
-휴대폰 앱(`mobile/`)과 각 PC의 Agent 사이 계약이다. 결정 배경은 [`DECISIONS.md`](../DECISIONS.md) M-1~M-18에 있다.
+휴대폰 앱(`mobile/`)과 각 PC의 Agent 사이 계약이다. 결정 배경은 [`DECISIONS.md`](../DECISIONS.md) M-1~M-18, M-20에 있다.
 형식은 [`mobile-protocol/`](mobile-protocol/)의 픽스처로 고정한다. .NET(`ProtocolGoldenTests`)과 Kotlin(`ProtocolTest`)이 같은 파일을 검증한다.
 의도적으로 스키마를 바꿀 때는 `HOMEBASE_UPDATE_GOLDEN=1 dotnet test`로 픽스처를 다시 쓰고, 호환이 깨지면 `schema`를 올린다.
 
@@ -21,7 +21,7 @@ HTTP/1.1 + WebSocket, 요청당 연결 하나(`Connection: close`). 경로(`tran
 
 ## 페어링 QR
 
-QR 텍스트는 링크다(M-19, [`pairing-link.v1.txt`](mobile-protocol/pairing-link.v1.txt)).
+QR 텍스트는 링크다(M-20, [`pairing-link.v1.txt`](mobile-protocol/pairing-link.v1.txt)).
 
 ```
 https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName, code, expiresAt, endpoints})>

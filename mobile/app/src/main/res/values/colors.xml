@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="canvas">#FF1B1E27</color>
+    <!-- Window background before Compose draws (launch splash); values-night overrides it. -->
+    <color name="canvas">#FFE3E7F3</color>
     <color name="carbon">#FF21242E</color>
     <color name="amber">#FFECAB37</color>
     <color name="ic_background">#FF21242E</color>

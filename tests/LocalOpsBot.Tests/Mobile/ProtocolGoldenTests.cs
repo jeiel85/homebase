@@ -75,7 +75,7 @@ public class ProtocolGoldenTests
         Assert.True(JsonNode.DeepEquals(expected, actual), $"{file} drifted from the serialized contract:\n{actual}");
     }
 
-    /// <summary>The QR text (M-19). The Android app parses the same file back into the offer fixture's paths.</summary>
+    /// <summary>The QR text (M-20). The Android app parses the same file back into the offer fixture's paths.</summary>
     [Fact]
     public void Pairing_link_matches_the_shared_fixture_and_round_trips()
     {

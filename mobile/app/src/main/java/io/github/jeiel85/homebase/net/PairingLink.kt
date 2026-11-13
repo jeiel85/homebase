@@ -3,7 +3,7 @@ package io.github.jeiel85.homebase.net
 import java.util.Base64
 
 /**
- * The pairing QR as a link (DECISIONS M-19), mirroring `LocalOpsBot.Core.Mobile.PairingLink`:
+ * The pairing QR as a link (DECISIONS M-20), mirroring `LocalOpsBot.Core.Mobile.PairingLink`:
  *
  * - `https://jeiel85.github.io/homebase/pair/#<base64url(offer JSON)>` — what the PC shows. The
  *   phone's camera opens it in the app (App Link) or, without the app, on the install guide page.
