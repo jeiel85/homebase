@@ -33,7 +33,33 @@ public sealed record PcInfo(
     string AgentVersion,
     string Os);
 
-/// <summary>Content of the pairing QR code (JSON text). <c>Hb</c> marks it as a Homebase payload.</summary>
+/// <summary>Network path names used in <see cref="MobileEndpoint.Transport"/> (DECISIONS M-15~M-18).</summary>
+public static class MobileTransport
+{
+    /// <summary>Tailnet address or MagicDNS name; plain HTTP (WireGuard encrypts the hop).</summary>
+    public const string Tailscale = "tailscale";
+
+    /// <summary>Private LAN address; TLS with a self-signed certificate the app pins by SHA-256.</summary>
+    public const string Lan = "lan";
+
+    /// <summary>Cloudflare Tunnel hostname; public TLS at Cloudflare's edge, port 443.</summary>
+    public const string Cloudflare = "cloudflare";
+
+    /// <summary>127.0.0.1 with <c>mobile:bindLoopback</c> — development/emulator (adb reverse) only.</summary>
+    public const string Loopback = "loopback";
+}
+
+/// <summary>
+/// One way to reach this PC. <c>CertSha256</c> (lowercase hex of the DER certificate) is set for
+/// <see cref="MobileTransport.Lan"/>: the app accepts that certificate and nothing else.
+/// </summary>
+public sealed record MobileEndpoint(string Transport, string Host, int Port, bool Tls, string? CertSha256 = null);
+
+/// <summary>
+/// Content of the pairing QR code (JSON text). <c>Hb</c> marks it as a Homebase payload.
+/// <c>Hosts</c> + <c>Port</c> are the v1 Tailscale-only fields older apps read; <c>Endpoints</c>
+/// lists every path (Tailscale, LAN, Cloudflare) and is what current apps use.
+/// </summary>
 public sealed record PairingOffer(
     int Hb,
     string PcId,
@@ -41,7 +67,11 @@ public sealed record PairingOffer(
     IReadOnlyList<string> Hosts,
     int Port,
     string Code,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    IReadOnlyList<MobileEndpoint> Endpoints);
+
+/// <summary><c>GET /api/v1/endpoints</c>: the current paths, so a paired phone follows DHCP or tunnel-address changes.</summary>
+public sealed record EndpointsResponse(int Schema, IReadOnlyList<MobileEndpoint> Endpoints);
 
 public sealed record PairRequest(string Code, string DeviceName, string? DeviceModel);
 

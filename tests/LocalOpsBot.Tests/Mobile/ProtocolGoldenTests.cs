@@ -33,16 +33,31 @@ public class ProtocolGoldenTests
         new[] { new ProcessEntry(20480, 15816, "node", new ResourceUsage(30.0, 600_000_000, 4096, 2048, 1024)) },
         new[] { new ClaudeSession("Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero)) });
 
+    public static IReadOnlyList<MobileEndpoint> SampleEndpoints() => new[]
+    {
+        new MobileEndpoint(MobileTransport.Lan, "192.168.45.101", 47820, true,
+            "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b"),
+        new MobileEndpoint(MobileTransport.Tailscale, "home-pc.tail1234.ts.net", 47820, false),
+        new MobileEndpoint(MobileTransport.Tailscale, "100.101.102.103", 47820, false),
+        new MobileEndpoint(MobileTransport.Cloudflare, "home-pc.example.com", 443, true),
+    };
+
     public static PairingOffer SampleOffer() => new(1, "6f1c0d2e9b8a4c7d", "HOME-PC",
         new[] { "home-pc.tail1234.ts.net", "100.101.102.103" }, 47820, "q8V3k1yZp0Wm2LrT5nXa9Q",
-        new DateTimeOffset(2026, 11, 13, 9, 35, 0, TimeSpan.Zero));
+        new DateTimeOffset(2026, 11, 13, 9, 35, 0, TimeSpan.Zero), SampleEndpoints());
 
     [Theory]
     [InlineData("snapshot.v1.json")]
     [InlineData("pairing-offer.v1.json")]
+    [InlineData("endpoints.v1.json")]
     public void Serialized_contract_matches_the_shared_fixture(string file)
     {
-        object sample = file.StartsWith("snapshot") ? SampleSnapshot() : SampleOffer();
+        object sample = file switch
+        {
+            "snapshot.v1.json" => SampleSnapshot(),
+            "pairing-offer.v1.json" => SampleOffer(),
+            _ => new EndpointsResponse(MobileProtocol.Schema, SampleEndpoints()),
+        };
         var actual = JsonSerializer.SerializeToNode(sample, sample.GetType(), MobileProtocol.Json)!;
         var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", file);
 
@@ -58,6 +73,13 @@ public class ProtocolGoldenTests
 
         var expected = JsonNode.Parse(File.ReadAllText(path));
         Assert.True(JsonNode.DeepEquals(expected, actual), $"{file} drifted from the serialized contract:\n{actual}");
+    }
+
+    [Fact]
+    public void Endpoints_without_a_pin_omit_the_field()
+    {
+        var json = JsonSerializer.Serialize(new MobileEndpoint(MobileTransport.Tailscale, "100.1.2.3", 47820, false), MobileProtocol.Json);
+        Assert.DoesNotContain("certSha256", json);
     }
 
     [Fact]

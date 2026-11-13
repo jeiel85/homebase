@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "endpoints": [
+    {
+      "transport": "lan",
+      "host": "192.168.45.101",
+      "port": 47820,
+      "tls": true,
+      "certSha256": "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b"
+    },
+    {
+      "transport": "tailscale",
+      "host": "home-pc.tail1234.ts.net",
+      "port": 47820,
+      "tls": false
+    },
+    {
+      "transport": "tailscale",
+      "host": "100.101.102.103",
+      "port": 47820,
+      "tls": false
+    },
+    {
+      "transport": "cloudflare",
+      "host": "home-pc.example.com",
+      "port": 443,
+      "tls": true
+    }
+  ]
+}

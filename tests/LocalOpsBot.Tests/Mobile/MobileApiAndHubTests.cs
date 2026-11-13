@@ -24,7 +24,8 @@ public class MobileApiAndHubTests
         _hub = new LiveSnapshotHub(_sampler, options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance);
         _pairing = new PairingService(_store, _time);
         _api = new MobileApiServer(_hub, _pairing, _store,
-            new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance), options,
+            new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
+            new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options,
             NullLogger<MobileApiServer>.Instance);
     }
 

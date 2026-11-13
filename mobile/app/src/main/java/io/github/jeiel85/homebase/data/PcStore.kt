@@ -4,6 +4,9 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import io.github.jeiel85.homebase.net.Endpoint
+import io.github.jeiel85.homebase.net.LocalNetworks
+import io.github.jeiel85.homebase.net.RouteSelector
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
@@ -12,19 +15,18 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** A paired PC. [hosts] come from the QR (MagicDNS name first, then the fixed Tailscale IP). */
+/** A paired PC and every path to it (from the QR, refreshed from the PC after each connect). */
 data class PcEntry(
     val pcId: String,
     val name: String,
-    val hosts: List<String>,
-    val port: Int,
+    val endpoints: List<Endpoint>,
     val deviceId: String,
     val token: String,
-    val lastGoodHost: String? = null,
+    /** [Endpoint.key] of the path that worked last; preferred among equally good paths. */
+    val lastGood: String? = null,
 ) {
-    /** Hosts to try, the one that last worked first. */
-    val orderedHosts: List<String>
-        get() = listOfNotNull(lastGoodHost) + hosts.filter { it != lastGoodHost }
+    /** Paths to try now, best first, for the phone's current network (DECISIONS M-18). */
+    fun orderedEndpoints(net: LocalNetworks?): List<Endpoint> = RouteSelector.order(endpoints, net, lastGood)
 }
 
 /**
@@ -57,10 +59,19 @@ class PcStore(context: Context) {
     fun remove(pcId: String) = save(all().filterNot { it.pcId == pcId })
 
     @Synchronized
-    fun rememberGoodHost(pcId: String, host: String) {
+    fun rememberGood(pcId: String, endpoint: Endpoint) {
         val list = all()
-        if (list.none { it.pcId == pcId && it.lastGoodHost != host }) return
-        save(list.map { if (it.pcId == pcId) it.copy(lastGoodHost = host) else it })
+        if (list.none { it.pcId == pcId && it.lastGood != endpoint.key }) return
+        save(list.map { if (it.pcId == pcId) it.copy(lastGood = endpoint.key) else it })
+    }
+
+    /** The PC's current paths (DHCP change, new Quick Tunnel address, Tailscale turned on). */
+    @Synchronized
+    fun updateEndpoints(pcId: String, endpoints: List<Endpoint>) {
+        if (endpoints.isEmpty()) return
+        val list = all()
+        if (list.none { it.pcId == pcId && it.endpoints != endpoints }) return
+        save(list.map { if (it.pcId == pcId) it.copy(endpoints = endpoints) else it })
     }
 
     private fun save(list: List<PcEntry>) {
@@ -72,23 +83,21 @@ class PcStore(context: Context) {
     private fun toJson(pc: PcEntry) = JSONObject()
         .put("pcId", pc.pcId)
         .put("name", pc.name)
-        .put("hosts", JSONArray(pc.hosts))
-        .put("port", pc.port)
+        .put("endpoints", JSONArray().apply { pc.endpoints.forEach { put(it.toJson()) } })
         .put("deviceId", pc.deviceId)
         .put("token", encrypt(pc.token))
-        .put("lastGoodHost", pc.lastGoodHost)
+        .put("lastGood", pc.lastGood)
 
     private fun fromJson(o: JSONObject): PcEntry? {
         val token = decrypt(o.optString("token")) ?: return null
-        val hosts = o.optJSONArray("hosts")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+        val (endpoints, lastGood) = storedEndpoints(o)
         return PcEntry(
             pcId = o.optString("pcId"),
             name = o.optString("name"),
-            hosts = hosts,
-            port = o.optInt("port"),
+            endpoints = endpoints,
             deviceId = o.optString("deviceId"),
             token = token,
-            lastGoodHost = o.optString("lastGoodHost").ifBlank { null },
+            lastGood = lastGood,
         )
     }
 
@@ -122,12 +131,26 @@ class PcStore(context: Context) {
         null
     }
 
-    private companion object {
-        const val NAME = "homebase_pcs"
-        const val KEY_PCS = "pcs"
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val KEY_ALIAS = "homebase_pc_tokens"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val IV_SIZE = 12
+    companion object {
+        /**
+         * Endpoints and last-good key from a stored entry. Entries saved before multi-path support
+         * have `hosts` + `port` + `lastGoodHost` (Tailscale only); they are read as Tailscale endpoints.
+         */
+        fun storedEndpoints(o: JSONObject): Pair<List<Endpoint>, String?> {
+            if (o.has("endpoints")) {
+                return Endpoint.parseList(o.optJSONArray("endpoints")) to o.optString("lastGood").ifBlank { null }
+            }
+            val hosts = o.optJSONArray("hosts")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+            val endpoints = Endpoint.fromLegacyHosts(hosts, o.optInt("port"))
+            val lastHost = o.optString("lastGoodHost").ifBlank { null }
+            return endpoints to endpoints.firstOrNull { it.host == lastHost }?.key
+        }
+
+        private const val NAME = "homebase_pcs"
+        private const val KEY_PCS = "pcs"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEY_ALIAS = "homebase_pc_tokens"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val IV_SIZE = 12
     }
 }

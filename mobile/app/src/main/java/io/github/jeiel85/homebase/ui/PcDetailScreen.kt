@@ -59,7 +59,13 @@ import java.time.OffsetDateTime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
-    val flow = remember(pc.pcId) { api.live(pc) { host -> store.rememberGoodHost(pc.pcId, host) } }
+    val flow = remember(pc.pcId) {
+        api.live(
+            pc,
+            onGoodEndpoint = { e -> store.rememberGood(pc.pcId, e) },
+            onEndpoints = { list -> store.updateEndpoints(pc.pcId, list) },
+        )
+    }
     val state by flow.collectAsStateWithLifecycle(initialValue = LiveState.Connecting)
     var last by remember { mutableStateOf<LiveSnapshot?>(null) }
     (state as? LiveState.Live)?.let { last = it.snapshot }
@@ -108,7 +114,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
 
 private fun statusLine(state: LiveState): String = when (state) {
     LiveState.Connecting -> "연결 중…"
-    is LiveState.Live -> "실시간 · ${state.host}"
+    is LiveState.Live -> "실시간 · ${state.endpoint.label} · ${state.endpoint.host}"
     is LiveState.Retrying -> "연결 끊김 — ${state.inSeconds}초 후 재시도 (${state.reason})"
     LiveState.Unauthorized -> "연결 해제됨"
     is LiveState.Incompatible -> "버전 불일치"

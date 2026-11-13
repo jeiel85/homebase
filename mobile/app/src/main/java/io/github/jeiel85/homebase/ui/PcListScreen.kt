@@ -49,6 +49,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.jeiel85.homebase.BuildConfig
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.update.UpdateSurface
 import kotlinx.coroutines.async
@@ -58,7 +59,7 @@ import kotlinx.coroutines.delay
 
 private sealed interface PcStatus {
     data object Checking : PcStatus
-    data class Online(val version: String, val host: String) : PcStatus
+    data class Online(val version: String, val endpoint: Endpoint) : PcStatus
     data object Offline : PcStatus
 }
 
@@ -80,13 +81,15 @@ fun PcListScreen(
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 coroutineScope {
-                    pcs.map { pc ->
+                    pcs.map { listed ->
                         async {
+                            // Paths may have been refreshed by the live screen since this list was built.
+                            val pc = store.get(listed.pcId) ?: listed
                             if (status[pc.pcId] == null) status[pc.pcId] = PcStatus.Checking
                             status[pc.pcId] = try {
-                                val (info, host) = api.info(pc)
-                                store.rememberGoodHost(pc.pcId, host)
-                                PcStatus.Online(info.agentVersion, host)
+                                val (info, endpoint) = api.info(pc)
+                                store.rememberGood(pc.pcId, endpoint)
+                                PcStatus.Online(info.agentVersion, endpoint)
                             } catch (_: Exception) {
                                 PcStatus.Offline
                             }
@@ -116,7 +119,7 @@ fun PcListScreen(
             if (pcs.isEmpty()) {
                 item {
                     Text(
-                        "아직 등록된 PC가 없습니다.\nPC 트레이 메뉴의 \"Connect Phone…\"에서 QR 코드를 띄운 뒤 'PC 추가'를 누르세요.\n휴대폰과 PC 모두 Tailscale에 연결되어 있어야 합니다.",
+                        "아직 등록된 PC가 없습니다.\nPC 트레이 메뉴의 \"Connect Phone…\"에서 QR 코드를 띄운 뒤 'PC 추가'를 누르세요.\n같은 Wi-Fi면 바로 연결되고, 밖에서는 PC의 Tailscale 또는 Cloudflare 경로로 자동 연결됩니다.",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 24.dp),
                     )
@@ -162,8 +165,8 @@ private fun PcCard(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRemove:
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             val (color, label) = when (status) {
                 PcStatus.Checking -> Color.Gray to "확인 중…"
-                is PcStatus.Online -> Color(0xFF2E7D32) to "온라인 · v${status.version} · ${status.host}"
-                PcStatus.Offline -> Color(0xFFE60012) to "오프라인 또는 Tailscale 연결 안 됨"
+                is PcStatus.Online -> Color(0xFF2E7D32) to "온라인 · v${status.version} · ${status.endpoint.label}"
+                PcStatus.Offline -> Color(0xFFE60012) to "오프라인 — 연결할 수 있는 경로가 없음"
             }
             Surface(color = color, shape = CircleShape, modifier = Modifier.size(12.dp)) {}
             Column(Modifier.weight(1f).padding(start = 14.dp)) {

@@ -49,11 +49,47 @@ class ProtocolTest {
     }
 
     @Test
-    fun pairing_offer_fixture_parses_and_hosts_keep_their_order() {
+    fun pairing_offer_fixture_parses_every_path_in_order() {
         val offer = PairingOffer.parse(fixture("pairing-offer.v1.json"))!!
-        assertEquals(listOf("home-pc.tail1234.ts.net", "100.101.102.103"), offer.hosts)
-        assertEquals(47820, offer.port)
+        assertEquals(listOf("lan", "tailscale", "tailscale", "cloudflare"), offer.endpoints.map { it.transport })
+        val lan = offer.endpoints[0]
+        assertEquals("192.168.45.101", lan.host)
+        assertTrue(lan.tls)
+        assertEquals("3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b", lan.certSha256)
+        assertEquals("https://192.168.45.101:47820/api/v1/live", lan.url("/api/v1/live"))
+        assertEquals("http://home-pc.tail1234.ts.net:47820/api/v1/info", offer.endpoints[1].url("/api/v1/info"))
+        val cf = offer.endpoints[3]
+        assertEquals("https://home-pc.example.com/api/v1/info", cf.url("/api/v1/info"))
+        assertNull(cf.certSha256)
         assertEquals("q8V3k1yZp0Wm2LrT5nXa9Q", offer.code)
+    }
+
+    @Test
+    fun v1_qr_without_endpoints_becomes_tailscale_paths() {
+        val legacy = """{"hb":1,"pcId":"p","pcName":"PC","hosts":["pc.ts.net","100.1.2.3"],"port":47820,"code":"c"}"""
+        val offer = PairingOffer.parse(legacy)!!
+        assertEquals(listOf("tailscale", "tailscale"), offer.endpoints.map { it.transport })
+        assertEquals(listOf("pc.ts.net", "100.1.2.3"), offer.endpoints.map { it.host })
+        assertFalse(offer.endpoints.any { it.tls })
+    }
+
+    @Test
+    fun lan_endpoint_without_a_valid_pin_is_dropped() {
+        val pin = "a".repeat(64)
+        val text = """{"hb":1,"pcId":"p","pcName":"PC","hosts":[],"port":47820,"code":"c","endpoints":[""" +
+            """{"transport":"lan","host":"192.168.0.2","port":47820,"tls":true},""" +
+            """{"transport":"lan","host":"192.168.0.3","port":47820,"tls":false,"certSha256":"$pin"},""" +
+            """{"transport":"cloudflare","host":"x.trycloudflare.com","port":443,"tls":true}]}"""
+        val offer = PairingOffer.parse(text)!!
+        assertEquals(listOf("cloudflare"), offer.endpoints.map { it.transport })
+        assertTrue(offer.endpoints.single().isQuickTunnel)
+    }
+
+    @Test
+    fun endpoints_fixture_matches_the_offer_paths() {
+        val list = parseEndpointsResponse(fixture("endpoints.v1.json"))
+        assertEquals(4, list.size)
+        assertEquals(PairingOffer.parse(fixture("pairing-offer.v1.json"))!!.endpoints, list)
     }
 
     @Test

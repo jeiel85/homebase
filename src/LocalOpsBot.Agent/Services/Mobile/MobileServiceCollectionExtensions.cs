@@ -30,9 +30,17 @@ public static class MobileServiceCollectionExtensions
         services.AddSingleton<PairingService>();
         services.AddSingleton<IResourceSampler, WindowsResourceSampler>();
         services.AddSingleton<TailscaleAddressResolver>();
+        services.AddSingleton<LanAddressResolver>();
         services.AddSingleton<LiveSnapshotHub>();
-        services.AddSingleton<MobileApiServer>();
+        services.AddSingleton<CloudflareTunnel>();
+        services.AddSingleton(sp => new MobileApiServer(
+            sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<PairingService>(),
+            sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<TailscaleAddressResolver>(),
+            sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
+            sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>()));
         services.AddHostedService(sp => sp.GetRequiredService<MobileApiServer>());
+        // Idle (returns at once) unless mobile:cloudflare:enabled.
+        services.AddHostedService(sp => sp.GetRequiredService<CloudflareTunnel>());
         services.AddHostedService<MobileBridgeServer>();
         return services;
     }

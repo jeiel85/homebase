@@ -5,11 +5,12 @@
         Style="{StaticResource Window.Chrome}"
         Title="Homebase — 휴대폰 연결"
         Icon="pack://application:,,,/Resources/homebase.ico"
-        Width="420" SizeToContent="Height"
+        Width="460" SizeToContent="Height" MaxHeight="900"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="{StaticResource Brush.Canvas}"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
   <StackPanel Margin="14">
     <Border Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12">
       <TextBlock Style="{StaticResource Type.SectionLabel}" Text="CONNECT PHONE"/>
@@ -20,29 +21,50 @@
                  Text="상태를 확인하는 중…"/>
     </Border>
 
-    <!-- Feature off: one elevated step turns it on -->
-    <StackPanel x:Name="EnablePanel" Visibility="Collapsed" Margin="0,12,0,0">
-      <Border Style="{StaticResource Card}">
-        <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap">
-          휴대폰 앱에서 이 PC의 열린 창과 프로세스별 CPU·RAM·I/O·네트워크를 실시간으로 봅니다.
-          연결은 Tailscale 망 안에서만 열리고(인터넷·LAN에는 열리지 않음), 휴대폰이 보고 있을 때만 수집합니다.
-          켜려면 관리자 승인(UAC)이 한 번 필요합니다.
-        </TextBlock>
-      </Border>
-      <Button x:Name="EnableButton" Style="{StaticResource Button.Signal}" Content="ENABLE"
-              HorizontalAlignment="Right" Margin="0,12,0,0" Click="Enable_Click"/>
-    </StackPanel>
+    <!-- Feature off: what it does -->
+    <Border x:Name="IntroCard" Style="{StaticResource Card}" Margin="0,12,0,0" Visibility="Collapsed">
+      <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap">
+        휴대폰 앱에서 이 PC의 열린 창과 프로세스별 CPU·RAM·I/O·네트워크를 실시간으로 봅니다.
+        QR 한 번이면 앱이 알아서 경로를 고릅니다: 같은 Wi-Fi면 LAN(TLS 암호화), 밖에서는 Tailscale 또는
+        Cloudflare Tunnel. Tailscale이 없어도 됩니다. 휴대폰이 보고 있을 때만 수집하며, 켜려면 관리자 승인(UAC)이 한 번 필요합니다.
+      </TextBlock>
+    </Border>
 
-    <!-- Feature on: QR code + paired devices -->
+    <!-- Feature on: QR code, path status, paired devices -->
     <StackPanel x:Name="PairPanel" Visibility="Collapsed" Margin="0,12,0,0">
       <Border Style="{StaticResource Card}" HorizontalAlignment="Center" Padding="10">
-        <Image x:Name="QrImage" Width="240" Height="240" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+        <Image x:Name="QrImage" Width="260" Height="260" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
       </Border>
       <TextBlock x:Name="CountdownText" Style="{StaticResource Type.BodyStrong}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-      <TextBlock x:Name="HostsText" Style="{StaticResource Type.Micro}" HorizontalAlignment="Center" Margin="0,4,0,0" TextWrapping="Wrap"/>
       <Button x:Name="NewCodeButton" Style="{StaticResource Button.Carbon}" Content="NEW CODE"
               HorizontalAlignment="Center" Margin="0,10,0,0" Click="NewCode_Click"/>
+    </StackPanel>
 
+    <StackPanel x:Name="PathsPanel" Visibility="Collapsed">
+      <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="CONNECTION PATHS"/>
+      </Border>
+      <ItemsControl x:Name="PathList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,6">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}" Content="{Binding ActionLabel}"
+                        Tag="{Binding ActionKey}" Visibility="{Binding ActionVisibility}" Click="PathAction_Click"
+                        VerticalAlignment="Center" Margin="8,0,0,0"/>
+                <Ellipse DockPanel.Dock="Left" Width="9" Height="9" Fill="{Binding Dot}" VerticalAlignment="Top" Margin="0,5,8,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{Binding Title}"/>
+                  <TextBlock Style="{StaticResource Type.Micro}" Text="{Binding Detail}" TextWrapping="Wrap"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <StackPanel x:Name="DevicesPanel" Visibility="Collapsed">
       <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
         <TextBlock Style="{StaticResource Type.SectionLabel}" Text="PAIRED PHONES"/>
       </Border>
@@ -64,5 +86,41 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </StackPanel>
+
+    <!-- Which paths to open; shown in both states (ENABLE when off, APPLY when on) -->
+    <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="PATH SETTINGS"/>
+    </Border>
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <CheckBox x:Name="LanCheck" IsChecked="True" Margin="0,0,0,2">
+          <TextBlock Style="{StaticResource Type.Body}" Text="같은 Wi-Fi·유선 (LAN, TLS)"/>
+        </CheckBox>
+        <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="20,0,0,8"
+                   Text="같은 네트워크면 가장 빠릅니다. Windows 네트워크가 '개인'일 때만 열립니다."/>
+        <CheckBox x:Name="TailscaleCheck" IsChecked="True" Margin="0,0,0,2">
+          <TextBlock Style="{StaticResource Type.Body}" Text="Tailscale"/>
+        </CheckBox>
+        <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="20,0,0,8"
+                   Text="PC와 휴대폰이 같은 tailnet에 있으면 어디서든 직접 연결합니다."/>
+        <CheckBox x:Name="CloudflareCheck" IsChecked="True" Margin="0,0,0,2"
+                  Checked="CloudflareCheck_Changed" Unchecked="CloudflareCheck_Changed">
+          <TextBlock Style="{StaticResource Type.Body}" Text="Cloudflare Tunnel (외부, Tailscale 없이)"/>
+        </CheckBox>
+        <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="20,0,0,4"
+                   Text="비워 두면 계정 없는 Quick Tunnel(임시 주소, PC 재시작마다 바뀜)을 씁니다. 고정 주소는 Cloudflare 대시보드의 터널 토큰과 호스트명을 넣으세요."/>
+        <StackPanel x:Name="CloudflareFields" Margin="20,0,0,0">
+          <TextBlock Style="{StaticResource Type.Micro}" Text="터널 토큰 (선택)" Margin="0,4,0,2"/>
+          <PasswordBox x:Name="TunnelTokenBox"/>
+          <TextBlock x:Name="TokenSavedText" Style="{StaticResource Type.Micro}" Visibility="Collapsed"
+                     Text="저장된 토큰이 있습니다. 비워 두면 유지되고, 호스트명까지 지우면 Quick Tunnel로 돌아갑니다."/>
+          <TextBlock Style="{StaticResource Type.Micro}" Text="공개 호스트명 (토큰을 쓸 때 필수, 예: home-pc.example.com)" Margin="0,6,0,2"/>
+          <TextBox x:Name="TunnelHostBox"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <Button x:Name="ApplyButton" Style="{StaticResource Button.Signal}" Content="ENABLE"
+            HorizontalAlignment="Right" Margin="0,12,0,0" Click="Apply_Click"/>
   </StackPanel>
+  </ScrollViewer>
 </local:ThemedWindow>

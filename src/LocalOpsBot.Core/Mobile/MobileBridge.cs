@@ -89,4 +89,21 @@ public sealed record SessionReport(
 
 public sealed record MobileDeviceInfo(string DeviceId, string Name, string? Model, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);
 
-public sealed record BridgeStatus(bool ApiListening, IReadOnlyList<string> Hosts, int Port, int Watchers);
+/// <summary>
+/// What the Tray's "Connect Phone…" window shows. <c>Hosts</c> is the v1 Tailscale list;
+/// <c>Endpoints</c> covers every path. <c>Cloudflare</c> is null while the tunnel is off.
+/// </summary>
+public sealed record BridgeStatus(
+    bool ApiListening,
+    IReadOnlyList<string> Hosts,
+    int Port,
+    int Watchers,
+    IReadOnlyList<MobileEndpoint> Endpoints,
+    MobileOptionsSummary Options,
+    CloudflareStatus? Cloudflare);
+
+/// <summary>Which paths are configured on (independent of whether each is currently reachable).</summary>
+public sealed record MobileOptionsSummary(bool Tailscale, bool Lan, bool Cloudflare);
+
+/// <summary>Cloudflare Tunnel connector state: <c>not_installed</c>, <c>starting</c>, <c>running</c>, <c>error</c>.</summary>
+public sealed record CloudflareStatus(string State, string Mode, string? Hostname, string? Detail);
