@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **One settings window.** "Connect phone" is now the first tab of Settings (Phone) instead of a
+  separate tray menu item; the tray menu's Settings… and the dashboard's settings button open it.
+  The phone tab polls the Agent only while it is in view.
+- The Notifications tab now says where forwarded Windows notifications go — the phone, as an
+  encrypted push — instead of Telegram, which they no longer reach by default since v0.16.0.
+
 ## v0.16.0 — Phone push notifications, self-installing updates
 
 ### Added

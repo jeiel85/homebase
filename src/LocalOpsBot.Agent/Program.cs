@@ -123,7 +123,7 @@ if (forwardingEnabled)
 }
 
 // --- Mobile monitoring (opt-in, DECISIONS M-1..M-11) -----------------------
-// Off by default; the Tray's "휴대폰 연결" turns it on. Also keeps the Tailscale-only firewall
+// Off by default; the Tray's Settings › Phone tab turns it on. Also keeps the Tailscale-only firewall
 // rule in step with the setting.
 using (var startupLoggerFactory = new Serilog.Extensions.Logging.SerilogLoggerFactory(Log.Logger))
 {

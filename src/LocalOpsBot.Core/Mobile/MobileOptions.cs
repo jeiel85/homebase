@@ -1,6 +1,6 @@
 namespace LocalOpsBot.Core.Mobile;
 
-/// <summary>Config section <c>mobile</c>. Off by default — the Tray's "휴대폰 연결" turns it on.</summary>
+/// <summary>Config section <c>mobile</c>. Off by default — the Tray's Settings › Phone tab turns it on.</summary>
 public sealed class MobileOptions
 {
     public const string SectionName = "mobile";
