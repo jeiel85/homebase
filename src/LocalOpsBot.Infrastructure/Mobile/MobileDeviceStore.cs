@@ -103,6 +103,11 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         }
     }
 
+    public bool IsPaired(string deviceId)
+    {
+        lock (_gate) return _state.Devices.Exists(d => d.DeviceId == deviceId);
+    }
+
     public MobileDeviceInfo? Authenticate(string token)
     {
         if (string.IsNullOrEmpty(token)) return null;

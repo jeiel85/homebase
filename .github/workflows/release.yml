@@ -50,7 +50,9 @@ jobs:
           mkdir -p dist
           cp mobile/app/build/outputs/apk/release/app-release.apk dist/Homebase-Mobile.apk
           "$BUILD_TOOLS/apksigner" verify --print-certs dist/Homebase-Mobile.apk > signing.txt
-          ACTUAL="$(awk -F': ' '/certificate SHA-256 digest/ { print tolower($3); exit }' signing.txt)"
+          # apksigner prints either "Signer #1 certificate SHA-256 digest: <hex>" or
+          # "V2 Signer: certificate SHA-256 digest: <hex>" depending on version — take the last field.
+          ACTUAL="$(awk -F': ' '/certificate SHA-256 digest/ { print tolower($NF); exit }' signing.txt)"
           echo "certificate: $ACTUAL"
           test "$ACTUAL" = "$HOMEBASE_RELEASE_CERT_SHA256"
 

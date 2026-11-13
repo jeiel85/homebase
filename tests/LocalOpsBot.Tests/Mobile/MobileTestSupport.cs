@@ -22,7 +22,9 @@ internal sealed class InMemoryDeviceStore : IMobileDeviceStore
         return info;
     }
 
-    public bool Revoke(string deviceId) => _devices.RemoveAll(d => d.Info.DeviceId == deviceId) > 0;
+    public bool Revoke(string deviceId) { lock (_devices) return _devices.RemoveAll(d => d.Info.DeviceId == deviceId) > 0; }
+
+    public bool IsPaired(string deviceId) { lock (_devices) return _devices.Any(d => d.Info.DeviceId == deviceId); }
 
     public MobileDeviceInfo? Authenticate(string token)
     {

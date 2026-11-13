@@ -68,8 +68,11 @@ public sealed class LiveSnapshotHub : IDisposable
             {
                 _sampler.Start();
                 _sampler.Sample(); // prime the deltas so the first pushed tick has real rates
-                _loopCts = new CancellationTokenSource();
-                _loop = Task.Run(() => RunAsync(_loopCts.Token));
+                // Capture this loop's own token: the lambda may run after Unsubscribe nulled
+                // _loopCts or a new watcher replaced it, and each loop must keep its own lifetime.
+                var cts = new CancellationTokenSource();
+                _loopCts = cts;
+                _loop = Task.Run(() => RunAsync(cts.Token));
             }
         }
         if (first)

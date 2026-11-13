@@ -143,8 +143,14 @@ class HomebaseApi(
                 close(if (response?.code == 401) UnauthorizedException() else (t as? IOException ?: IOException(t.message)))
             }
 
+            // The PC closes with 1008 when this phone was revoked in the Tray mid-session.
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (code == CLOSE_REVOKED) close(UnauthorizedException()) else close()
+                webSocket.close(1000, null)
+            }
+
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                close()
+                if (code == CLOSE_REVOKED) close(UnauthorizedException()) else close()
             }
         })
         awaitClose { ws.close(1000, "bye") }
@@ -158,6 +164,9 @@ class HomebaseApi(
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
         private val BACKOFF_SECONDS = intArrayOf(1, 2, 5, 10, 30)
+
+        /** WebSocket policy-violation close the Agent sends to a revoked device. */
+        private const val CLOSE_REVOKED = 1008
 
         val defaultClient: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)

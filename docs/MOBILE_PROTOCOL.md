@@ -35,6 +35,7 @@ QR 텍스트는 JSON이다([`pairing-offer.v1.json`](mobile-protocol/pairing-off
 `GET /api/v1/live`에 `Authorization: Bearer <token>`을 붙여 업그레이드한다. 401은 업그레이드 전에 일반 HTTP 응답으로 돌아온다.
 서버는 `mobile.liveIntervalMs`(기본 1000ms) 주기로 `LiveSnapshot` 텍스트 프레임을 보낸다. 느린 클라이언트에는 쌓이지 않고 최신 것만 간다.
 클라이언트가 닫으면 마지막 구독자일 때 PC는 수집을 멈춘다.
+서버는 매 전송 전에 기기의 페어링 상태를 다시 확인한다. Tray에서 철회된 기기는 다음 주기 안에 close `1008 "revoked"`로 끊기고, 앱은 이를 401과 같게 처리한다.
 
 `LiveSnapshot`([`snapshot.v1.json`](mobile-protocol/snapshot.v1.json)):
 

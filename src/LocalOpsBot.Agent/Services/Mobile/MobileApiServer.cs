@@ -277,7 +277,8 @@ public sealed class MobileApiServer : BackgroundService
 
     private async Task HandleLiveAsync(Stream stream, HttpRequestHead head, CancellationToken ct)
     {
-        if (_devices.Authenticate(head.BearerToken() ?? "") is null)
+        var device = _devices.Authenticate(head.BearerToken() ?? "");
+        if (device is null)
         {
             await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This phone is not paired with this PC."), ct);
             return;
@@ -317,6 +318,14 @@ public sealed class MobileApiServer : BackgroundService
         {
             await foreach (var snapshot in sub.Reader.ReadAllAsync(linked.Token))
             {
+                // Authorization is re-checked on every push, so a phone revoked in the Tray loses
+                // the live view within one interval instead of keeping it until it disconnects.
+                if (!_devices.IsPaired(device.DeviceId))
+                {
+                    _logger.LogInformation("Closing live view of revoked device {DeviceId}.", device.DeviceId);
+                    await socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, RevokedCloseReason, CancellationToken.None);
+                    break;
+                }
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, MobileProtocol.Json);
                 await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, linked.Token);
             }
@@ -333,6 +342,9 @@ public sealed class MobileApiServer : BackgroundService
             await receive;
         }
     }
+
+    /// <summary>WebSocket close reason (status 1008) when the device was revoked; the app treats it like 401.</summary>
+    public const string RevokedCloseReason = "revoked";
 
     private static string Json<T>(T value) => JsonSerializer.Serialize(value, MobileProtocol.Json);
 
