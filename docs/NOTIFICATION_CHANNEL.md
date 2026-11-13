@@ -72,14 +72,14 @@ Telegram 봇 대화는 비밀 대화가 아니라 클라우드 채팅이라 **�
 | **서버·키** | Telegram 서버, PC마다 봇 토큰 | Google 서버 + **Firebase 프로젝트와 서비스 계정 키**. 공개 APK는 하나의 Firebase 프로젝트에 묶이므로, 남의 PC가 내 앱 사용자에게 보내려면 그 서비스 계정 키를 나눠 주거나 **중계 서버**를 운영해야 함 → **M-1(서버리스) 위반**. 사용자마다 자기 Firebase로 다시 빌드하는 방법만 남는데, 이는 사이드로드 배포 모델(M-4)과 맞지 않음 | ntfy.sh(공개, 계정 없음): 제3자 서버이지만 키 배포는 없음. 엔드포인트 URL이 곧 비밀. **자체 호스팅**: 휴대폰이 밖에서 닿아야 하므로 VPS(=M-1 위반) 또는 tailnet 내부(=Tailscale 필요)가 됨 | 없음. PC가 서버 |
 | **프라이버시** (내용이 망 밖으로 나가나) | **나간다.** Telegram 서버가 평문으로 봄(§1.3) | 앱이 페이로드를 암호화해 data 메시지로 보내면 Google은 메타데이터만 봄(4KB 제한). 평문 notification 메시지는 Google이 봄 | RFC 8291이면 **ntfy 서버는 암호문만 봄**(UnifiedPush 페이로드는 RFC 8291 암호화된 POST 본문). ntfy 일반 게시(앱 연동 없이 토픽에 POST)는 서버에서 평문(ntfy 자체 E2E는 issue #69로 오래 열려 있음, 채택 전 재확인) | **나가지 않는다**(LAN·tailnet은 종단 암호화). 단 Cloudflare 경로는 Cloudflare 엣지에서 TLS가 끝나므로 Cloudflare가 평문을 볼 수 있음(M-17과 같은 성격) |
 | **배터리** | 추가 0(Telegram 앱이 이미 FCM으로 받음) | 추가 거의 0(시스템 FCM 연결 공유) | ntfy F-Droid판은 자체 상주 연결(포그라운드 서비스) 1개를 모든 앱이 공유. Play판은 ntfy.sh 토픽에 FCM으로 깨움(ntfy 문서 기준, 재확인). 어느 쪽이든 Homebase가 따로 쓰는 배터리는 없음 | **가장 큼.** PC 수만큼 소켓, 하트비트(Cloudflare 경로는 유휴 타임아웃 때문에 필수). 측정 전 수치 없음. Samsung·Xiaomi 등 OEM 백그라운드 종료에 취약 |
-| **Doze** | 문제 없음 | high-priority 메시지는 Doze 중에도 전달 | 배포자 몫. FCM판은 문제 없음. 자체 연결판은 포그라운드 서비스 예외로 동작 | 포그라운드 서비스 프로세스는 Doze 네트워크 제한에서 예외. 하지만 하트비트 타이머는 CPU 수면 때문에 AlarmManager나 wakelock이 필요. targetSdk 35에서 `dataSync` 유형은 **24시간에 6시간 한도**라 쓸 수 없고 `specialUse`/`connectedDevice` 유형이 필요(사이드로드라 Play 심사는 없지만 OS 선행 조건은 적용) |
+| **Doze** | 문제 없음 | 사용자에게 보이는 우선순위 높은 메시지는 Doze 중에도 전달되고, 앱은 잠시 네트워크·partial wakelock을 받음 | 배포자 몫. FCM판은 문제 없음. 자체 연결판은 배포자 앱이 **배터리 최적화 예외**를 받아야 Doze 중에도 연결을 유지함(포그라운드 서비스만으로는 안 됨). 예외는 배포자 하나만 받으면 됨 | **포그라운드 서비스만으로는 Doze 예외가 아님.** 공식 문서상 포그라운드 서비스는 App Standby만 막는다. Doze는 네트워크를 끊고 wakelock을 무시하며 일반 알람을 유지보수 창까지 미룬다. Doze 중 네트워크와 partial wakelock을 쓰려면 **배터리 최적화 예외**가 있어야 한다. 사용자가 설정에서 직접 켜야 하고(사이드로드라 Play 정책 제한은 없음), 앱은 `isIgnoringBatteryOptimizations()`로 확인해 안내해야 한다. 하트비트는 `setExactAndAllowWhileIdle` 알람이 필요하다(예외 앱도 일반 알람은 Doze 중 울리지 않음). OEM 절전은 별도로 실기기 검증이 필요하다. 덧붙여 targetSdk 35에서 `dataSync` 유형은 **24시간에 6시간 한도**라 쓸 수 없고 `specialUse`/`connectedDevice` 유형이 필요하다(OS 선행 조건 적용) |
 | **상시 알림** | 없음 | 없음 | ntfy 자체 연결판은 ntfy가 상시 알림 1개를 띄움 | **Homebase가 상시 알림 1개** 필요(Android 13+에서는 사용자가 밀어서 지울 수 있지만 서비스는 남음) |
 | **Android 13+ 알림 권한** (`POST_NOTIFICATIONS`) | Telegram 앱이 이미 보유 | Homebase에 새로 필요(런타임 요청) | Homebase에 새로 필요(+ 배포자 앱에도) | Homebase에 새로 필요 |
 | **Tailscale이 꺼졌을 때** | 동작 | 동작 | ntfy.sh: 동작. tailnet 자체 호스팅: **불가** | 집 Wi-Fi(LAN)이면 동작, 밖이면 Cloudflare를 켠 PC만 동작. Quick Tunnel은 PC 재시작마다 주소가 바뀌어(M-17) 다시 붙기 전까지 끊김. Tailscale-only 구성은 **불가** |
 | **휴대폰이 꺼져 있었을 때** | Telegram이 보관. 대화가 곧 이력 | FCM이 TTL 동안 보관(기본 최대 4주) | ntfy 서버 캐시(ntfy.sh 기본 12시간, 재확인) | 보관 없음. 재연결 시 PC 알림 로그(`/alerts`의 SQLite)를 받아 오는 API가 별도로 필요 |
 | **명령(§1.2)** | 그대로 | 없음. 앱에 명령 UI와 인증된 명령 API를 새로 만들어야 함(앱 읽기 전용 원칙 개정) | 없음(같음) | 없음(같음). 연결은 있지만 명령은 같은 원칙 개정이 필요 |
 | **M-13** | 무관 | 무관 | 무관 | **위반 위험.** 기존 `WS /api/v1/live`에 붙으면 샘플러·ETW·Tray 보고가 상시로 켜진다. 구독자 수에 넣지 않는 알림 전용 스트림을 따로 만들어야 함 |
-| **구현 크기** (추정) | 0 | 앱: Firebase 연동, 토큰 등록, 알림 표시. PC: OAuth2 JWT 서명·FCM 채널. **+ 키 배포 또는 중계 서버.** 중~대 | 앱: 배포자 등록, 엔드포인트를 PC마다 등록(`POST /api/v1/push` 같은 인증 API), 복호화, 알림 채널·권한. PC: `IOutboundChannel` 구현(RFC 8291 암호화 약 200줄), 기기별 엔드포인트 저장(M-11 `state.json`), `OutboundRouter`가 채널 ID 두 개를 하드코딩한 부분 수정, `BootNotificationService`를 router 경유로 전환. 중 | 앱: 포그라운드 서비스, 재연결·백오프, 하트비트, 다중 PC, 알림. PC: 알림 전용 스트림, 놓친 알림 재전송. **+ 실기기 배터리·OEM 검증.** 중~대, 유지 비용 큼 |
+| **구현 크기** (추정) | 0 | 앱: Firebase 연동, 토큰 등록, 알림 표시. PC: OAuth2 JWT 서명·FCM 채널. **+ 키 배포 또는 중계 서버.** 중~대 | 앱: 배포자 등록, 엔드포인트를 PC마다 등록(`POST /api/v1/push` 같은 인증 API), 복호화, 알림 채널·권한. PC: `IOutboundChannel` 구현(RFC 8291 암호화 약 200줄), 기기별 엔드포인트 저장(M-11 `state.json`), `OutboundRouter`가 채널 ID 두 개를 하드코딩한 부분 수정, `BootNotificationService`를 router 경유로 전환. 중 | 앱: 포그라운드 서비스, 배터리 최적화 예외 안내·확인, 재연결·백오프, 유휴 중 알람 하트비트, 다중 PC, 알림. PC: 알림 전용 스트림, 놓친 알림 재전송. **+ Doze(`adb shell dumpsys deviceidle force-idle`)·OEM 절전 실기기 검증.** 중~대, 유지 비용 큼 |
 
 §1에서 나온 공통 작업이 있다. **어떤 앱 푸시안이든** `BootNotificationService`와 Tray 테스트 메시지가 Telegram을 직접 부르고 있으므로 router를 거치도록 바꿔야 한다.
 또 Telegram을 끄면 `/alerts` 같은 이력 조회 수단이 사라지므로, 앱에 알림 이력 화면이 필요해진다.
@@ -96,7 +96,7 @@ Telegram 봇 대화는 비밀 대화가 아니라 클라우드 채팅이라 **�
    - 프라이버시: 중계 서버는 암호문만 본다. **지금의 Telegram보다 낫다.**
    - 기존 구조에 들어맞는다. `IOutboundChannel`을 하나 더하는 일이고, `DeliveryPolicy`로 채널 우선순위를 고를 수 있다.
 3. **(b) FCM은 기각한다.** 공개 사이드로드 APK에서는 서비스 계정 키를 배포하거나 중계 서버를 둬야 해서 M-1에 걸린다. Firebase 의존성으로 M-3에도 걸린다. 배터리 이점은 (c)의 FCM판 배포자로 이미 얻을 수 있다.
-4. **(d) 상주 연결은 기각한다.** 상시 알림, PC 수에 비례하는 배터리 비용, OEM 종료, Quick Tunnel 주소 변경, M-13 분리 작업까지 대가가 가장 크다. 내용이 망 밖으로 안 나간다는 장점은 Cloudflare 경로를 쓰는 순간 사라진다.
+4. **(d) 상주 연결은 기각한다.** 상시 알림, 사용자가 직접 켜야 하는 배터리 최적화 예외(없으면 Doze 중 다운 알림이 유지보수 창까지 늦어짐), PC 수에 비례하는 배터리 비용, OEM 종료, Quick Tunnel 주소 변경, M-13 분리 작업까지 대가가 가장 크다. 내용이 망 밖으로 안 나간다는 장점은 Cloudflare 경로를 쓰는 순간 사라진다.
 5. **완전 대체는 명령 문제가 풀린 뒤에 다시 판단한다.** Telegram을 끄려면 앱에 ① 알림 이력 화면, ② 최소 명령(`/mute`·`/unmute`, 필요하면 `/update`)이 있어야 한다.
    ②는 "앱은 읽기 전용" 원칙(ADR-005와의 관계 포함)을 바꾸는 일이므로 따로 결정한다.
 
@@ -120,7 +120,7 @@ Telegram 봇 대화는 비밀 대화가 아니라 클라우드 채팅이라 **�
 
 - 코드: `src/LocalOpsBot.Agent/Services/{AlertDispatcher,BootNotificationService,NotificationForwardingService,WatchdogBackgroundService,DevMonitorBackgroundService,EventLogPollingService,TelegramPollingService}.cs`, `src/LocalOpsBot.Core/Delivery/OutboundRouter.cs`, `src/LocalOpsBot.Core/Commands/*CommandHandler.cs`, `config/appsettings.example.json`, `mobile/app/build.gradle.kts`, `mobile/app/src/main/AndroidManifest.xml`
 - Android 포그라운드 서비스 시간 제한(`dataSync` 24시간당 6시간): <https://developer.android.com/develop/background-work/services/fgs/timeout>
-- Doze와 포그라운드 서비스 예외, high-priority FCM: <https://developer.android.com/training/monitoring-device-state/doze-standby>
+- Doze 제한(네트워크 중단·wakelock 무시·알람 지연), 포그라운드 서비스 예외는 App Standby에만 해당, 배터리 최적화 예외 앱의 Doze 중 네트워크·partial wakelock, FCM 사용자 표시 메시지: <https://developer.android.com/training/monitoring-device-state/doze-standby>
 - FCM HTTP v1은 OAuth2 액세스 토큰(서비스 계정)을 요구: <https://firebase.google.com/docs/cloud-messaging/migrate-v1>
 - RFC 8291 Message Encryption for Web Push: <https://www.rfc-editor.org/rfc/rfc8291>
 - "재확인" 표시 항목(ntfy E2E 현황, ntfy Play판의 FCM 사용, ntfy.sh 캐시 기간)은 작성 시점에 1차 출처로 확인하지 못했다. (c) 착수 시 ntfy 문서로 확정한다.
