@@ -3,7 +3,7 @@
         xmlns:local="clr-namespace:LocalOpsBot.Tray"
         x:Class="LocalOpsBot.Tray.UpdateProgressWindow"
         Style="{StaticResource Window.Chrome}"
-        Title="Homebase Update"
+        Title="{x:Static local:L.UpdProgressTitle}"
         Icon="pack://application:,,,/Resources/homebase.ico"
         Width="420" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
@@ -19,13 +19,13 @@
     </Grid.RowDefinitions>
 
     <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12">
-      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="SOFTWARE UPDATE"/>
+      <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.UpdProgressHeader}"/>
     </Border>
 
     <Border Grid.Row="1" Style="{StaticResource Card}">
       <StackPanel>
         <TextBlock x:Name="StatusText" Style="{StaticResource Type.Body}"
-                   Text="Preparing…" Margin="0,0,0,8"/>
+                   Text="{x:Static local:L.UpdPreparing}" Margin="0,0,0,8"/>
         <Grid>
           <ProgressBar x:Name="ProgressBar" Style="{StaticResource Gauge}" Height="18"
                        Foreground="{StaticResource Brush.Signal}"/>
@@ -35,7 +35,7 @@
       </StackPanel>
     </Border>
 
-    <Button Grid.Row="2" x:Name="CancelButton" Style="{StaticResource Button.Carbon}" Content="CANCEL"
+    <Button Grid.Row="2" x:Name="CancelButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.CancelUpper}"
             HorizontalAlignment="Right" Margin="0,12,0,0" Click="Cancel_Click"/>
   </Grid>
 </local:ThemedWindow>

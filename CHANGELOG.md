@@ -10,7 +10,7 @@
 - **Tailscale-only, serverless connection.** The phone talks straight to the PC's Tailscale address
   (MagicDNS name or fixed 100.x IP). The Agent listens only on that address, behind a firewall rule
   limited to 100.64.0.0/10 and the Agent executable — nothing is opened to the internet or the LAN.
-- **"Connect Phone…" in the tray menu** — one admin prompt to enable, then a one-time QR code (5
+- **"Connect phone…" in the tray menu** — one admin prompt to enable, then a one-time QR code (5
   minutes) and a list of paired phones you can revoke.
 - **Console look shared with the tray.** Carbon instrument panel with segmented CPU/RAM arc gauges
   and 60-second history, live disk/download/upload traces, per-app CPU and RAM bars, the foreground
@@ -23,6 +23,18 @@
   (not asked again until a newer release), or **Later**. The startup check also retries while the
   network is still coming up after sign-in. "Check for Updates" in the tray menu and dashboard opens
   the same window, even for a skipped version.
+
+### Changed
+- **Tray: status and settings are separate.** "Open Homebase" (left click) is a read-only dashboard —
+  CPU/RAM/disk gauges plus a Telegram / forwarding / phone summary. The new **Settings…** window has
+  one tab per area (Telegram, Notifications, Watch list, Updates); each says what it does, shows the
+  current state, and marks every button that asks for administrator approval with the Windows UAC
+  shield and a note on what restarts. Notification forwarding no longer elevates on a checkbox click
+  (stage it, then Apply), the app list is "checked = forward", and the watch list shows unsaved
+  changes. The bot token / chat ID moved from the welcome window to Settings; the welcome window is
+  now a setup checklist ("Setup checklist" in the menu).
+- **Tray text follows the bot's language** — Korean or English from `agent:language`, else the OS
+  display language.
 
 ### Notes
 - Collection runs only while a phone is watching; otherwise the feature adds no measurable load.

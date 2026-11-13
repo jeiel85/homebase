@@ -23,8 +23,8 @@ public partial class UpdateDialog : ThemedWindow
     internal static UpdateDialogChoice Show(UpdateInfo info, string currentVersion)
     {
         var dlg = new UpdateDialog();
-        dlg.TitleText.Text = $"UPDATE AVAILABLE — V{info.Version.ToString(3)}";
-        dlg.MetaText.Text = $"Installed v{currentVersion}  ·  Released {info.PublishedAt.ToLocalTime():yyyy-MM-dd}";
+        dlg.TitleText.Text = L.UpdDlgTitle(info.Version.ToString(3));
+        dlg.MetaText.Text = L.UpdDlgMeta(currentVersion, info.PublishedAt.ToLocalTime());
         dlg.NotesViewer.Document = BuildDocument(ReleaseNotes.Parse(ReleaseNotes.ExtractChangelog(info.ReleaseNotes)));
         // The startup check opens this unprompted; bring it forward once without pinning it on top.
         dlg.Loaded += (_, _) => dlg.Activate();
@@ -48,7 +48,7 @@ public partial class UpdateDialog : ThemedWindow
 
         if (blocks.Count == 0)
         {
-            doc.Blocks.Add(new Paragraph(new Run("No release notes were published for this version.")));
+            doc.Blocks.Add(new Paragraph(new Run(L.UpdDlgNoNotes)));
             return doc;
         }
 

@@ -343,6 +343,115 @@
     </Style.Triggers>
   </Style>
 
+  <!-- ── Password field — same chrome as TextBox (bot token). Implicit (no key). -->
+  <Style TargetType="PasswordBox">
+    <Setter Property="Background" Value="{StaticResource Brush.Surface}"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.Ink}"/>
+    <Setter Property="CaretBrush" Value="{StaticResource Brush.Ink}"/>
+    <Setter Property="SelectionBrush" Value="{StaticResource Brush.Amber}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Hairline}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="6,4"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="PasswordBox">
+          <Border x:Name="bd" Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2">
+            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource Brush.Signal}"/>
+              <Setter TargetName="bd" Property="BorderThickness" Value="2"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ── Tabs — console buttons across the top of the settings window. The selected tab is a
+       carbon slab with an amber underline (the same signal as the phone app's selector); the
+       others are raised periwinkle plates with the chrome-indigo bevel. -->
+  <Style x:Key="Tabs.Console" TargetType="TabControl">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabControl">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <UniformGrid Grid.Row="0" Rows="1" IsItemsHost="True" Margin="0,0,0,12"/>
+            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="TabItem">
+    <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontWeight" Value="Bold"/>
+    <Setter Property="Foreground" Value="{StaticResource Brush.Ink}"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabItem">
+          <Border x:Name="bd" Background="{StaticResource Brush.Periwinkle}" Margin="0,0,4,0"
+                  BorderBrush="{StaticResource Brush.ChromeIndigo}" BorderThickness="0,0,0,3" Padding="6,9">
+            <ContentPresenter x:Name="cp" ContentSource="Header" HorizontalAlignment="Center"
+                              TextElement.Foreground="{StaticResource Brush.Ink}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.Carbon}"/>
+              <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource Brush.Amber}"/>
+              <Setter TargetName="cp" Property="TextElement.Foreground" Value="{StaticResource Brush.OnDark}"/>
+            </Trigger>
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="IsMouseOver" Value="True"/>
+                <Condition Property="IsSelected" Value="False"/>
+              </MultiTrigger.Conditions>
+              <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.Lavender}"/>
+            </MultiTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ── Admin note — an amber-edged strip that says, before the click, that the button next to
+       it asks for administrator approval and what restarts afterwards. -->
+  <Style x:Key="AdminNote" TargetType="Border">
+    <Setter Property="Background" Value="#FFF4DDAE"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Brush.Amber}"/>
+    <Setter Property="BorderThickness" Value="3,0,0,0"/>
+    <Setter Property="Padding" Value="9,6"/>
+  </Style>
+
+  <!-- ── Status chip — small filled label (READY / SET UP …); the colour is set in code. -->
+  <Style x:Key="Chip" TargetType="Border">
+    <Setter Property="CornerRadius" Value="2"/>
+    <Setter Property="Padding" Value="7,3"/>
+    <Setter Property="MinWidth" Value="72"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Background" Value="{StaticResource Brush.Hairline}"/>
+  </Style>
+  <Style x:Key="ChipText" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{StaticResource Brush.OnDark}"/>
+    <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
+    <Setter Property="FontSize" Value="10"/>
+    <Setter Property="FontWeight" Value="Bold"/>
+    <Setter Property="HorizontalAlignment" Value="Center"/>
+  </Style>
+
   <!-- ══ Custom window chrome — carbon title bar with themed caption buttons ══
        Applied via the Window.Chrome style below. WindowChrome keeps the title-bar drag,
        Aero-Snap and taskbar behaviour native; the tray windows are CanMinimize / NoResize,

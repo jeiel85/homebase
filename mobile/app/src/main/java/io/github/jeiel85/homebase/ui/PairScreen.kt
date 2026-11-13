@@ -125,7 +125,7 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
             SectionLabel("연결 순서")
             Plate {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Step(1, "PC 작업 표시줄의 Homebase 아이콘을 우클릭해 \"Connect Phone…\"을 엽니다.")
+                    Step(1, "PC 작업 표시줄의 Homebase 아이콘을 우클릭해 \"휴대폰 연결…\"을 엽니다.")
                     Step(2, "아래 버튼을 눌러 PC 화면의 QR 코드를 비춥니다.")
                     Step(3, "연결되면 그 PC의 실시간 화면이 바로 열립니다.")
                     Text(

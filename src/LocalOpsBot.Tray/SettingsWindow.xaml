@@ -3,14 +3,16 @@
         xmlns:local="clr-namespace:LocalOpsBot.Tray"
         x:Class="LocalOpsBot.Tray.SettingsWindow"
         Style="{StaticResource Window.Chrome}"
-        Title="Homebase"
+        Title="{x:Static local:L.SettingsTitle}"
         Icon="pack://application:,,,/Resources/homebase.ico"
-        Width="460" Height="640"
+        Width="520" Height="660"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Brush.Canvas}"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
+  <!-- Every tab reads top-down the same way: what this does → current state → change it →
+       how it is applied (an amber admin note sits right above any button that asks for UAC). -->
   <Grid Margin="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -18,173 +20,242 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <!-- ═ Masthead: carbon command slab with wordmark + live status badge ═ -->
-    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12">
-      <DockPanel LastChildFill="False">
-        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center"
-                   FontFamily="{StaticResource Font.Display}" FontWeight="Black"
+    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12" Padding="10,6">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock VerticalAlignment="Center" FontFamily="{StaticResource Font.Display}" FontWeight="Black"
                    FontSize="16" Foreground="{StaticResource Brush.OnDark}" Text="HOMEBASE"/>
-        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="8,3,0,0"
-                   Style="{StaticResource Type.Micro}" Foreground="{StaticResource Brush.Amber}"
-                   Text="PC MONITOR"/>
-        <Border x:Name="StatusBadge" DockPanel.Dock="Right" VerticalAlignment="Center"
-                Background="#9E9E9E" CornerRadius="2" Padding="9,3">
-          <TextBlock x:Name="AgentStatusText" Text="checking…"
-                     Foreground="{StaticResource Brush.OnDark}" FontSize="11" FontWeight="Bold"/>
-        </Border>
-      </DockPanel>
+        <TextBlock VerticalAlignment="Center" Margin="8,3,0,0" Style="{StaticResource Type.Micro}"
+                   Foreground="{StaticResource Brush.Amber}" Text="{x:Static local:L.SettingsEyebrow}"/>
+      </StackPanel>
     </Border>
 
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-      <StackPanel>
+    <TabControl x:Name="Tabs" Grid.Row="1" Style="{StaticResource Tabs.Console}">
 
-        <!-- ═ SYSTEM ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="SYSTEM"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="72"/>
-              <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-
-            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Type.Label}" Text="UPTIME" Margin="0,5"/>
-            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="UptimeText" Style="{StaticResource Type.BodyStrong}" Text="—" Margin="0,5"/>
-
-            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Type.Label}" Text="CPU" Margin="0,5" VerticalAlignment="Center"/>
-            <Grid Grid.Row="1" Grid.Column="1" Margin="0,5">
-              <ProgressBar x:Name="CpuBar" Style="{StaticResource Gauge}"/>
-              <TextBlock x:Name="CpuText" Text="—" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.Ink}"/>
-            </Grid>
-
-            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Type.Label}" Text="RAM" Margin="0,5" VerticalAlignment="Center"/>
-            <Grid Grid.Row="2" Grid.Column="1" Margin="0,5">
-              <ProgressBar x:Name="RamBar" Style="{StaticResource Gauge}"/>
-              <TextBlock x:Name="RamText" Text="—" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.Ink}"/>
-            </Grid>
-
-            <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource Type.Label}" Text="NETWORK" Margin="0,5"/>
-            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="NetworkText" Style="{StaticResource Type.Body}" Text="—" Margin="0,5"/>
-          </Grid>
-        </Border>
-
-        <!-- ═ DISKS ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="DISKS"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
-          <StackPanel x:Name="DiskPanel"/>
-        </Border>
-
-        <!-- ═ NOTIFICATIONS ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="NOTIFICATIONS"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+      <!-- ═══ Telegram ═══ -->
+      <TabItem x:Name="TelegramTab" Header="{x:Static local:L.TabTelegram}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel>
-            <CheckBox x:Name="ForwardingEnabledCheckBox" Content="Enable notification forwarding"
-                      IsChecked="False" Margin="0,0,0,4" Foreground="{StaticResource Brush.Ink}"
-                      Click="ForwardingToggle_Click"/>
-            <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                       Text="Forwards Windows notification title and body to your Telegram chat (codes, passwords and tokens are masked by default). Saving needs administrator approval; the tray restarts to apply."/>
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.TgHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.TgWhat}"/>
 
-            <!-- App selection (visible only when forwarding is enabled). No elevation: applies live. -->
-            <StackPanel x:Name="AppSelectionPanel" Margin="0,12,0,0" Visibility="Collapsed">
-              <TextBlock Style="{StaticResource Type.Label}" Text="EXCLUDE THESE APPS"/>
-              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,2,0,6"
-                         Text="Check apps to NOT forward. Everything else forwards, including apps seen later. Check a phone-mirroring app (e.g. Phone Link / 휴대폰과 연결) to stop a notification loop."/>
-              <Border BorderBrush="{StaticResource Brush.Hairline}" BorderThickness="1" MaxHeight="150"
-                      Background="{StaticResource Brush.Surface}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">
-                  <StackPanel x:Name="AppListPanel"/>
-                </ScrollViewer>
-              </Border>
-              <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                <Button x:Name="SaveAppsButton" Style="{StaticResource Button.Signal}" Content="SAVE" Click="SaveApps_Click"/>
-                <Button x:Name="RefreshAppsButton" Style="{StaticResource Button.Carbon}" Content="REFRESH"
-                        Margin="6,0,0,0" Click="RefreshApps_Click"/>
-                <TextBlock x:Name="AppsStatusText" VerticalAlignment="Center" Margin="8,0,0,0"
-                           Style="{StaticResource Type.Micro}"/>
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border x:Name="TgChip" Style="{StaticResource Chip}">
+                    <TextBlock x:Name="TgChipText" Style="{StaticResource ChipText}" Text="…"/>
+                  </Border>
+                  <TextBlock x:Name="TgStatusText" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                             Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap" Text="{x:Static local:L.BadgeChecking}"/>
+                </Grid>
+
+                <TextBlock Style="{StaticResource Type.Label}" Margin="0,14,0,0" Text="{x:Static local:L.TgToken}"/>
+                <PasswordBox x:Name="TokenInput" Margin="0,3,0,0" FontFamily="Consolas"/>
+                <TextBlock Style="{StaticResource Type.Micro}" Margin="0,2,0,0" Text="{x:Static local:L.TgTokenHint}"/>
+
+                <TextBlock Style="{StaticResource Type.Label}" Margin="0,10,0,0" Text="{x:Static local:L.TgChatId}"/>
+                <TextBox x:Name="ChatIdInput" Margin="0,3,0,0" FontFamily="Consolas"/>
+                <TextBlock Style="{StaticResource Type.Micro}" Margin="0,2,0,0" Text="{x:Static local:L.TgChatIdHint}"/>
+
+                <Border Style="{StaticResource AdminNote}" Margin="0,14,0,0">
+                  <DockPanel><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.TgSaveNote}"/></DockPanel>
+                </Border>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                  <Button x:Name="TestButton" Style="{StaticResource Button.Carbon}"
+                          Content="{x:Static local:L.SendTest}" Click="TestMessage_Click"/>
+                  <Button x:Name="SaveTelegramButton" Style="{StaticResource Button.Signal}" Margin="8,0,0,0"
+                          Click="SaveTelegram_Click">
+                    <StackPanel Orientation="Horizontal"><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock VerticalAlignment="Center" Text="{x:Static local:L.TgSave}"/></StackPanel>
+                  </Button>
+                </StackPanel>
+                <TextBlock x:Name="TgResultText" Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap" Margin="0,8,0,0"/>
               </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.TgFirstTime}"/>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap"><Run Text="1. "/><Run Text="{x:Static local:L.TgStep1}"/></TextBlock>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Margin="0,3,0,0"><Run Text="2. "/><Run Text="{x:Static local:L.TgStep2}"/></TextBlock>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Margin="0,3,0,0"><Run Text="3. "/><Run Text="{x:Static local:L.TgStep3}"/></TextBlock>
+                <TextBlock Margin="0,8,0,0" FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
+                  <Hyperlink NavigateUri="https://t.me/botfather" RequestNavigate="Hyperlink_RequestNavigate"
+                             Foreground="{StaticResource Brush.InkSoft}"><Run Text="{x:Static local:L.TgOpenBotFather}"/></Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ═══ Notification forwarding ═══ -->
+      <TabItem x:Name="ForwardingTab" Header="{x:Static local:L.TabForwarding}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.FwHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.FwWhat}"/>
+                <Grid Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Border x:Name="FwChip" Style="{StaticResource Chip}">
+                    <TextBlock x:Name="FwChipText" Style="{StaticResource ChipText}" Text="…"/>
+                  </Border>
+                  <TextBlock x:Name="FwCurrentText" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                             Style="{StaticResource Type.BodyStrong}"/>
+                </Grid>
+                <CheckBox x:Name="ForwardingEnabledCheckBox" Margin="0,12,0,0" Content="{x:Static local:L.FwToggle}"
+                          Click="ForwardingToggle_Click"/>
+                <Border Style="{StaticResource AdminNote}" Margin="0,12,0,0">
+                  <DockPanel><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.FwApplyNote}"/></DockPanel>
+                </Border>
+                <Button x:Name="ApplyForwardingButton" Style="{StaticResource Button.Signal}" HorizontalAlignment="Right"
+                        Margin="0,10,0,0" IsEnabled="False" Click="ApplyForwarding_Click">
+                  <StackPanel Orientation="Horizontal"><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock VerticalAlignment="Center" Text="{x:Static local:L.FwApply}"/></StackPanel>
+                </Button>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.FwAppsHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock x:Name="AppsOffHint" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                           Text="{x:Static local:L.FwAppsOffHint}"/>
+                <StackPanel x:Name="AppSelectionPanel" Visibility="Collapsed">
+                  <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,0,0,6"
+                             Text="{x:Static local:L.FwAppsWhat}"/>
+                  <Border BorderBrush="{StaticResource Brush.Hairline}" BorderThickness="1" MaxHeight="170"
+                          Background="{StaticResource Brush.Surface}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">
+                      <StackPanel x:Name="AppListPanel"/>
+                    </ScrollViewer>
+                  </Border>
+                  <DockPanel Margin="0,8,0,0" LastChildFill="True">
+                    <Button x:Name="SaveAppsButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}"
+                            Content="{x:Static local:L.FwSave}" Click="SaveApps_Click"/>
+                    <Button x:Name="RefreshAppsButton" DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}"
+                            Content="{x:Static local:L.Refresh}" Margin="0,0,6,0" Click="RefreshApps_Click"/>
+                    <TextBlock x:Name="AppsStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                               Style="{StaticResource Type.BodyStrong}" Margin="0,0,8,0"/>
+                  </DockPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ═══ Watch list ═══ -->
+      <TabItem x:Name="MonitorsTab" Header="{x:Static local:L.TabMonitors}">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <Border Style="{StaticResource SectionHeaderBar}">
+                <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.MonHeader}"/>
+              </Border>
+              <Border Style="{StaticResource Card}">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.MonWhat}"/>
+
+                  <DockPanel Margin="0,12,0,0">
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Micro}" Text="{x:Static local:L.MonProcessesEx}"/>
+                    <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.MonProcesses}"/>
+                  </DockPanel>
+                  <TextBox x:Name="ProcessesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                           VerticalScrollBarVisibility="Auto" Margin="0,3,0,0" FontFamily="Consolas" TextChanged="Monitors_TextChanged"/>
+
+                  <DockPanel Margin="0,10,0,0">
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Micro}" Text="{x:Static local:L.MonServicesEx}"/>
+                    <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.MonServices}"/>
+                  </DockPanel>
+                  <TextBox x:Name="ServicesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                           VerticalScrollBarVisibility="Auto" Margin="0,3,0,0" FontFamily="Consolas" TextChanged="Monitors_TextChanged"/>
+
+                  <DockPanel Margin="0,10,0,0">
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Micro}" Text="{x:Static local:L.MonHttpEx}"/>
+                    <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.MonHttp}"/>
+                  </DockPanel>
+                  <TextBox x:Name="HttpBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                           VerticalScrollBarVisibility="Auto" Margin="0,3,0,0" FontFamily="Consolas" TextChanged="Monitors_TextChanged"/>
+
+                  <DockPanel Margin="0,10,0,0">
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Micro}" Text="{x:Static local:L.MonTcpEx}"/>
+                    <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.MonTcp}"/>
+                  </DockPanel>
+                  <TextBox x:Name="TcpBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                           VerticalScrollBarVisibility="Auto" Margin="0,3,0,0" FontFamily="Consolas" TextChanged="Monitors_TextChanged"/>
+                </StackPanel>
+              </Border>
             </StackPanel>
+          </ScrollViewer>
+
+          <!-- Pinned under the fields so the save state is always in view. -->
+          <StackPanel Grid.Row="1" Margin="0,10,0,0">
+            <Border Style="{StaticResource AdminNote}">
+              <DockPanel><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.MonSaveNote}"/></DockPanel>
+            </Border>
+            <DockPanel Margin="0,8,0,0" LastChildFill="True">
+              <Button x:Name="SaveMonitorsButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}"
+                      IsEnabled="False" Click="SaveMonitors_Click">
+                <StackPanel Orientation="Horizontal"><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock VerticalAlignment="Center" Text="{x:Static local:L.MonSave}"/></StackPanel>
+              </Button>
+              <TextBlock x:Name="MonitorsStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                         Style="{StaticResource Type.BodyStrong}" Margin="0,0,8,0"/>
+            </DockPanel>
           </StackPanel>
-        </Border>
+        </Grid>
+      </TabItem>
 
-        <!-- ═ MONITORS ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="MONITORS"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
-          <StackPanel>
-            <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                       Text="What the bot watches (/process /services /http /ports). One per line. Saving needs administrator approval and restarts the Agent."/>
-
-            <TextBlock Style="{StaticResource Type.Label}" Text="PROCESSES" Margin="0,8,0,0"/>
-            <TextBlock Style="{StaticResource Type.Micro}" Text="Process name, e.g. chrome"/>
-            <TextBox x:Name="ProcessesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
-                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
-
-            <TextBlock Style="{StaticResource Type.Label}" Text="SERVICES" Margin="0,8,0,0"/>
-            <TextBlock Style="{StaticResource Type.Micro}" Text="Service name, e.g. Spooler"/>
-            <TextBox x:Name="ServicesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
-                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
-
-            <TextBlock Style="{StaticResource Type.Label}" Text="HTTP ENDPOINTS" Margin="0,8,0,0"/>
-            <TextBlock Style="{StaticResource Type.Micro}" Text="URL, e.g. https://example.com/health"/>
-            <TextBox x:Name="HttpBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
-                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
-
-            <TextBlock Style="{StaticResource Type.Label}" Text="TCP PORTS" Margin="0,8,0,0"/>
-            <TextBlock Style="{StaticResource Type.Micro}" Text="host:port, e.g. localhost:5432"/>
-            <TextBox x:Name="TcpBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
-                     VerticalScrollBarVisibility="Auto" Margin="0,2,0,0" FontFamily="Consolas"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-              <Button x:Name="SaveMonitorsButton" Style="{StaticResource Button.Signal}"
-                      Content="SAVE MONITORS" Click="SaveMonitors_Click"/>
-              <TextBlock x:Name="MonitorsStatusText" VerticalAlignment="Center" Margin="8,0,0,0"
-                         Style="{StaticResource Type.Micro}"/>
+      <!-- ═══ Updates & about ═══ -->
+      <TabItem x:Name="UpdatesTab" Header="{x:Static local:L.TabUpdates}">
+        <StackPanel>
+          <Border Style="{StaticResource SectionHeaderBar}">
+            <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.UpdHeader}"/>
+          </Border>
+          <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+            <StackPanel>
+              <TextBlock x:Name="UpdateVersionText" Style="{StaticResource Type.BodyStrong}"/>
+              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,4,0,0" Text="{x:Static local:L.UpdWhat}"/>
+              <DockPanel Margin="0,10,0,0" LastChildFill="True">
+                <Button x:Name="CheckUpdateButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}"
+                        Content="{x:Static local:L.UpdCheck}" Click="CheckUpdate_Click"/>
+                <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Type.Body}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+              </DockPanel>
             </StackPanel>
-          </StackPanel>
-        </Border>
+          </Border>
+          <Border Style="{StaticResource SectionHeaderBar}">
+            <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AboutHeader}"/>
+          </Border>
+          <Border Style="{StaticResource Card}">
+            <StackPanel>
+              <TextBlock x:Name="AboutVersionText" Style="{StaticResource Type.BodyStrong}" Text="Homebase"/>
+              <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Text="{x:Static local:L.AboutLine}"/>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </TabItem>
+    </TabControl>
 
-        <!-- ═ UPDATES ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="UPDATES"/>
-        </Border>
-        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
-          <StackPanel>
-            <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Type.Body}" TextWrapping="Wrap"
-                       Text="Check GitHub for a newer version." Margin="0,0,0,8"/>
-            <Button x:Name="CheckUpdateButton" Style="{StaticResource Button.Signal}"
-                    Content="CHECK FOR UPDATES" HorizontalAlignment="Left" Click="CheckUpdate_Click"/>
-          </StackPanel>
-        </Border>
-
-        <!-- ═ ABOUT ═ -->
-        <Border Style="{StaticResource SectionHeaderBar}">
-          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="ABOUT"/>
-        </Border>
-        <Border Style="{StaticResource Card}">
-          <StackPanel>
-            <TextBlock x:Name="AboutVersionText" Style="{StaticResource Type.BodyStrong}" Text="Homebase"/>
-            <TextBlock Style="{StaticResource Type.Micro}" Text="Personal Windows PC monitoring for Telegram"/>
-          </StackPanel>
-        </Border>
-
-      </StackPanel>
-    </ScrollViewer>
-
-    <Button Grid.Row="2" Style="{StaticResource Button.Carbon}" Content="CLOSE"
+    <Button Grid.Row="2" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.Close}"
             HorizontalAlignment="Right" Margin="0,12,0,0" Click="Close_Click"/>
   </Grid>
 </local:ThemedWindow>
