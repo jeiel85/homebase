@@ -12,6 +12,10 @@
   limited to 100.64.0.0/10 and the Agent executable — nothing is opened to the internet or the LAN.
 - **"Connect Phone…" in the tray menu** — one admin prompt to enable, then a one-time QR code (5
   minutes) and a list of paired phones you can revoke.
+- **Console look shared with the tray.** Carbon instrument panel with segmented CPU/RAM arc gauges
+  and 60-second history, live disk/download/upload traces, per-app CPU and RAM bars, the foreground
+  window marked with an amber rail, and a status lamp per PC. Light and dark themes; work sessions
+  (today: Claude Code) sit in a generic "작업" tab.
 - **In-app sideload updates** (ported from Markleaf): daily check of the release's `update.json`,
   SHA-256-verified download, handed to the Android installer.
 - **PC update popup.** When the tray starts and a newer release exists, it now opens an update

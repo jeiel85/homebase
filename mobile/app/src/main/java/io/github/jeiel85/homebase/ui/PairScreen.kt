@@ -10,28 +10,27 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,8 +39,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -63,7 +68,6 @@ import kotlinx.coroutines.withContext
  * QR pairing. Camera scan is the main path; reading the QR from an image (a screenshot sent to
  * the phone) and pasting the QR text are fallbacks for when the camera can't be used.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -107,25 +111,34 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("PC 추가") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로") }
-                },
-            )
-        },
-    ) { padding ->
+    val hb = Hb.colors
+    Column(Modifier.fillMaxSize().background(hb.background)) {
+        ConsoleBar(title = "PC 추가", onBack = onBack, eyebrow = "QR 페어링")
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .navigationBarsPadding()
+                .imePadding(),
         ) {
-            Text(
-                "PC의 트레이 아이콘 메뉴에서 \"Connect Phone…\"을 열고 표시된 QR 코드를 스캔하세요. 코드는 5분간 한 번만 쓸 수 있습니다.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Button(
+            SectionLabel("연결 순서")
+            Plate {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Step(1, "PC 작업 표시줄의 Homebase 아이콘을 우클릭해 \"Connect Phone…\"을 엽니다.")
+                    Step(2, "아래 버튼을 눌러 PC 화면의 QR 코드를 비춥니다.")
+                    Step(3, "연결되면 그 PC의 실시간 화면이 바로 열립니다.")
+                    Text(
+                        "QR 코드는 5분 동안 한 번만 쓸 수 있습니다. 만료되면 PC 창에서 새 코드를 받으세요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = hb.inkSoft,
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            PairStatus(busy, message)
+            SignalButton(
+                "카메라로 QR 스캔",
                 onClick = {
                     scanner.launch(
                         ScanOptions()
@@ -136,30 +149,70 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
                     )
                 },
                 enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("카메라로 QR 스캔") }
-            OutlinedButton(
+            )
+
+            SectionLabel("카메라를 쓸 수 없을 때")
+            QuietButton(
+                "이미지에서 QR 읽기",
                 onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("이미지에서 QR 읽기") }
-
+            )
+            Text(
+                "PC에서 QR 화면을 캡처해 휴대폰으로 보낸 경우에 씁니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = hb.inkSoft,
+                modifier = Modifier.padding(top = 6.dp, bottom = 14.dp),
+            )
             OutlinedTextField(
                 value = pasted,
                 onValueChange = { pasted = it },
-                label = { Text("또는 QR 내용 붙여넣기") },
+                label = { Text("QR 내용 붙여넣기") },
+                textStyle = HbType.readout.copy(fontSize = 13.sp, fontWeight = FontWeight.Normal),
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 4,
             )
-            OutlinedButton(onClick = { handle(pasted) }, enabled = !busy && pasted.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Text("붙여넣은 코드로 연결")
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (busy) CircularProgressIndicator(Modifier.size(20.dp).padding(end = 8.dp))
-                message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            }
+            Spacer(Modifier.height(8.dp))
+            QuietButton("붙여넣은 코드로 연결", onClick = { handle(pasted) }, enabled = !busy && pasted.isNotBlank())
+            Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun Step(n: Int, text: String) {
+    val hb = Hb.colors
+    Row(verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier.size(26.dp).clip(RoundedCornerShape(4.dp)).background(hb.slab),
+            contentAlignment = Alignment.Center,
+        ) { Text("$n", style = HbType.readout.copy(fontSize = 14.sp), color = hb.accent) }
+        Spacer(Modifier.width(12.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = hb.ink, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/** Progress while pairing; otherwise the last error, said plainly with what to do next. */
+@Composable
+private fun PairStatus(busy: Boolean, message: String?) {
+    val hb = Hb.colors
+    if (!busy && message == null) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (busy) hb.slab else hb.danger.copy(alpha = 0.14f))
+            .padding(14.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(18.dp), color = hb.accent, strokeWidth = 2.dp)
+        } else {
+            Led(hb.ledOff, size = 7.dp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(message.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = if (busy) hb.onSlab else hb.ink)
     }
 }
 
