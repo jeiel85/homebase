@@ -85,7 +85,19 @@ public static class ReleaseNotes
     /// again — skipping is per version, not "stop asking".
     /// </summary>
     public static bool ShouldPrompt(Version available, string? skippedVersion) =>
-        !(Version.TryParse(skippedVersion?.Trim(), out var skipped) && skipped == available);
+        !IsSameVersion(available, skippedVersion);
+
+    /// <summary>
+    /// Whether the startup dialog may count down and install on its own: not when an earlier
+    /// countdown already started installing exactly this version — it is still on offer, so that
+    /// unattended install didn't take, and repeating it would loop on every launch. A newer
+    /// release counts down again.
+    /// </summary>
+    public static bool ShouldAutoInstall(Version available, string? autoAttemptedVersion) =>
+        !IsSameVersion(available, autoAttemptedVersion);
+
+    private static bool IsSameVersion(Version available, string? stored) =>
+        Version.TryParse(stored?.Trim(), out var parsed) && parsed == available;
 
     private static string Normalize(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
 }

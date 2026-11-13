@@ -242,6 +242,10 @@ public static class L
     public static string UpdDlgSkip => T("SKIP THIS VERSION", "이 버전 건너뛰기");
     public static string UpdDlgLater => T("LATER", "나중에");
     public static string UpdDlgUpdate => T("UPDATE NOW", "지금 업데이트");
+    public static string UpdDlgUpdateCountdown(int seconds) => T($"UPDATE NOW ({seconds})", $"지금 업데이트 ({seconds})");
+    public static string UpdDlgCountdownTip => T(
+        "Installs automatically when the countdown ends. Press Later or Skip to stop it.",
+        "카운트다운이 끝나면 자동으로 설치합니다. 멈추려면 나중에 또는 건너뛰기를 누르세요.");
     public static string UpdSkipped(object v) => T($"v{v} available (skipped)", $"새 버전 v{v} (건너뜀)");
     public static string UpdShowFailed(string m) => T($"Couldn't show the update: {m}", $"업데이트 창을 띄우지 못했습니다: {m}");
     public static string UpdDownloading => T("Downloading the update…", "업데이트를 받는 중…");

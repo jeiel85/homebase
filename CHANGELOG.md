@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — encrypted push notifications (UnifiedPush)
+## Unreleased
 
 ### Added
 - **Push notifications in the Homebase app.** PC alerts (process/service/HTTP/port down, event log,
@@ -20,6 +20,14 @@
   authenticators are always blocked — the tray now applies the configured block list too.
   An existing `"enabled": false` in your config is kept.
 - The tray's "send test message" goes through the Agent (phone push first) when the Agent is reachable.
+- **The startup update popup now installs on its own after 60 seconds.** The Update button counts
+  down (`UPDATE NOW (60)`); pressing Later, Skip this version or closing the window stops it. The
+  install still asks for administrator approval. If an unattended install of a version doesn't
+  take, that version's popup waits for a click at the next launch instead of counting down again.
+  A manual "Check for updates" never counts down.
+- **The update download window can be minimized.** It now has a taskbar button and a minimize
+  caption button; the download keeps going, and the window comes back to the front when the
+  administrator prompt is next.
 
 ## v0.15.0 — Phone connection without Tailscale, console look, tray settings
 

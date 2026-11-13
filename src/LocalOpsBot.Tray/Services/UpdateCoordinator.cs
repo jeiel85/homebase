@@ -14,6 +14,10 @@ internal enum UpdateOutcome { UpToDate, Declined, Cancelled, Failed, Updating, B
 /// </summary>
 internal sealed class UpdateCoordinator
 {
+    // Same default as claude-usage: long enough to read the notes or press Later, short enough that
+    // an unattended PC still picks the update up at startup.
+    private const int AutoUpdateCountdownSeconds = 60;
+
     private readonly UpdateService _updater;
     private bool _busy;
 
@@ -37,16 +41,22 @@ internal sealed class UpdateCoordinator
     public async Task<UpdateOutcome> OfferStartupUpdateAsync(UpdateInfo info, IProgress<string>? status = null)
     {
         if (_busy) return UpdateOutcome.Busy;
-        if (!ReleaseNotes.ShouldPrompt(info.Version, UpdateSkipState.Read()))
+        if (!ReleaseNotes.ShouldPrompt(info.Version, UpdateVersionMarker.Skipped.Read()))
         {
             status?.Report(L.UpdSkipped(info.Version));
             return UpdateOutcome.Declined;
         }
 
+        // Unprompted offer → count down and install unless the user answers first. Not again for a
+        // version whose unattended install already started once and didn't take (see the marker).
+        var countdown = ReleaseNotes.ShouldAutoInstall(info.Version, UpdateVersionMarker.AutoAttempted.Read())
+            ? AutoUpdateCountdownSeconds
+            : 0;
+
         _busy = true;
         try
         {
-            return await OfferAsync(info, status);
+            return await OfferAsync(info, status, countdown);
         }
         finally
         {
@@ -87,7 +97,7 @@ internal sealed class UpdateCoordinator
                 return UpdateOutcome.UpToDate;
             }
 
-            return await OfferAsync(info, status);
+            return await OfferAsync(info, status, autoUpdateSeconds: 0);
         }
         finally
         {
@@ -95,18 +105,28 @@ internal sealed class UpdateCoordinator
         }
     }
 
-    /// <summary>Shows the release notes with Update / Skip this version / Later and acts on the choice.</summary>
-    private async Task<UpdateOutcome> OfferAsync(UpdateInfo info, IProgress<string>? status)
+    /// <summary>
+    /// Shows the release notes with Update / Skip this version / Later and acts on the choice.
+    /// <paramref name="autoUpdateSeconds"/> &gt; 0 counts down on the Update button and installs at zero.
+    /// </summary>
+    private async Task<UpdateOutcome> OfferAsync(UpdateInfo info, IProgress<string>? status, int autoUpdateSeconds)
     {
-        switch (UpdateDialog.Show(info, CurrentVersion))
+        switch (UpdateDialog.Show(info, CurrentVersion, autoUpdateSeconds))
         {
+            case UpdateDialogChoice.AutoUpdate:
+                // Recorded before anything can fail: if this unattended install doesn't take, the next
+                // launch offers the same version again and must wait for a click, not loop.
+                UpdateVersionMarker.AutoAttempted.Write(info.Version);
+                UpdateVersionMarker.Skipped.Write(null);
+                return await DownloadAndApplyAsync(info, status);
+
             case UpdateDialogChoice.Update:
                 // Choosing to install supersedes an earlier skip of an older version.
-                UpdateSkipState.Write(null);
+                UpdateVersionMarker.Skipped.Write(null);
                 return await DownloadAndApplyAsync(info, status);
 
             case UpdateDialogChoice.Skip:
-                UpdateSkipState.Write(info.Version);
+                UpdateVersionMarker.Skipped.Write(info.Version);
                 status?.Report(L.UpdSkipped(info.Version));
                 return UpdateOutcome.Declined;
 
@@ -154,6 +174,8 @@ internal sealed class UpdateCoordinator
             window.SetPercent(100);
             window.SetStatus(L.UpdInstalling);
             window.LockCancel();
+            // The UAC prompt is next; if the user minimized the download, bring the explanation back.
+            window.RestoreAndActivate();
             status?.Report(L.UpdInstallingShort);
 
             bool started;
