@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.17.0 — One settings window
 
 ### Changed
 - **One settings window.** "Connect phone" is now the first tab of Settings (Phone) instead of a
