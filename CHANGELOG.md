@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Boot notification now survives a slow network at startup.** The Agent service starts before the
+  network/DNS is ready, so the single send attempt failed on nearly every boot ("No such host is
+  known (api.telegram.org)") and the "PC booted" message silently never arrived. The notification now
+  sends in the background and retries with backoff (5s, 10s, 20s, 40s, then every 60s, about 16
+  minutes in total) without delaying Agent startup. A runtime-state database error no longer stops
+  the send, and a failure to record the send time no longer triggers a duplicate message.
+
 ## v0.13.1 — Single-instance guard
 
 ### Fixed
