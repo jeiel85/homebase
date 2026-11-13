@@ -1,10 +1,10 @@
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Monitoring;
 using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Data.Repositories;
-using LocalOpsBot.Infrastructure.Telegram;
+using LocalOpsBot.Protocol.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace LocalOpsBot.Agent.Services;
 
@@ -14,13 +14,15 @@ namespace LocalOpsBot.Agent.Services;
 /// usually fails. Sending runs in the background (it never blocks host startup) and retries with
 /// capped exponential backoff (5s, 10s, 20s, 40s, then 60s) for about 16 minutes before giving up.
 /// No exception escapes <see cref="ExecuteAsync"/>: an unhandled one would stop the whole Agent.
+/// Goes through <see cref="IOutboundRouter"/> like every other notification, so it reaches the phone
+/// by UnifiedPush first and Telegram only as the fallback (DECISIONS M-19). When no channel is
+/// configured at all it gives up at once instead of retrying.
 /// </summary>
 public sealed class BootNotificationService : BackgroundService
 {
-    private readonly ITelegramClient _telegram;
+    private readonly IOutboundRouter _router;
     private readonly IHostInfoProvider _hostInfo;
     private readonly IRuntimeStateRepository _stateRepo;
-    private readonly IOptions<TelegramOptions> _options;
     private readonly ILogger<BootNotificationService> _logger;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
 
@@ -34,17 +36,15 @@ public sealed class BootNotificationService : BackgroundService
     /// <param name="delay">Wait between attempts; defaults to <see cref="Task.Delay(TimeSpan, CancellationToken)"/>.
     /// Tests pass a no-op to run the retry loop instantly.</param>
     public BootNotificationService(
-        ITelegramClient telegram,
+        IOutboundRouter router,
         IHostInfoProvider hostInfo,
         IRuntimeStateRepository stateRepo,
-        IOptions<TelegramOptions> options,
         ILogger<BootNotificationService> logger,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
-        _telegram = telegram;
+        _router = router;
         _hostInfo = hostInfo;
         _stateRepo = stateRepo;
-        _options = options;
         _logger = logger;
         _delay = delay ?? Task.Delay;
     }
@@ -70,42 +70,54 @@ public sealed class BootNotificationService : BackgroundService
 
     private async Task SendWithRetryAsync(CancellationToken ct)
     {
-        var targetChatId = _options.Value.AllowedChatIds.FirstOrDefault();
-        if (targetChatId == 0)
-        {
-            _logger.LogWarning("Boot notification skipped: no allowed chat configured");
-            return;
-        }
-
         if (await SentRecentlyAsync(ct))
             return;
 
         for (var attempt = 1; ; attempt++)
         {
+            string error;
             try
             {
                 var host = await _hostInfo.GetHostInfoAsync(ct);
-                var message = BootMessageFormatter.Format(host, DateTimeOffset.UtcNow);
-                await _telegram.SendMessageAsync(targetChatId, message, new TelegramSendOptions(), ct);
-            }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
-            {
-                if (attempt >= MaxAttempts)
+                var now = DateTimeOffset.UtcNow;
+                var (title, body) = BootMessageFormatter.Compose(host, now);
+                var result = await _router.DeliverAsync(
+                    new OutboundNotification(
+                        Guid.NewGuid(), "boot", OutboundPriority.Info, title, body,
+                        $"boot:{now:yyyyMMddHHmm}", MessageSensitivity.Normal,
+                        DeliveryPolicy.TelegramFallback, now),
+                    ct);
+
+                if (result.Delivered)
                 {
-                    _logger.LogError(ex, "Failed to send boot notification after {Attempts} attempts; giving up", attempt);
+                    var via = result.Attempts.First(a => a.Success).ChannelId;
+                    _logger.LogInformation("Boot notification sent via {Channel} (attempt {Attempt})", via, attempt);
+                    await RecordSentAsync(ct);
                     return;
                 }
 
-                var wait = RetryDelay(attempt);
-                _logger.LogWarning("Boot notification attempt {Attempt}/{Max} failed ({Error}); retrying in {Delay}s",
-                    attempt, MaxAttempts, ex.Message, (int)wait.TotalSeconds);
-                await _delay(wait, ct);
-                continue;
+                if (result.Attempts.All(a => a.FailureKind == OutboundFailureKind.NotConfigured))
+                {
+                    _logger.LogWarning("Boot notification skipped: no notification channel is configured");
+                    return;
+                }
+                error = result.CombinedError ?? "not delivered";
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                error = ex.Message;
             }
 
-            _logger.LogInformation("Boot notification sent to chat {ChatId} (attempt {Attempt})", targetChatId, attempt);
-            await RecordSentAsync(ct);
-            return;
+            if (attempt >= MaxAttempts)
+            {
+                _logger.LogError("Failed to send boot notification after {Attempts} attempts ({Error}); giving up", attempt, error);
+                return;
+            }
+
+            var wait = RetryDelay(attempt);
+            _logger.LogWarning("Boot notification attempt {Attempt}/{Max} failed ({Error}); retrying in {Delay}s",
+                attempt, MaxAttempts, error, (int)wait.TotalSeconds);
+            await _delay(wait, ct);
         }
     }
 

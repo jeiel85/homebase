@@ -3,9 +3,13 @@ using LocalOpsBot.Core.Monitoring;
 
 namespace LocalOpsBot.Core.Notifications;
 
+/// <summary>
+/// "PC booted" text as a plain title and body. Each channel renders it (Telegram escapes HTML,
+/// the phone shows plain text), so nothing here is channel-specific.
+/// </summary>
 public static class BootMessageFormatter
 {
-    public static string Format(HostInfoRecord host, DateTimeOffset now)
+    public static (string Title, string Body) Compose(HostInfoRecord host, DateTimeOffset now)
     {
         var localNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(now, "Korea Standard Time");
         var uptime = host.Uptime;
@@ -15,12 +19,10 @@ public static class BootMessageFormatter
 
         var ip = host.PrimaryIPv4 ?? Strings.Unknown;
 
-        return $"🟢 <b>{Strings.BootDetected(HtmlEscape(host.MachineName))}</b>\n\n"
-             + $"{Strings.TimeLabel}: <code>{localNow:yyyy-MM-dd HH:mm:ss 'KST'}</code>\n"
-             + $"IP: <code>{HtmlEscape(ip)}</code>\n"
-             + $"{Strings.Uptime}: <code>{uptimeStr}</code>";
+        return (
+            Strings.BootDetected(host.MachineName),
+            $"{Strings.TimeLabel}: {localNow:yyyy-MM-dd HH:mm:ss 'KST'}\n"
+            + $"IP: {ip}\n"
+            + $"{Strings.Uptime}: {uptimeStr}");
     }
-
-    private static string HtmlEscape(string value)
-        => value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 }

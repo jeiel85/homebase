@@ -183,7 +183,7 @@ function Write-Config {
     "sendBootNotification": true,
     "databasePath": "$dbFwd"
   },
-  "notificationForwarding": { "enabled": false }
+  "notificationForwarding": { "enabled": true }
 }
 "@
         $config | Set-Content -Path $ConfigFile -Encoding UTF8

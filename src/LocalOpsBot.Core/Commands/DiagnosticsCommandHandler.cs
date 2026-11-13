@@ -87,7 +87,7 @@ public sealed class DiagnosticsCommandHandler : ICommandHandler
         }
         catch { alerts24h = -1; }
 
-        var forwarding = _config.GetSection("notificationForwarding").GetValue<bool>("enabled") ? Strings.On : Strings.Off;
+        var forwarding = LocalOpsBot.Core.Notifications.NotificationForwardingConfig.IsEnabled(_config) ? Strings.On : Strings.Off;
 
         // Temperature backend + live sensor count — makes "why are temps blank?" self-diagnosable
         // (e.g. "Wmi, 0 sensors" on a desktop that doesn't expose ACPI zones → opt into full sensors).

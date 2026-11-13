@@ -11,7 +11,7 @@ namespace LocalOpsBot.Tray.Services;
 /// <summary>
 /// Starts the tray-side notification-forwarding pipeline when the feature is enabled in config:
 /// listen for Windows toast notifications, filter/mask them, and relay them over the named pipe to
-/// the Agent (which forwards to Telegram). The pipeline types have always existed but were never
+/// the Agent (which bundles them and pushes them encrypted to the phone, DECISIONS M-19). The pipeline types have always existed but were never
 /// started from the tray, so forwarding never actually ran — this is the missing wiring. Gated by
 /// <see cref="TrayConfig"/>; a disabled feature starts nothing.
 /// </summary>
@@ -39,7 +39,7 @@ internal sealed class NotificationForwardingHost : IDisposable
             logger = new FileLogger<ToastPollingService>(Path.Combine(logDir, "tray-forwarding.log"));
 
             var config = TrayConfig.Load();
-            var enabled = config.GetSection("notificationForwarding").GetValue<bool>("enabled");
+            var enabled = NotificationForwardingConfig.IsEnabled(config);
             logger.LogInformation("Forwarding host start: enabled={Enabled}", enabled);
             if (!enabled) return;
 
@@ -55,9 +55,10 @@ internal sealed class NotificationForwardingHost : IDisposable
                 return;
             }
 
-            // App filtering uses the live user allow-list (dashboard-editable, applies within a poll
-            // cycle, no restart/elevation) rather than the static config list.
-            var filter = new DynamicAppFilter();
+            // App filtering: the config block list (password managers, authenticators) always applies;
+            // on top of it the live user exclusions (dashboard-editable, applied within a poll cycle,
+            // no restart/elevation).
+            var filter = new DynamicAppFilter(_provider.GetService<INotificationFilter>());
 
             var listener = new WindowsToastNotificationListener();
             _bridge = new NotificationBridgeClient();

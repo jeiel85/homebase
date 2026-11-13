@@ -1,5 +1,7 @@
 using System.Runtime.Versioning;
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Infrastructure.Push;
 using LocalOpsBot.Infrastructure.Mobile;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +12,8 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 [SupportedOSPlatform("windows")]
 public static class MobileServiceCollectionExtensions
 {
+    private const string UnifiedPushHttpClient = "UnifiedPush";
+
     /// <summary>
     /// Registers the mobile monitoring feature. With <c>mobile:enabled=false</c> (default) nothing
     /// is registered except the firewall clean-up, so the feature adds no threads, sockets or pipes.
@@ -28,6 +32,15 @@ public static class MobileServiceCollectionExtensions
             MobileDeviceStore.DefaultDirectory, sp.GetRequiredService<TimeProvider>(), restrictAcl: true,
             sp.GetRequiredService<ILogger<MobileDeviceStore>>()));
         services.AddSingleton<PairingService>();
+        // Encrypted UnifiedPush to paired phones that registered an endpoint (DECISIONS M-19).
+        // The router prefers it over Telegram; it never subscribes to the live hub (M-13).
+        services.AddHttpClient(UnifiedPushHttpClient, c => c.Timeout = TimeSpan.FromSeconds(15));
+        services.AddSingleton<IOutboundChannel>(sp => new UnifiedPushOutboundChannel(
+            sp.GetRequiredService<IMobileDeviceStore>(),
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(UnifiedPushHttpClient),
+            sp.GetRequiredService<TimeProvider>(),
+            Environment.MachineName,
+            sp.GetRequiredService<ILogger<UnifiedPushOutboundChannel>>()));
         services.AddSingleton<IResourceSampler, WindowsResourceSampler>();
         services.AddSingleton<TailscaleAddressResolver>();
         services.AddSingleton<LanAddressResolver>();

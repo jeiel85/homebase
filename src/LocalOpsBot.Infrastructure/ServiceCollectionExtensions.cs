@@ -50,13 +50,14 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services, IConfiguration config)
     {
         var forwardingSection = config.GetSection("notificationForwarding");
-        var enabled = forwardingSection.GetValue<bool>("enabled");
+        var enabled = NotificationForwardingConfig.IsEnabled(config);
         if (!enabled) return services;
 
         var mode = forwardingSection.GetValue<string>("mode") ?? "BlockList";
         var allowApps = forwardingSection.GetSection("allowApps").Get<string[]>() ?? [];
-        var blockApps = forwardingSection.GetSection("blockApps").Get<string[]>() ?? [];
-        var maskingEnabled = forwardingSection.GetValue<bool>("maskingEnabled");
+        // Password managers and authenticators never forward, even when the config predates the list.
+        var blockApps = forwardingSection.GetSection("blockApps").Get<string[]>() ?? DefaultBlockApps;
+        var maskingEnabled = forwardingSection.GetValue("maskingEnabled", true);
         var maskPatterns = forwardingSection.GetSection("maskPatterns").Get<string[]>() ?? GetDefaultMaskPatterns();
 
         services.AddSingleton<ITextMasker>(new RegexTextMasker(maskPatterns));
@@ -65,6 +66,11 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    public static readonly string[] DefaultBlockApps =
+    {
+        "1Password", "Bitwarden", "Authy", "Microsoft Authenticator", "Windows Security"
+    };
 
     private static string[] GetDefaultMaskPatterns() => new[]
     {

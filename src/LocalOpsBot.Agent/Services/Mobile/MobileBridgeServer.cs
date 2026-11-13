@@ -4,7 +4,10 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LocalOpsBot.Core.Delivery;
+using LocalOpsBot.Core.Localization;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Protocol.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -26,6 +29,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly LiveSnapshotHub _hub;
     private readonly MobileApiServer _api;
     private readonly IMobileDeviceStore _devices;
+    private readonly IOutboundRouter? _router;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
@@ -42,11 +46,13 @@ public sealed class MobileBridgeServer : BackgroundService
         MobileApiServer api,
         IMobileDeviceStore devices,
         IOptions<MobileOptions> options,
-        ILogger<MobileBridgeServer> logger)
+        ILogger<MobileBridgeServer> logger,
+        IOutboundRouter? router = null)
     {
         _hub = hub;
         _api = api;
         _devices = devices;
+        _router = router;
         _options = options.Value;
         _logger = logger;
         _hub.WatchingChanged += OnWatchingChanged;
@@ -144,6 +150,11 @@ public sealed class MobileBridgeServer : BackgroundService
         }
 
         if (id is null) return; // requests need an id to answer
+        if (op == MobileBridge.OpNotifyTest)
+        {
+            await SendAsync(conn, MobileBridge.Response(id, true, await SendTestNotificationAsync(ct)), ct);
+            return;
+        }
         JsonObject response = op switch
         {
             MobileBridge.OpPairingBegin => _api.CreateOffer() is { } offer
@@ -156,6 +167,21 @@ public sealed class MobileBridgeServer : BackgroundService
             _ => MobileBridge.Response(id, false, error: "unsupported"),
         };
         await SendAsync(conn, response, ct);
+    }
+
+    /// <summary>The Tray's "send test" goes through the same router as real alerts (push first, Telegram fallback).</summary>
+    private async Task<NotifyTestResult> SendTestNotificationAsync(CancellationToken ct)
+    {
+        if (_router is null) return new NotifyTestResult(false, null, "No notification router.");
+        var now = DateTimeOffset.UtcNow;
+        var result = await _router.DeliverAsync(new OutboundNotification(
+            Guid.NewGuid(), "test", OutboundPriority.Info,
+            Strings.TestNotificationTitle(Environment.MachineName), Strings.TestNotificationBody,
+            $"test:{now.ToUnixTimeMilliseconds()}", MessageSensitivity.Normal,
+            DeliveryPolicy.TelegramFallback, now), ct);
+        var via = result.Attempts.FirstOrDefault(a => a.Success)?.ChannelId;
+        _logger.LogInformation("Test notification from the Tray: delivered={Delivered} via {Channel}", result.Delivered, via ?? "-");
+        return new NotifyTestResult(result.Delivered, via, result.Delivered ? null : result.CombinedError);
     }
 
     private void OnWatchingChanged(bool on)

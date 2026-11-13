@@ -208,6 +208,11 @@ public static class L
     public static string TestNoChat => T("No Telegram chat ID is configured yet.", "텔레그램 채팅 ID가 아직 설정되지 않았습니다.");
     public static string TestMessageBody => T("✅ Homebase test — your PC is connected to Telegram.", "✅ Homebase 테스트 — 이 PC가 텔레그램에 연결되어 있습니다.");
     public static string TestSent(long chatId) => T($"Sent to chat {chatId}. Check Telegram.", $"채팅 {chatId}로 보냈습니다. 텔레그램을 확인하세요.");
+    public static string TestSentVia(string channel) => channel == "unifiedpush"
+        ? T("Sent to your phone (Homebase app push). Check the phone.", "휴대폰(Homebase 앱 푸시)으로 보냈습니다. 휴대폰을 확인하세요.")
+        : channel == "telegram"
+            ? T("Sent through Telegram. Check Telegram.", "텔레그램으로 보냈습니다. 텔레그램을 확인하세요.")
+            : T($"Sent through {channel}.", $"{channel}(으)로 보냈습니다.");
     public static string TestFailed(string m) => T($"Send failed: {m}", $"보내지 못했습니다: {m}");
 
     // ── Connect phone window (static labels) ─────────────────────────────────

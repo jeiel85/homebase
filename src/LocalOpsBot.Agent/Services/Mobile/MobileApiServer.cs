@@ -8,6 +8,7 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using LocalOpsBot.Infrastructure.Mobile;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -409,7 +410,40 @@ public sealed class MobileApiServer : BackgroundService
                 catch (OperationCanceledException) { return (503, Error("timeout", "No snapshot was produced in time.")); }
             }
 
-            case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live"):
+            case ("POST", "/api/v1/push"):
+            {
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This phone is not paired with this PC."));
+                PushSubscriptionRequest? req;
+                try { req = JsonSerializer.Deserialize<PushSubscriptionRequest>(body!, MobileProtocol.Json); }
+                catch (JsonException) { req = null; }
+                if (PushPayload.Validate(req) is { } invalid)
+                    return (400, Error("invalid_subscription", invalid));
+
+                var existing = _devices.PushTargets().FirstOrDefault(t => t.DeviceId == device.DeviceId)?.Subscription;
+                var unchanged = existing is not null && existing.Endpoint == req!.Endpoint
+                    && existing.P256dh == req.P256dh && existing.Auth == req.Auth;
+                if (!unchanged)
+                {
+                    // The app re-registers on every reconnect; only a real change rewrites state.json.
+                    _devices.SetPushSubscription(device.DeviceId,
+                        new PushSubscription(req!.Endpoint, req.P256dh, req.Auth, DateTimeOffset.UtcNow));
+                    _logger.LogInformation("Push subscription {Action} for {Name} ({DeviceId}) at {Host}.",
+                        existing is null ? "registered" : "updated", device.Name, device.DeviceId, new Uri(req.Endpoint).Host);
+                }
+                return (200, Json(new PushSubscriptionResponse(MobileProtocol.Schema, device.DeviceId, true)));
+            }
+
+            case ("DELETE", "/api/v1/push"):
+            {
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This phone is not paired with this PC."));
+                _devices.SetPushSubscription(device.DeviceId, null);
+                _logger.LogInformation("Push subscription removed for {Name} ({DeviceId}).", device.Name, device.DeviceId);
+                return (200, Json(new PushSubscriptionResponse(MobileProtocol.Schema, device.DeviceId, false)));
+            }
+
+            case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

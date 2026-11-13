@@ -24,5 +24,5 @@ internal static class TrayConfig
     /// overridden by a HOMEBASE__ environment variable if one is set. Defaults to false.
     /// </summary>
     public static bool IsNotificationForwardingEnabled() =>
-        Load().GetSection("notificationForwarding").GetValue<bool>("enabled");
+        LocalOpsBot.Core.Notifications.NotificationForwardingConfig.IsEnabled(Load());
 }

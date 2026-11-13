@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "5b0e1c2d3f4a49b8a1c2d3e4f5a6b7c8",
+  "pcId": "6f1c0d2e9b8a4c7d",
+  "pcName": "HOME-PC",
+  "category": "windows-toast",
+  "priority": "info",
+  "title": "KakaoTalk: 알림 3건",
+  "body": "엄마: 저녁 먹었니?\n팀장: 회의 10분 뒤",
+  "source": "KakaoTalk",
+  "count": 3,
+  "ts": "2026-11-13T09:31:00+00:00"
+}

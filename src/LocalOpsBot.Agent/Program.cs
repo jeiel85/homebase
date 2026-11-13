@@ -103,14 +103,19 @@ builder.Services.AddHostedService<PcHealthAdvisorService>();
 builder.Services.AddLocalOpsDevMonitor();
 builder.Services.AddLocalOpsUpdates();
 
-// --- Toast notification forwarding (opt-in) --------------------------------
+// --- Toast notification forwarding (default on since M-19) -----------------
 // Only wire the pipe server + forwarder when the feature is enabled; otherwise
 // their dependencies (ITextMasker / INotificationBridgeServer) are not
 // registered and resolving these hosted services would crash the host at start.
 builder.Services.AddLocalOpsNotificationForwarding(builder.Configuration);
-var forwardingEnabled = builder.Configuration.GetSection("notificationForwarding").GetValue<bool>("enabled");
+var forwardingEnabled = NotificationForwardingConfig.IsEnabled(builder.Configuration);
 if (forwardingEnabled)
 {
+    var forwardingSection = builder.Configuration.GetSection(NotificationForwardingConfig.SectionName);
+    builder.Services.AddSingleton(new ToastForwardingOptions(
+        forwardingSection.GetValue("bundleSeconds", 60),
+        forwardingSection.GetValue("maxPushesPerDay", 150),
+        forwardingSection.GetValue("telegramFallback", false)));
     builder.Services.AddSingleton<NotificationBridgeServer>();
     builder.Services.AddSingleton<INotificationBridgeServer>(sp => sp.GetRequiredService<NotificationBridgeServer>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationBridgeServer>());

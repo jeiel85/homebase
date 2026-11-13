@@ -1,4 +1,5 @@
 using LocalOpsBot.Agent.Services;
+using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Data.Repositories;
 using LocalOpsBot.Infrastructure.Telegram;
 using LocalOpsBot.Tests.Fakes;
@@ -22,10 +23,10 @@ public sealed class BootNotificationServiceTests
         List<TimeSpan>? delays = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
         => new(
-            telegram,
+            // The real router + Telegram channel, so these tests also pin the Telegram fallback path.
+            new OutboundRouter([new TelegramOutboundChannel(telegram, opts ?? Opts(42L), new TelegramNotificationRenderer())]),
             new FakeHostInfoProvider(),
             stateRepo ?? new FakeRuntimeStateRepository(),
-            opts ?? Opts(42L),
             NullLogger<BootNotificationService>.Instance,
             delay ?? ((wait, _) => { delays?.Add(wait); return Task.CompletedTask; }));
 
@@ -146,10 +147,9 @@ public sealed class BootNotificationServiceTests
         // Program.cs registers it via AddHostedService; the optional delay must fall back to its default.
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<ITelegramClient>(new FakeTelegramClient());
+        services.AddSingleton<IOutboundRouter>(new OutboundRouter(Array.Empty<IOutboundChannel>()));
         services.AddSingleton<LocalOpsBot.Core.Monitoring.IHostInfoProvider>(new FakeHostInfoProvider());
         services.AddSingleton<IRuntimeStateRepository>(new FakeRuntimeStateRepository());
-        services.AddSingleton(Opts(42L));
         services.AddHostedService<BootNotificationService>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
