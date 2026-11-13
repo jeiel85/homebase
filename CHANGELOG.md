@@ -1,28 +1,27 @@
 # Changelog
 
-## v0.14.0 — Homebase Mobile: live multi-PC monitoring
+## v0.15.0 — Phone connection without Tailscale, console look, tray settings
 
 ### Added
-- **Android app (`Homebase-Mobile.apk`).** Pair any number of PCs by QR code, pick one from the list,
-  and watch it live: open windows (Chrome shows each window's active tab), per-app CPU / RAM / I/O /
-  network (an app's window-less child processes are summed in, e.g. a terminal running an agent),
-  the top 30 processes, and recently active Claude Code session titles. Refreshes every second.
-- **Tailscale-only, serverless connection.** The phone talks straight to the PC's Tailscale address
-  (MagicDNS name or fixed 100.x IP). The Agent listens only on that address, behind a firewall rule
-  limited to 100.64.0.0/10 and the Agent executable — nothing is opened to the internet or the LAN.
-- **"Connect phone…" in the tray menu** — one admin prompt to enable, then a one-time QR code (5
-  minutes) and a list of paired phones you can revoke.
+- **Tailscale is now optional — three connection paths from one QR code.** Besides Tailscale, the
+  phone can connect directly on the same LAN (TLS with a pinned certificate; firewall rule limited
+  to the local subnet, the Private network profile and the Agent executable) or from anywhere
+  through a Cloudflare Tunnel (a named tunnel with your token, or a Quick Tunnel; `cloudflared` runs
+  as a child process of the Agent). The app picks the path automatically — LAN on the same subnet,
+  Tailscale when its VPN is on, otherwise Cloudflare — and falls back to the others if one fails.
+  Settings: `mobile.lan`, `mobile.tailscale`, `mobile.cloudflare`.
+- **"Connect phone…" window shows each path's status**, lets you turn paths on or off, installs a
+  missing Tailscale or `cloudflared` with winget, warns when Windows has classified the LAN as
+  Public (the LAN path is blocked until it is Private), and reissues the QR when the paths change.
+- **Pairing QR opens with the phone's own camera.** The QR is now a link
+  (`https://jeiel85.github.io/homebase/pair/#…`). With the app installed it opens the pairing screen
+  pre-filled (you still tap Connect); without it, an install page shows the PC name, the time left
+  and an APK download button. The connection details stay after the `#` and are never sent to the
+  web server. The in-app scanner still reads the old JSON QR codes.
 - **Console look shared with the tray.** Carbon instrument panel with segmented CPU/RAM arc gauges
   and 60-second history, live disk/download/upload traces, per-app CPU and RAM bars, the foreground
   window marked with an amber rail, and a status lamp per PC. Light and dark themes; work sessions
   (today: Claude Code) sit in a generic "작업" tab.
-- **In-app sideload updates** (ported from Markleaf): daily check of the release's `update.json`,
-  SHA-256-verified download, handed to the Android installer.
-- **PC update popup.** When the tray starts and a newer release exists, it now opens an update
-  window with that version's release notes and three choices: **Update now**, **Skip this version**
-  (not asked again until a newer release), or **Later**. The startup check also retries while the
-  network is still coming up after sign-in. "Check for Updates" in the tray menu and dashboard opens
-  the same window, even for a skipped version.
 
 ### Changed
 - **Tray: status and settings are separate.** "Open Homebase" (left click) is a read-only dashboard —
@@ -34,7 +33,31 @@
   changes. The bot token / chat ID moved from the welcome window to Settings; the welcome window is
   now a setup checklist ("Setup checklist" in the menu).
 - **Tray text follows the bot's language** — Korean or English from `agent:language`, else the OS
-  display language.
+  display language. The menu item is now "Connect phone…".
+
+### Notes
+- **The v0.14.0 app cannot read the new pairing QR.** Update the app (in-app update, or install the
+  new `Homebase-Mobile.apk`) before pairing a PC on v0.15.0.
+
+## v0.14.0 — Homebase Mobile: live multi-PC monitoring
+
+### Added
+- **Android app (`Homebase-Mobile.apk`).** Pair any number of PCs by QR code, pick one from the list,
+  and watch it live: open windows (Chrome shows each window's active tab), per-app CPU / RAM / I/O /
+  network (an app's window-less child processes are summed in, e.g. a terminal running an agent),
+  the top 30 processes, and recently active Claude Code session titles. Refreshes every second.
+- **Tailscale-only, serverless connection.** The phone talks straight to the PC's Tailscale address
+  (MagicDNS name or fixed 100.x IP). The Agent listens only on that address, behind a firewall rule
+  limited to 100.64.0.0/10 and the Agent executable — nothing is opened to the internet or the LAN.
+- **"Connect Phone…" in the tray menu** — one admin prompt to enable, then a one-time QR code (5
+  minutes) and a list of paired phones you can revoke.
+- **In-app sideload updates** (ported from Markleaf): daily check of the release's `update.json`,
+  SHA-256-verified download, handed to the Android installer.
+- **PC update popup.** When the tray starts and a newer release exists, it now opens an update
+  window with that version's release notes and three choices: **Update now**, **Skip this version**
+  (not asked again until a newer release), or **Later**. The startup check also retries while the
+  network is still coming up after sign-in. "Check for Updates" in the tray menu and dashboard opens
+  the same window, even for a skipped version.
 
 ### Notes
 - Collection runs only while a phone is watching; otherwise the feature adds no measurable load.
