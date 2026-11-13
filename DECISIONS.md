@@ -40,6 +40,14 @@ Cloudflare 방식(이름 있는 터널 우선 + Quick Tunnel, Agent 하위 프�
 | M-17 | **Cloudflare Tunnel: cloudflared를 Agent 하위 프로세스로, 토큰 있으면 이름 있는 터널·없으면 Quick Tunnel, 인증은 Bearer만** | `mobile.cloudflare.enabled`이면 Agent가 cloudflared를 실행한다. 대상은 `mobile.cloudflare.cloudflaredPath`, winget/MSI 설치 폴더, PATH 순으로 찾는다. 토큰이 있으면 `tunnel run`으로 띄우고 토큰은 `TUNNEL_TOKEN` 환경 변수로 넘긴다(명령줄 노출 없음). 이때 `hostname`이 필수다. 토큰이 없으면 `tunnel --url http://127.0.0.1:<port>`로 띄우고, 로그에서 `*.trycloudflare.com` 주소를 읽는다. 연결 대상(origin)은 루프백 평문 리스너다. 프로세스는 kill-on-close Job Object에 넣어 Agent와 함께 죽는다. 실패하면 백오프(5초→15초→1분→5분)로 재시작하고, 설치가 안 되어 있으면 1분마다 다시 찾는다. 인바운드 방화벽 규칙은 필요 없다. | **Windows 서비스(`cloudflared service install`)**: Quick Tunnel 주소를 Agent가 알 수 없고 이름 있는 터널만 된다. **Cloudflare Access 서비스 토큰**: 노출 면은 줄지만 QR·저장·갱신 항목이 늘어 이번엔 제외(Bearer 256bit + 페어링 코드 잠금 유지). **cloudflared 번들**: 설치본이 수십 MB 커진다 → winget 설치 버튼. **대가**: 켜 두면 cloudflared가 상시 실행된다(유휴 시 CPU 거의 0, 메모리 수십 MB) — "보지 않을 때 수집 0"은 유지되지만 연결 대기 프로세스가 하나 는다. Quick Tunnel은 Cloudflare가 테스트용·가용성 무보장으로 명시하고, PC 재시작마다 주소가 바뀌어 밖에서는 앱이 LAN/Tailscale로 한 번 붙기 전까지 새 주소를 모른다. `/api/v1/info`(PC 이름·버전·OS)와 페어링 엔드포인트가 터널 주소를 아는 누구에게나 열린다. 터널 토큰은 Telegram 토큰과 같은 `ProgramData` 설정 파일에 두며 `ENV:` 간접 참조를 지원한다. |
 | M-18 | **앱 경로 선택: 네트워크 힌트로 순위, 전부 시도** | 앱이 `ConnectivityManager`로 휴대폰의 비VPN IPv4 서브넷과 Tailscale VPN(100.64/10 주소) 여부를 읽는다. 순위는 같은 서브넷 LAN → (VPN 켜짐) Tailscale → Cloudflare → 나머지(VPN 꺼진 Tailscale, 다른 서브넷 LAN, loopback)다. 같은 순위 안에서는 마지막 성공 경로를 먼저 쓴다. 감지는 힌트일 뿐 거르지 않으며, 실패하면 다음 경로로 넘어간다. 상세·목록 화면에 붙은 경로를 표시한다. `ACCESS_NETWORK_STATE` 권한을 추가했다. | "마지막 성공 경로 우선"만 쓰면 집 밖에서 LAN 타임아웃을 매번 기다린다. 경로를 병렬로 경주시키는 안은 페어링(1회용 코드)·WebSocket에 부작용이 있어 기각. |
 
+## M (계속) — 알림 채널: Telegram → 앱 푸시 검토, 2026-11-13 (제안, 미확정)
+
+요구(검토): "Telegram 봇 알림을 없애고 앱 푸시 알림으로 가면 어때?" 인벤토리·4안 비교표·근거는 [`docs/NOTIFICATION_CHANNEL.md`](docs/NOTIFICATION_CHANNEL.md).
+
+| # | 결정 | 내용 | 기각한 대안 · 대가 |
+|---|---|---|---|
+| M-19 | **제안: Telegram 유지 + 앱 푸시는 UnifiedPush(RFC 8291 암호화)로 선택 채널 추가** — 사용자 확인(실제로 쓰는 알림, Telegram 명령 사용 여부) 전까지 미확정 | Telegram은 알림 채널이면서 **유일한 명령 채널**이다(명령 20개, 그중 `/mute`·`/unmute`·`/update`는 상태 변경). 앱 푸시가 필요하면 새 `IOutboundChannel`로 UnifiedPush를 더한다. 앱이 배포자 엔드포인트를 인증 API로 각 PC에 등록하고, PC는 RFC 8291로 암호화해 POST한다. 중계 서버는 암호문만 본다(지금의 Telegram 평문보다 낫다). 의존성은 양쪽 모두 0이다(플랫폼 암호). `BootNotificationService`·Tray 테스트 메시지는 router를 거치도록 바꾼다. 완전 대체는 앱에 알림 이력 화면과 최소 명령이 생기고 "앱 읽기 전용" 원칙을 따로 개정한 뒤 다시 판단한다. | **FCM**: 공개 사이드로드 APK가 한 Firebase 프로젝트에 묶이므로 서비스 계정 키를 배포하거나 중계 서버를 둬야 한다(M-1). Firebase·Play 서비스 의존성도 생긴다(M-3). **앱 포그라운드 서비스 + PC별 상주 연결**: 상시 알림, PC 수에 비례하는 배터리 비용, OEM 종료, `dataSync` 24시간당 6시간 한도, Quick Tunnel 주소 변경, M-13 분리 작업. **ntfy 자체 호스팅**: VPS(M-1) 또는 tailnet 내부(Tailscale 필요). **대가**: 휴대폰에 배포자 앱(ntfy)을 설치해야 하고, ntfy.sh라는 제3자 서버에 메타데이터(시각·크기)가 남는다. |
+
 ### Device Hub 계획과의 관계
 
 - **ADR-006 개정**: "stock KDE Connect 앱 우선, 전용 앱은 검증 후" → **모니터링 뷰어는 전용 Homebase 앱, 기기 연동(알림 미러링·공유·배터리·명령)은 계속 KDE Connect(TRAIN C/D)**.
