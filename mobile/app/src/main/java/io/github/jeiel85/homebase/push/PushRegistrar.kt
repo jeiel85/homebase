@@ -27,7 +27,10 @@ object PushRegistrar {
     /** Background work that must outlive a screen (a registration started from a broadcast or a list probe). */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** pcId → what that PC accepted: its device id (a re-pair issues a new one) and the subscription. */
     private val synced = ConcurrentHashMap<String, String>()
+
+    private fun syncKey(pc: PcEntry, s: PushSubscription) = "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}"
 
     fun ensureAsync(context: Context, api: HomebaseApi, pc: PcEntry) {
         val app = context.applicationContext
@@ -37,10 +40,11 @@ object PushRegistrar {
     suspend fun ensure(context: Context, api: HomebaseApi, pc: PcEntry) {
         val state = PushState(context)
         val subscription = state.subscription() ?: return
-        if (synced[pc.pcId] == subscription.endpoint) return
+        val key = syncKey(pc, subscription)
+        if (synced[pc.pcId] == key) return
         try {
             api.registerPush(pc, subscription)
-            synced[pc.pcId] = subscription.endpoint
+            synced[pc.pcId] = key
             state.markRegistered(pc.pcId, true)
         } catch (e: UnauthorizedException) {
             state.markRegistered(pc.pcId, false)
@@ -55,6 +59,11 @@ object PushRegistrar {
 
     /** The endpoint changed or push was turned off: every PC needs telling again. */
     fun forgetSynced() = synced.clear()
+
+    /** The PC was removed from the app; a later re-pair must register again. */
+    fun forget(pcId: String) {
+        synced.remove(pcId)
+    }
 
     /** Push turned off: remove the subscription from every reachable PC (best effort). */
     suspend fun unregisterAll(context: Context, api: HomebaseApi, store: PcStore) = coroutineScope {

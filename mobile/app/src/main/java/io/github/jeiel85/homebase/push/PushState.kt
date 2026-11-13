@@ -48,8 +48,7 @@ class PushState(context: Context) {
     /** PCs that accepted the current endpoint. */
     val registeredPcs: Set<String> get() = prefs.getStringSet(KEY_REGISTERED, emptySet()) ?: emptySet()
 
-    @Synchronized
-    fun startRegistration(token: String, distributor: String) {
+    fun startRegistration(token: String, distributor: String) = synchronized(LOCK) {
         prefs.edit()
             .putString(KEY_TOKEN, token)
             .putString(KEY_DISTRIBUTOR, distributor)
@@ -60,20 +59,17 @@ class PushState(context: Context) {
     }
 
     /** Returns true when the endpoint changed (every PC must then be told). */
-    @Synchronized
-    fun setEndpoint(endpoint: String): Boolean {
+    fun setEndpoint(endpoint: String): Boolean = synchronized(LOCK) {
         if (endpoint == this.endpoint) return false
         prefs.edit().putString(KEY_ENDPOINT, endpoint).remove(KEY_ERROR).putStringSet(KEY_REGISTERED, emptySet()).apply()
         return true
     }
 
-    @Synchronized
-    fun clear() {
+    fun clear() = synchronized(LOCK) {
         prefs.edit().remove(KEY_TOKEN).remove(KEY_DISTRIBUTOR).remove(KEY_ENDPOINT).putStringSet(KEY_REGISTERED, emptySet()).apply()
     }
 
-    @Synchronized
-    fun markRegistered(pcId: String, registered: Boolean) {
+    fun markRegistered(pcId: String, registered: Boolean) = synchronized(LOCK) {
         val set = registeredPcs.toMutableSet()
         if (registered) set += pcId else set -= pcId
         prefs.edit().putStringSet(KEY_REGISTERED, set).apply()
@@ -90,8 +86,7 @@ class PushState(context: Context) {
      * The phone's keys, created on first use. If the Keystore key was lost (data restored on another
      * phone) the old keys can't be read; new ones are made and the next registration tells every PC.
      */
-    @Synchronized
-    fun keys(): PushKeys {
+    fun keys(): PushKeys = synchronized(LOCK) {
         val pkcs8 = cipher.decrypt(prefs.getString(KEY_PRIVATE, null))
         val auth = cipher.decrypt(prefs.getString(KEY_AUTH, null))
         val pub = prefs.getString(KEY_PUBLIC, null)?.let { runCatching { WebPush.unb64url(it) }.getOrNull() }
@@ -114,6 +109,11 @@ class PushState(context: Context) {
     }
 
     private companion object {
+        /**
+         * Process-wide: every caller makes its own PushState, and concurrent registrations with several
+         * PCs must not each generate a key pair (the PCs would then hold different identities).
+         */
+        val LOCK = Any()
         const val NAME = "homebase_push"
         const val KEY_ALIAS = "homebase_push_keys"
         const val KEY_TOKEN = "token"

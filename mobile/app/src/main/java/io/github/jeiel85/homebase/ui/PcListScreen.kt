@@ -190,6 +190,7 @@ fun PcListScreen(
                 TextButton(onClick = {
                     // Best effort: stop this PC pushing to the phone, then drop its notification channels.
                     PushRegistrar.scope.launch { runCatching { api.unregisterPush(pc) } }
+                    PushRegistrar.forget(pc.pcId)
                     PushState(context).markRegistered(pc.pcId, false)
                     PushNotifier.forgetPc(context, pc.pcId)
                     store.remove(pc.pcId)

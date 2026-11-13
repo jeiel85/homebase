@@ -68,9 +68,17 @@ public sealed class ToastBundler
             return null;
         }
 
-        if (!TryTakeBudget(now, 1)) return null;
+        // The window ended but Flush() hasn't run yet: its held toasts go out together with this one
+        // instead of being dropped when the window is replaced.
+        var held = w is { PendingCount: > 0 } ? w : null;
+        var items = held is null ? new List<ToastItem>() : held.Pending.ToList();
+        items.Add(item);
+        if (items.Count > MaxItemsPerBundle) items.RemoveRange(0, items.Count - MaxItemsPerBundle);
+        var count = (held?.PendingCount ?? 0) + 1;
+
         _windows[item.SourceApp] = new Window { End = now + _window };
-        return new ToastBatch(item.SourceApp, new[] { item }, 1);
+        if (!TryTakeBudget(now, count)) return null;
+        return new ToastBatch(item.SourceApp, items, count);
     }
 
     /// <summary>Bundles of every app whose window has ended with toasts held. Call about once a second.</summary>

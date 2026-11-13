@@ -31,6 +31,23 @@ public class ToastBundlerTests
     }
 
     [Fact]
+    public void Toasts_held_in_an_expired_window_go_out_with_the_next_toast_before_flush()
+    {
+        var bundler = new ToastBundler(TimeSpan.FromSeconds(60), 100, _time);
+        bundler.Add(Toast("KakaoTalk", "t0"));
+        _time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Null(bundler.Add(Toast("KakaoTalk", "t30")));
+        _time.Advance(TimeSpan.FromSeconds(30)); // window over, Flush() not run yet
+
+        var batch = bundler.Add(Toast("KakaoTalk", "t60"));
+
+        Assert.NotNull(batch);
+        Assert.Equal(2, batch!.Count);
+        Assert.Equal(new[] { "t30", "t60" }, batch.Items.Select(i => i.Title));
+        Assert.Empty(bundler.Flush());
+    }
+
+    [Fact]
     public void Apps_have_independent_windows()
     {
         var bundler = new ToastBundler(TimeSpan.FromSeconds(60), 100, _time);
