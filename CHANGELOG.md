@@ -14,6 +14,11 @@
   minutes) and a list of paired phones you can revoke.
 - **In-app sideload updates** (ported from Markleaf): daily check of the release's `update.json`,
   SHA-256-verified download, handed to the Android installer.
+- **PC update popup.** When the tray starts and a newer release exists, it now opens an update
+  window with that version's release notes and three choices: **Update now**, **Skip this version**
+  (not asked again until a newer release), or **Later**. The startup check also retries while the
+  network is still coming up after sign-in. "Check for Updates" in the tray menu and dashboard opens
+  the same window, even for a skipped version.
 
 ### Notes
 - Collection runs only while a phone is watching; otherwise the feature adds no measurable load.

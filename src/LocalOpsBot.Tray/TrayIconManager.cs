@@ -124,16 +124,58 @@ public sealed class TrayIconManager : IDisposable
         _onboarding.Activate();
     }
 
+    // The tray autostarts at sign-in, often before the network is up — the same race that broke the
+    // Agent's boot notification (v0.13.2). Retry only failures that waiting can fix.
+    private static readonly TimeSpan[] StartupCheckRetryDelays =
+        [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(5)];
+
+    /// <summary>
+    /// Startup update check: if a newer release exists, show the update dialog (release notes +
+    /// Update / Skip this version / Later). Startup is the one moment an update-and-restart doesn't
+    /// interrupt the user's work, which is why this pops a window instead of only relabelling the menu.
+    /// </summary>
     private async Task BackgroundCheckAsync()
     {
-        try
+        await Task.Delay(TimeSpan.FromSeconds(10));
+
+        for (var attempt = 0; ; attempt++)
         {
-            await Task.Delay(TimeSpan.FromSeconds(10));
-            var info = await _updates.CheckAsync(CancellationToken.None);
-            if (info != null)
-                _updateItem.Text = $"📡 Update v{info.Version} available!";
+            UpdateInfo? info;
+            try
+            {
+                info = await _updates.CheckAsync(CancellationToken.None);
+            }
+            catch (UpdateCheckException ex) when (
+                ex.Kind is UpdateCheckErrorKind.Network or UpdateCheckErrorKind.Timeout
+                && attempt < StartupCheckRetryDelays.Length)
+            {
+                await Task.Delay(StartupCheckRetryDelays[attempt]);
+                continue;
+            }
+            catch
+            {
+                // Rate limit / API error / retries exhausted: background check is best-effort and the
+                // menu item still checks on demand.
+                return;
+            }
+
+            if (info is null) return;
+            _updateItem.Text = $"📡 Update v{info.Version} available!";
+
+            // Don't stack the update dialog on top of first-run onboarding; the menu label is enough.
+            if (_onboarding is not null) return;
+
+            var status = new Progress<string>(text => _updateItem.Text = text);
+            try
+            {
+                await _updates.OfferStartupUpdateAsync(info, status);
+            }
+            catch (Exception ex)
+            {
+                MessageDialog.Show("Update Error", $"Couldn't show the update: {ex.Message}");
+            }
+            return;
         }
-        catch { /* update check is best-effort */ }
     }
 
     private async Task CheckForUpdatesAsync()
