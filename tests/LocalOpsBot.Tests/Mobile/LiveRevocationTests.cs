@@ -17,12 +17,13 @@ public class LiveRevocationTests
     public async Task Revoking_a_device_closes_its_open_live_socket()
     {
         var port = FreePort();
-        var options = Options.Create(new MobileOptions { Enabled = true, BindLoopback = true, Port = port, LiveIntervalMs = 500 });
+        var options = Options.Create(new MobileOptions { Enabled = true, Tailscale = false, BindLoopback = true, Port = port, LiveIntervalMs = 500 });
         var store = new InMemoryDeviceStore();
         var pairing = new PairingService(store, TimeProvider.System);
         var hub = new LiveSnapshotHub(new FakeSampler(), options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance);
         var api = new MobileApiServer(hub, pairing, store,
-            new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance);
+            new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
+            new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance);
 
         var (code, _) = pairing.Begin();
         var paired = pairing.TryPair(code, "Phone", null);

@@ -12,6 +12,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.PairScreen
 import io.github.jeiel85.homebase.ui.PcDetailScreen
@@ -22,7 +23,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = PcStore(this)
-        val api = HomebaseApi()
+        val probe = NetworkProbe(this)
+        val api = HomebaseApi(networks = probe::current)
         setContent {
             HomebaseTheme {
                 Surface {

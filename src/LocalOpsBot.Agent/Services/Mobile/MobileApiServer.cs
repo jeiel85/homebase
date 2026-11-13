@@ -1,7 +1,11 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Reflection;
+using System.Runtime.Versioning;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Infrastructure.Mobile;
@@ -12,25 +16,44 @@ using Microsoft.Extensions.Options;
 namespace LocalOpsBot.Agent.Services.Mobile;
 
 /// <summary>
-/// The phone-facing API (<c>docs/MOBILE_PROTOCOL.md</c>). Listens only on this PC's Tailscale
-/// address(es) — plus loopback when <c>mobile:bindLoopback</c> is set for development — and
-/// re-binds when the tailnet address appears or changes. Never binds a LAN or wildcard address.
+/// The phone-facing API (<c>docs/MOBILE_PROTOCOL.md</c>). Listens on explicit addresses only, never
+/// a wildcard, and re-binds when the address set changes:
+/// <list type="bullet">
+/// <item>Tailscale address(es), plain HTTP (<c>mobile:tailscale</c>, default on; M-1).</item>
+/// <item>Private LAN address(es) of gateway adapters, TLS with a pinned self-signed certificate
+/// (<c>mobile:lan</c>; M-15).</item>
+/// <item>127.0.0.1, plain HTTP, for the Cloudflare Tunnel connector (<c>mobile:cloudflare</c>; M-17)
+/// or development (<c>mobile:bindLoopback</c>).</item>
+/// </list>
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class MobileApiServer : BackgroundService
 {
     private static readonly TimeSpan RebindInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan HeadTimeout = TimeSpan.FromSeconds(10);
     private const int MaxConnections = 32;
 
+    private enum PathKind { Tailnet, Lan, Loopback }
+
+    private sealed record Binding(IPAddress Address, PathKind Kind, int PrefixLength)
+    {
+        public string Key => $"{Kind}:{Address}/{PrefixLength}";
+    }
+
     private readonly LiveSnapshotHub _hub;
     private readonly PairingService _pairing;
     private readonly IMobileDeviceStore _devices;
     private readonly TailscaleAddressResolver _resolver;
+    private readonly LanAddressResolver _lanResolver;
+    private readonly CloudflareTunnel? _tunnel;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
     private readonly object _gate = new();
-    private IReadOnlyList<string> _hosts = Array.Empty<string>();
+    private IReadOnlyList<Binding> _bound = Array.Empty<Binding>();
+    private string? _magicDns;
+    private X509Certificate2? _lanCertificate;
+    private string? _lanPin;
     private bool _listening;
 
     public MobileApiServer(
@@ -38,108 +61,180 @@ public sealed class MobileApiServer : BackgroundService
         PairingService pairing,
         IMobileDeviceStore devices,
         TailscaleAddressResolver resolver,
+        LanAddressResolver lanResolver,
         IOptions<MobileOptions> options,
-        ILogger<MobileApiServer> logger)
+        ILogger<MobileApiServer> logger,
+        CloudflareTunnel? tunnel = null,
+        X509Certificate2? lanCertificate = null)
     {
         _hub = hub;
         _pairing = pairing;
         _devices = devices;
         _resolver = resolver;
+        _lanResolver = lanResolver;
+        _tunnel = tunnel;
         _options = options.Value;
         _logger = logger;
+        if (lanCertificate is not null) UseLanCertificate(lanCertificate);
     }
 
     public static string AgentVersion =>
         typeof(MobileApiServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?.Split('+')[0] ?? "0.0.0";
 
+    private bool WantsLoopback => _options.BindLoopback || _options.Cloudflare.Enabled;
+
     public BridgeStatus Status()
     {
-        lock (_gate) return new BridgeStatus(_listening, _hosts, _options.Port, _hub.Watchers);
+        lock (_gate)
+        {
+            return new BridgeStatus(_listening, LegacyHostsLocked(), _options.Port, _hub.Watchers, EndpointsLocked(),
+                new MobileOptionsSummary(_options.Tailscale, _options.Lan, _options.Cloudflare.Enabled),
+                _tunnel?.Status());
+        }
     }
 
-    /// <summary>A fresh one-time pairing offer for the QR code, or <c>null</c> while not listening.</summary>
+    /// <summary>Every path a phone can use right now, in the app's default preference order.</summary>
+    public IReadOnlyList<MobileEndpoint> Endpoints()
+    {
+        lock (_gate) return EndpointsLocked();
+    }
+
+    /// <summary>A fresh one-time pairing offer for the QR code, or <c>null</c> while no path is up.</summary>
     public PairingOffer? CreateOffer()
     {
         IReadOnlyList<string> hosts;
+        IReadOnlyList<MobileEndpoint> endpoints;
         lock (_gate)
         {
-            if (!_listening || _hosts.Count == 0) return null;
-            hosts = _hosts;
+            if (!_listening) return null;
+            hosts = LegacyHostsLocked();
+            endpoints = EndpointsLocked();
         }
+        if (endpoints.Count == 0) return null;
         var (code, expires) = _pairing.Begin();
-        return new PairingOffer(1, _devices.PcId, Environment.MachineName, hosts, _options.Port, code, expires);
+        return new PairingOffer(1, _devices.PcId, Environment.MachineName, hosts, _options.Port, code, expires, endpoints);
+    }
+
+    private IReadOnlyList<MobileEndpoint> EndpointsLocked()
+    {
+        var list = new List<MobileEndpoint>();
+        if (!_listening) return list;
+        foreach (var b in _bound.Where(b => b.Kind == PathKind.Lan))
+            list.Add(new MobileEndpoint(MobileTransport.Lan, b.Address.ToString(), _options.Port, true, _lanPin));
+        if (_bound.Any(b => b.Kind == PathKind.Tailnet) && _magicDns is { } dns)
+            list.Add(new MobileEndpoint(MobileTransport.Tailscale, dns, _options.Port, false));
+        foreach (var b in _bound.Where(b => b.Kind == PathKind.Tailnet))
+            list.Add(new MobileEndpoint(MobileTransport.Tailscale, b.Address.ToString(), _options.Port, false));
+        if (_bound.Any(b => b.Kind == PathKind.Loopback) && _tunnel?.Endpoint() is { } cf)
+            list.Add(cf);
+        if (_options.BindLoopback)
+            list.Add(new MobileEndpoint(MobileTransport.Loopback, IPAddress.Loopback.ToString(), _options.Port, false));
+        return list;
+    }
+
+    /// <summary>v1 <c>hosts</c>: what pre-endpoint apps can use (plain HTTP — Tailscale, and loopback in development).</summary>
+    private IReadOnlyList<string> LegacyHostsLocked() =>
+        EndpointsLocked().Where(e => e.Transport is MobileTransport.Tailscale or MobileTransport.Loopback)
+            .Select(e => e.Host).ToList();
+
+    private void UseLanCertificate(X509Certificate2 cert)
+    {
+        _lanCertificate = cert;
+        _lanPin = MobileTlsCertificate.Sha256Hex(cert);
+    }
+
+    private IReadOnlyList<Binding> DesiredBindings()
+    {
+        var list = new List<Binding>();
+        if (_options.Tailscale)
+            list.AddRange(_resolver.FindTailnetAddresses().Select(a => new Binding(a, PathKind.Tailnet, 32)));
+        if (_options.Lan && EnsureLanCertificate())
+            list.AddRange(_lanResolver.FindLanAddresses().Select(a => new Binding(a.Address, PathKind.Lan, a.PrefixLength)));
+        if (WantsLoopback) list.Add(new Binding(IPAddress.Loopback, PathKind.Loopback, 8));
+        return list;
+    }
+
+    private bool EnsureLanCertificate()
+    {
+        if (_lanCertificate is not null) return true;
+        try
+        {
+            UseLanCertificate(MobileTlsCertificate.LoadOrCreate(_logger));
+            return true;
+        }
+        catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException or IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "Mobile API: the LAN TLS certificate is unavailable; the LAN path stays off.");
+            return false;
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var warnedNoTailnet = false;
+        var warnedNoAddress = false;
         while (!stoppingToken.IsCancellationRequested)
         {
-            var addresses = _resolver.FindTailnetAddresses().ToList();
-            if (addresses.Count == 0 && !warnedNoTailnet)
+            var bind = DesiredBindings();
+            var phoneFacing = bind.Count(b => b.Kind != PathKind.Loopback);
+            if (phoneFacing == 0 && !_options.Cloudflare.Enabled && !warnedNoAddress)
             {
                 _logger.LogWarning(
-                    "Mobile API: no Tailscale (100.64.0.0/10) address on this PC — phones can't connect until Tailscale is up. Retrying every {Seconds}s.",
-                    RebindInterval.TotalSeconds);
-                warnedNoTailnet = true;
+                    "Mobile API: no usable address (Tailscale {Tailscale}, LAN {Lan}) — phones can't connect yet. Retrying every {Seconds}s.",
+                    _options.Tailscale ? "on" : "off", _options.Lan ? "on" : "off", RebindInterval.TotalSeconds);
+                warnedNoAddress = true;
             }
-            if (addresses.Count > 0) warnedNoTailnet = false;
+            if (phoneFacing > 0) warnedNoAddress = false;
 
-            var bind = addresses.ToList();
-            if (_options.BindLoopback) bind.Add(IPAddress.Loopback);
             if (bind.Count == 0)
             {
                 await DelaySafe(RebindInterval, stoppingToken);
                 continue;
             }
 
-            var hosts = new List<string>();
-            if (addresses.Count > 0 && _resolver.FindMagicDnsName() is { } dns) hosts.Add(dns);
-            hosts.AddRange(bind.Select(a => a.ToString()));
-
+            var magicDns = bind.Any(b => b.Kind == PathKind.Tailnet) ? _resolver.FindMagicDnsName() : null;
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            var listeners = new List<TcpListener>();
+            var listeners = new List<(TcpListener Listener, Binding Binding)>();
             try
             {
-                foreach (var ip in bind)
+                foreach (var b in bind)
                 {
-                    var l = new TcpListener(ip, _options.Port);
+                    var l = new TcpListener(b.Address, _options.Port);
                     l.Start();
-                    listeners.Add(l);
+                    listeners.Add((l, b));
                 }
-                lock (_gate) { _hosts = hosts; _listening = true; }
+                lock (_gate) { _bound = bind; _magicDns = magicDns; _listening = true; }
                 _logger.LogInformation("Mobile API listening on {Endpoints}.",
-                    string.Join(", ", bind.Select(a => $"{a}:{_options.Port}")));
+                    string.Join(", ", bind.Select(b => $"{b.Address}:{_options.Port} ({b.Kind}{(b.Kind == PathKind.Lan ? ", TLS" : "")})")));
 
-                var accepts = listeners.Select(l => AcceptLoopAsync(l, cycle.Token)).ToList();
+                var accepts = listeners.Select(l => AcceptLoopAsync(l.Listener, l.Binding.Kind, cycle.Token)).ToList();
+                var keys = bind.Select(b => b.Key).ToHashSet();
                 // Re-check the address set periodically; rebind when it changes.
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     await DelaySafe(RebindInterval, stoppingToken);
-                    var now = _resolver.FindTailnetAddresses();
-                    if (!now.ToHashSet().SetEquals(addresses))
+                    if (!DesiredBindings().Select(b => b.Key).ToHashSet().SetEquals(keys))
                     {
-                        _logger.LogInformation("Tailscale address changed; re-binding the mobile API.");
+                        _logger.LogInformation("Mobile API addresses changed; re-binding.");
                         break;
                     }
                 }
                 cycle.Cancel();
-                foreach (var l in listeners) l.Stop();
+                foreach (var l in listeners) l.Listener.Stop();
                 await Task.WhenAll(accepts);
             }
             catch (SocketException ex)
             {
                 _logger.LogError(ex, "Mobile API could not bind port {Port}; retrying in {Seconds}s.",
                     _options.Port, RebindInterval.TotalSeconds);
-                foreach (var l in listeners) l.Stop();
+                foreach (var l in listeners) l.Listener.Stop();
                 await DelaySafe(RebindInterval, stoppingToken);
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 // A fault here must not stop the Agent host (and with it Telegram monitoring).
                 _logger.LogError(ex, "Mobile API failed; restarting it in {Seconds}s.", RebindInterval.TotalSeconds);
-                foreach (var l in listeners) l.Stop();
+                foreach (var l in listeners) l.Listener.Stop();
                 await DelaySafe(RebindInterval, stoppingToken);
             }
             finally
@@ -149,7 +244,7 @@ public sealed class MobileApiServer : BackgroundService
         }
     }
 
-    private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
+    private async Task AcceptLoopAsync(TcpListener listener, PathKind kind, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -164,8 +259,8 @@ public sealed class MobileApiServer : BackgroundService
             }
             _ = Task.Run(async () =>
             {
-                try { await HandleConnectionAsync(client, ct); }
-                catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or WebSocketException)
+                try { await HandleConnectionAsync(client, kind, ct); }
+                catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or WebSocketException or AuthenticationException)
                 {
                     _logger.LogDebug("Mobile connection ended: {Message}", ex.Message);
                 }
@@ -182,14 +277,56 @@ public sealed class MobileApiServer : BackgroundService
         }
     }
 
-    private async Task HandleConnectionAsync(TcpClient client, CancellationToken ct)
+    /// <summary>
+    /// Defense in depth behind the bind address and firewall rule: each listener accepts only the
+    /// peers its path can produce.
+    /// </summary>
+    private bool PeerAllowed(IPAddress peer, PathKind kind)
     {
-        // Defense in depth behind the bind address and firewall rule: tailnet or loopback peers only.
-        if (client.Client.RemoteEndPoint is not IPEndPoint remote ||
-            !(TailscaleAddressResolver.IsTailnetV4(remote.Address) || IPAddress.IsLoopback(remote.Address)))
+        if (peer.IsIPv4MappedToIPv6) peer = peer.MapToIPv4();
+        switch (kind)
+        {
+            case PathKind.Tailnet:
+                return TailscaleAddressResolver.IsTailnetV4(peer) || IPAddress.IsLoopback(peer);
+            case PathKind.Lan:
+                IReadOnlyList<Binding> bound;
+                lock (_gate) bound = _bound;
+                return LanAddressResolver.IsPrivateV4(peer) && LanAddressResolver.InSameSubnet(peer,
+                    bound.Where(b => b.Kind == PathKind.Lan).Select(b => new LanAddress(b.Address, b.PrefixLength)));
+            default:
+                return IPAddress.IsLoopback(peer);
+        }
+    }
+
+    private async Task HandleConnectionAsync(TcpClient client, PathKind kind, CancellationToken ct)
+    {
+        if (client.Client.RemoteEndPoint is not IPEndPoint remote || !PeerAllowed(remote.Address, kind))
             return;
 
-        var stream = client.GetStream();
+        var network = client.GetStream();
+        if (kind != PathKind.Lan)
+        {
+            await ServeAsync(network, ct);
+            return;
+        }
+
+        // LAN has no WireGuard underneath: TLS with the pinned self-signed certificate (M-15).
+        await using var ssl = new SslStream(network, leaveInnerStreamOpen: false);
+        using (var handshake = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            handshake.CancelAfter(HeadTimeout);
+            await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+            {
+                ServerCertificate = _lanCertificate,
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                ClientCertificateRequired = false,
+            }, handshake.Token);
+        }
+        await ServeAsync(ssl, ct);
+    }
+
+    private async Task ServeAsync(Stream stream, CancellationToken ct)
+    {
         (HttpRequestHead Head, byte[] Leftover)? request;
         using (var headCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
@@ -256,6 +393,11 @@ public sealed class MobileApiServer : BackgroundService
                 }
             }
 
+            case ("GET", "/api/v1/endpoints"):
+                if (_devices.Authenticate(head.BearerToken() ?? "") is null)
+                    return (401, Error("unauthorized", "This phone is not paired with this PC."));
+                return (200, Json(new EndpointsResponse(MobileProtocol.Schema, Endpoints())));
+
             case ("GET", "/api/v1/snapshot"):
             {
                 if (_devices.Authenticate(head.BearerToken() ?? "") is null)
@@ -267,7 +409,7 @@ public sealed class MobileApiServer : BackgroundService
                 catch (OperationCanceledException) { return (503, Error("timeout", "No snapshot was produced in time.")); }
             }
 
-            case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/snapshot" or "/api/v1/live"):
+            case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live"):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

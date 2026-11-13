@@ -5,33 +5,45 @@ using Microsoft.Extensions.Logging;
 namespace LocalOpsBot.Agent.Services.Mobile;
 
 /// <summary>
-/// Keeps the inbound Windows Firewall rule in step with <c>mobile:enabled</c>: allow TCP on the
-/// mobile port, for the Agent executable only, from Tailscale addresses (100.64.0.0/10) only.
-/// The Agent (LocalSystem) owns the rule so it always names the running exe; uninstall removes it.
+/// Keeps the inbound Windows Firewall rules in step with the <c>mobile</c> config. Every rule
+/// allows TCP on the mobile port for the Agent executable only:
+/// <list type="bullet">
+/// <item><see cref="TailscaleRuleName"/>: from 100.64.0.0/10, any profile (M-1, M-14).</item>
+/// <item><see cref="LanRuleName"/>: from the local subnet, Private profile only — a café or
+/// airport Wi-Fi (Public) never gets the port (M-15).</item>
+/// </list>
+/// The Cloudflare Tunnel needs no rule: its connector dials out and reaches the API on loopback.
+/// The Agent (LocalSystem) owns the rules so they always name the running exe; uninstall removes them.
 /// </summary>
 public static class MobileFirewall
 {
-    public const string RuleName = "Homebase Mobile (Tailscale)";
+    public const string TailscaleRuleName = "Homebase Mobile (Tailscale)";
+    public const string LanRuleName = "Homebase Mobile (LAN)";
 
     public static void Apply(MobileOptions options, ILogger logger)
     {
         var markerDir = Infrastructure.Mobile.MobileDeviceStore.DefaultDirectory;
-        if (!options.Enabled)
-        {
-            // Only clean up when the feature was ever used — no netsh spawn on every boot otherwise.
-            if (Directory.Exists(markerDir)) Netsh($"advfirewall firewall delete rule name=\"{RuleName}\"", logger, quietFailure: true);
-            return;
-        }
+        // Only touch the firewall when the feature is on or was ever used — no netsh spawn on every boot otherwise.
+        if (!options.Enabled && !Directory.Exists(markerDir)) return;
 
         var exe = Environment.ProcessPath;
+        Ensure(TailscaleRuleName, options.Enabled && options.Tailscale, exe, options.Port,
+            "remoteip=100.64.0.0/10 profile=any", logger);
+        Ensure(LanRuleName, options.Enabled && options.Lan, exe, options.Port,
+            "remoteip=localsubnet profile=private", logger);
+    }
+
+    private static void Ensure(string rule, bool wanted, string? exe, int port, string scope, ILogger logger)
+    {
+        Netsh($"advfirewall firewall delete rule name=\"{rule}\"", logger, quietFailure: true);
+        if (!wanted) return;
         if (string.IsNullOrEmpty(exe))
         {
-            logger.LogWarning("Mobile firewall rule skipped: the Agent executable path is unknown.");
+            logger.LogWarning("Mobile firewall rule {Rule} skipped: the Agent executable path is unknown.", rule);
             return;
         }
-        Netsh($"advfirewall firewall delete rule name=\"{RuleName}\"", logger, quietFailure: true);
-        Netsh($"advfirewall firewall add rule name=\"{RuleName}\" dir=in action=allow protocol=TCP " +
-              $"localport={options.Port} remoteip=100.64.0.0/10 program=\"{exe}\" profile=any", logger, quietFailure: false);
+        Netsh($"advfirewall firewall add rule name=\"{rule}\" dir=in action=allow protocol=TCP " +
+              $"localport={port} {scope} program=\"{exe}\"", logger, quietFailure: false);
     }
 
     private static void Netsh(string args, ILogger logger, bool quietFailure)

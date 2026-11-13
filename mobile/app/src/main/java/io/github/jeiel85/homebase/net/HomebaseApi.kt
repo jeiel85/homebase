@@ -18,7 +18,9 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 /** Pairing failed in a way the user should read (wrong/expired code, lockout). */
 class PairException(message: String) : Exception(message)
@@ -29,38 +31,54 @@ class UnauthorizedException : Exception("이 PC에서 휴대폰 연결이 해제
 /** What the detail screen shows about the live connection. */
 sealed interface LiveState {
     data object Connecting : LiveState
-    data class Live(val snapshot: LiveSnapshot, val host: String) : LiveState
+    data class Live(val snapshot: LiveSnapshot, val endpoint: Endpoint) : LiveState
     data class Retrying(val reason: String, val inSeconds: Int) : LiveState
     data object Unauthorized : LiveState
     data class Incompatible(val reason: String) : LiveState
 }
 
 /**
- * Direct phone → PC calls over the tailnet. No relay server exists (DECISIONS M-1): each PC is
- * reached at the MagicDNS name or fixed Tailscale IP from its QR code, tried in order.
+ * Direct phone → PC calls. No relay server of our own exists (DECISIONS M-1, M-17): each PC is
+ * reached over one of the paths in its QR — same-LAN TLS with a pinned certificate, Tailscale, or
+ * the PC's Cloudflare Tunnel — tried in the order [RouteSelector] picks for the phone's current
+ * network ([networks]).
  */
 class HomebaseApi(
     private val client: OkHttpClient = defaultClient,
+    private val networks: () -> LocalNetworks? = { null },
 ) {
+    private val quick: OkHttpClient = client.newBuilder()
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
 
-    suspend fun info(pc: PcEntry): Pair<PcInfo, String> = withContext(Dispatchers.IO) {
-        var last: Exception = IOException("no hosts")
-        for (host in pc.orderedHosts) {
+    private val pinnedClients = ConcurrentHashMap<String, OkHttpClient>()
+
+    /** The HTTP client for [e]: a pinned TLS client for LAN, the normal client otherwise. */
+    private fun clientFor(e: Endpoint, base: OkHttpClient): OkHttpClient {
+        val pin = e.certSha256 ?: return base
+        val key = "${System.identityHashCode(base)}|$pin|${e.host}"
+        return pinnedClients.getOrPut(key) { PinnedTls.client(base, pin, e.host) }
+    }
+
+    suspend fun info(pc: PcEntry): Pair<PcInfo, Endpoint> = withContext(Dispatchers.IO) {
+        var last: Exception = IOException("no endpoints")
+        for (e in pc.orderedEndpoints(networks())) {
             try {
-                val req = Request.Builder().url(url(host, pc.port, "/api/v1/info")).build()
-                quick.newCall(req).execute().use { res ->
+                val req = Request.Builder().url(e.url("/api/v1/info")).build()
+                clientFor(e, quick).newCall(req).execute().use { res ->
                     if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
-                    return@withContext PcInfo.parse(res.body!!.string()) to host
+                    return@withContext PcInfo.parse(res.body!!.string()) to e
                 }
-            } catch (e: Exception) {
-                last = e
+            } catch (ex: Exception) {
+                last = ex
             }
         }
         throw last
     }
 
-    /** Tries each QR host until one answers; returns the pairing result and the host that worked. */
-    suspend fun pair(offer: PairingOffer, deviceName: String, deviceModel: String): Pair<PairResponse, String> =
+    /** Tries each QR path until one answers; returns the pairing result and the path that worked. */
+    suspend fun pair(offer: PairingOffer, deviceName: String, deviceModel: String): Pair<PairResponse, Endpoint> =
         withContext(Dispatchers.IO) {
             val body = JSONObject()
                 .put("code", offer.code)
@@ -68,54 +86,82 @@ class HomebaseApi(
                 .put("deviceModel", deviceModel)
                 .toString()
                 .toRequestBody(JSON)
-            var unreachable: Exception? = null
-            for (host in offer.hosts) {
+            val failures = mutableListOf<String>()
+            for (e in RouteSelector.order(offer.endpoints, networks(), null)) {
                 val res: Response = try {
-                    quick.newCall(Request.Builder().url(url(host, offer.port, "/api/v1/pair")).post(body).build()).execute()
-                } catch (e: IOException) {
-                    unreachable = e
+                    clientFor(e, quick).newCall(Request.Builder().url(e.url("/api/v1/pair")).post(body).build()).execute()
+                } catch (ex: IOException) {
+                    failures += "${e.label}: ${describe(ex)}"
                     continue
                 }
                 res.use {
                     val text = it.body?.string()
-                    if (it.isSuccessful) return@withContext PairResponse.parse(text!!) to host
+                    if (it.isSuccessful) return@withContext PairResponse.parse(text!!) to e
                     throw PairException(errorMessage(text) ?: "페어링 실패 (HTTP ${it.code})")
                 }
             }
             throw IOException(
-                "PC에 연결할 수 없습니다. 휴대폰과 PC가 모두 Tailscale에 연결되어 있는지 확인하세요." +
-                    (unreachable?.message?.let { " ($it)" } ?: ""),
+                "PC에 연결할 수 없습니다. 같은 Wi-Fi인지, 또는 PC의 Tailscale·Cloudflare 경로가 켜져 있는지 확인하세요." +
+                    if (failures.isEmpty()) "" else "\n" + failures.joinToString("\n"),
             )
         }
 
+    /** The PC's current endpoints (null when the PC predates the route, or on any failure). */
+    private fun fetchEndpoints(pc: PcEntry, e: Endpoint): List<Endpoint>? = try {
+        val req = Request.Builder().url(e.url("/api/v1/endpoints")).header("Authorization", "Bearer ${pc.token}").build()
+        clientFor(e, quick).newCall(req).execute().use { res ->
+            if (res.isSuccessful) parseEndpointsResponse(res.body!!.string()) else null
+        }
+    } catch (_: Exception) {
+        null
+    }
+
     /**
-     * Live snapshots while collected. Reconnects with backoff on network loss; stops on 401 or a
-     * schema mismatch. Cancelling the collector closes the socket, which makes the PC stop sampling.
+     * Live snapshots while collected. Reconnects with backoff on network loss (re-choosing the
+     * path for the network the phone is on now); stops on 401 or a schema mismatch. Cancelling
+     * the collector closes the socket, which makes the PC stop sampling. After the first
+     * snapshot on a path, the PC's current endpoint list is fetched (on every reconnect) and handed to
+     * [onEndpoints] so DHCP or Quick Tunnel address changes follow automatically.
      */
-    fun live(pc: PcEntry, onGoodHost: (String) -> Unit): Flow<LiveState> = flow {
+    fun live(
+        pc: PcEntry,
+        onGoodEndpoint: (Endpoint) -> Unit,
+        onEndpoints: (List<Endpoint>) -> Unit = {},
+    ): Flow<LiveState> = flow {
         var attempt = 0
+        var current = pc
         while (true) {
             emit(LiveState.Connecting)
             var failure: Throwable? = null
-            for (host in pc.orderedHosts) {
+            for (e in current.orderedEndpoints(networks())) {
                 try {
-                    socketFlow(host, pc).collect { snapshot ->
-                        if (attempt != 0) attempt = 0
-                        onGoodHost(host)
-                        emit(LiveState.Live(snapshot, host))
+                    var first = true
+                    socketFlow(e, current).collect { snapshot ->
+                        if (first) {
+                            first = false
+                            attempt = 0
+                            onGoodEndpoint(e)
+                            current = current.copy(lastGood = e.key)
+                            // Every (re)connect: a PC restart is exactly when a Quick Tunnel address or LAN IP changes.
+                            fetchEndpoints(current, e)?.takeIf { it.isNotEmpty() && it != current.endpoints }?.let {
+                                current = current.copy(endpoints = it)
+                                onEndpoints(it)
+                            }
+                        }
+                        emit(LiveState.Live(snapshot, e))
                     }
                     failure = IOException("연결이 닫혔습니다")
-                } catch (e: UnauthorizedException) {
+                } catch (ex: UnauthorizedException) {
                     emit(LiveState.Unauthorized)
                     return@flow
-                } catch (e: ProtocolException) {
-                    emit(LiveState.Incompatible(e.message ?: "호환되지 않는 버전"))
+                } catch (ex: ProtocolException) {
+                    emit(LiveState.Incompatible(ex.message ?: "호환되지 않는 버전"))
                     return@flow
-                } catch (e: IOException) {
-                    failure = e
+                } catch (ex: IOException) {
+                    failure = IOException("${e.label}: ${describe(ex)}")
                     continue
                 }
-                break // got snapshots from this host, then lost it → back off and retry all hosts
+                break // got snapshots from this path, then lost it → back off and re-pick
             }
             val wait = BACKOFF_SECONDS[minOf(attempt++, BACKOFF_SECONDS.lastIndex)]
             emit(LiveState.Retrying(failure?.message ?: "연결 실패", wait))
@@ -123,24 +169,24 @@ class HomebaseApi(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun socketFlow(host: String, pc: PcEntry): Flow<LiveSnapshot> = callbackFlow {
+    private fun socketFlow(e: Endpoint, pc: PcEntry): Flow<LiveSnapshot> = callbackFlow {
         val request = Request.Builder()
-            .url(url(host, pc.port, "/api/v1/live"))
+            .url(e.url("/api/v1/live"))
             .header("Authorization", "Bearer ${pc.token}")
             .build()
-        val ws = client.newWebSocket(request, object : WebSocketListener() {
+        val ws = clientFor(e, client).newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     trySend(LiveSnapshot.parse(text))
-                } catch (e: ProtocolException) {
-                    close(e)
-                } catch (e: Exception) {
-                    close(IOException("잘못된 응답: ${e.message}"))
+                } catch (ex: ProtocolException) {
+                    close(ex)
+                } catch (ex: Exception) {
+                    close(IOException("잘못된 응답: ${ex.message}"))
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                close(if (response?.code == 401) UnauthorizedException() else (t as? IOException ?: IOException(t.message)))
+                close(if (response?.code == 401) UnauthorizedException() else (t as? IOException ?: IOException(t.message, t)))
             }
 
             // The PC closes with 1008 when this phone was revoked in the Tray mid-session.
@@ -156,11 +202,6 @@ class HomebaseApi(
         awaitClose { ws.close(1000, "bye") }
     }
 
-    private fun url(host: String, port: Int, path: String): String {
-        val h = if (host.contains(':') && !host.startsWith("[")) "[$host]" else host
-        return "http://$h:$port$path"
-    }
-
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
         private val BACKOFF_SECONDS = intArrayOf(1, 2, 5, 10, 30)
@@ -174,9 +215,14 @@ class HomebaseApi(
             .pingInterval(15, TimeUnit.SECONDS)
             .build()
 
-        private val quick: OkHttpClient = defaultClient.newBuilder()
-            .connectTimeout(3, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
-            .build()
+        /** Short reason for a failed path; a certificate pin mismatch is called out as such. */
+        fun describe(e: Throwable): String {
+            var c: Throwable? = e
+            while (c != null) {
+                if (c is PinMismatchException) return c.message ?: "인증서 불일치"
+                c = c.cause
+            }
+            return if (e is SSLException) "TLS 오류 (${e.message})" else e.message ?: e.javaClass.simpleName
+        }
     }
 }

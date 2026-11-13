@@ -50,8 +50,9 @@ Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" 
 [Environment]::SetEnvironmentVariable($EnvVarName, $null, 'Machine')
 Write-Host "Tray auto-start and bot-token env var removed."
 
-# 3b) Remove the Tailscale-only inbound rule the Agent adds when mobile monitoring is enabled.
+# 3b) Remove the inbound rules (Tailscale, LAN) the Agent adds when mobile monitoring is enabled.
 & netsh.exe advfirewall firewall delete rule name="Homebase Mobile (Tailscale)" 2>&1 | Out-Null
+& netsh.exe advfirewall firewall delete rule name="Homebase Mobile (LAN)" 2>&1 | Out-Null
 
 # 4) Remove the Defender exclusion that enable-temperature.ps1 may have added for the driver.
 $driverRoots = @($DefaultRoot)

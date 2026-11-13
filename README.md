@@ -11,7 +11,7 @@
 
 <p align="center">
   <b>Homebase</b> &mdash; 개인 Windows PC 상태, 부팅, 장애, 알림을 Telegram으로 확인하고 알림받는 개인용 모니터링 봇입니다.<br>
-  인터넷에 포트를 열지 않습니다. Telegram은 outbound HTTPS, 휴대폰 앱은 Tailscale 망 안에서만 연결합니다.
+  인터넷에 포트를 열지 않습니다. Telegram은 outbound HTTPS, 휴대폰 앱은 같은 LAN(TLS)·Tailscale 망·Cloudflare Tunnel(outbound) 중 되는 경로로 연결합니다.
 </p>
 
 <p align="center">
@@ -104,11 +104,18 @@ dotnet build LocalOpsBot.sln
 PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지켜봅니다. 집·회사·노트북 PC를 여러 대 등록하고 목록에서 골라 들어가면
 그 PC의 **열린 창 목록**(Chrome은 창마다 활성 탭 제목), **창(프로세스)별 CPU·RAM·I/O·네트워크**, **최근 활동한 Claude Code 세션 제목**이 1초마다 갱신됩니다.
 
-- **연결**: 중계 서버 없이 휴대폰이 PC의 Tailscale 주소로 직접 붙습니다. PC와 휴대폰 모두 [Tailscale](https://tailscale.com/)에 로그인해 있어야 합니다.
-  Agent는 Tailscale 주소(100.64.0.0/10)에서만 열리고, 인터넷·공유기 LAN에는 열리지 않습니다.
+- **연결 (Tailscale은 선택)**: QR 한 장에 PC로 가는 경로가 모두 들어 있고, 앱이 휴대폰의 현재 네트워크를 보고 알아서 고릅니다.
+  1. **같은 Wi-Fi·유선(LAN)**: 가장 빠릅니다. PC의 사설 주소로 TLS 연결하며, 앱은 QR에 담긴 PC 인증서 지문만 신뢰합니다.
+     Windows가 그 네트워크를 **개인(Private)** 으로 분류해야 열립니다(공용이면 Connect Phone… 창이 알려 줍니다).
+  2. **[Tailscale](https://tailscale.com/)**: PC와 휴대폰이 같은 tailnet에 있으면 어디서든 직접 연결합니다.
+  3. **Cloudflare Tunnel**: Tailscale 없이 밖에서 볼 때 씁니다. PC가 Cloudflare로 outbound 연결만 하므로 공유기 포트를 열지 않습니다.
+     토큰을 넣지 않으면 계정 없는 Quick Tunnel(임시 주소, PC 재시작마다 바뀜 — 앱이 LAN/Tailscale로 한 번 붙으면 새 주소를 자동으로 배움)을,
+     Cloudflare 대시보드에서 만든 터널의 토큰과 공개 호스트명을 넣으면 고정 주소를 씁니다. `cloudflared`가 필요하며 창에서 바로 설치할 수 있습니다.
+  어느 경로든 인증은 같은 페어링 토큰(Bearer)이고, 앱 상세 화면 위쪽에 지금 붙은 경로(LAN/Tailscale/Cloudflare)가 표시됩니다.
 - **가벼움**: 휴대폰이 상세 화면을 보고 있을 때만 수집합니다. 보지 않을 때 추가 부하는 사실상 0입니다.
 - **설치**: [최신 릴리스](https://github.com/jeiel85/homebase/releases/latest)의 `Homebase-Mobile.apk`를 휴대폰에서 받아 설치합니다. 이후 업데이트는 앱이 하루 한 번 확인해 알려 줍니다.
-- **연결하기**: PC 트레이 아이콘 우클릭 → **Connect Phone…** → (처음 한 번) ENABLE과 관리자 승인 → 표시된 QR을 앱의 **PC 추가**로 스캔합니다.
+- **연결하기**: PC 트레이 아이콘 우클릭 → **Connect Phone…** → 쓸 경로를 고르고(기본: 전부) ENABLE과 관리자 승인 → 표시된 QR을 앱의 **PC 추가**로 스캔합니다.
+  창의 CONNECTION PATHS에서 경로별 상태를 보고, 빠진 구성 요소(Tailscale·cloudflared)는 INSTALL(winget)로 설치합니다.
   QR은 5분 동안 한 번만 쓸 수 있고, 같은 창에서 연결된 휴대폰을 해제할 수 있습니다.
 - 프로세스별 네트워크는 Agent가 관리자 권한(서비스)으로 돌 때만 집계되고, Claude 세션은 제목·폴더·시간만 읽습니다(대화 내용은 읽지 않음).
   설정의 `mobile.claudeSessions: false`로 끌 수 있습니다. 프로토콜은 [`docs/MOBILE_PROTOCOL.md`](docs/MOBILE_PROTOCOL.md)를 참고하세요.

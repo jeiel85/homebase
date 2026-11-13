@@ -12,11 +12,14 @@ const val SCHEMA = 1
 
 class ProtocolException(message: String) : Exception(message)
 
+/**
+ * Pairing QR. [endpoints] lists every path (LAN with its certificate pin, Tailscale, Cloudflare);
+ * a QR from an older PC has only `hosts` + `port`, which become Tailscale endpoints.
+ */
 data class PairingOffer(
     val pcId: String,
     val pcName: String,
-    val hosts: List<String>,
-    val port: Int,
+    val endpoints: List<Endpoint>,
     val code: String,
 ) {
     companion object {
@@ -26,15 +29,19 @@ data class PairingOffer(
             if (o.optInt("hb") != 1) {
                 null
             } else {
-                val hosts = o.getJSONArray("hosts").strings().filter { it.isNotBlank() }
+                val endpoints = if (o.has("endpoints")) {
+                    Endpoint.parseList(o.optJSONArray("endpoints"))
+                } else {
+                    Endpoint.fromLegacyHosts(o.optJSONArray("hosts")?.strings() ?: emptyList(), o.optInt("port"))
+                        .filter { it.port in 1..65535 }
+                }
                 val offer = PairingOffer(
                     pcId = o.getString("pcId"),
                     pcName = o.getString("pcName"),
-                    hosts = hosts,
-                    port = o.getInt("port"),
+                    endpoints = endpoints,
                     code = o.getString("code"),
                 )
-                offer.takeIf { it.hosts.isNotEmpty() && it.port in 1..65535 && it.code.isNotBlank() && it.pcId.isNotBlank() }
+                offer.takeIf { it.endpoints.isNotEmpty() && it.code.isNotBlank() && it.pcId.isNotBlank() }
             }
         } catch (_: Exception) {
             null

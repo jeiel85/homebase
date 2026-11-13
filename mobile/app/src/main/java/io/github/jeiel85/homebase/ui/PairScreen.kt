@@ -83,8 +83,8 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
         message = "${offer.pcName}에 연결하는 중…"
         scope.launch {
             try {
-                val (res, host) = api.pair(offer, deviceName(context), "${Build.MANUFACTURER} ${Build.MODEL}")
-                val pc = PcEntry(res.pcId, res.pcName, offer.hosts, offer.port, res.deviceId, res.token, host)
+                val (res, endpoint) = api.pair(offer, deviceName(context), "${Build.MANUFACTURER} ${Build.MODEL}")
+                val pc = PcEntry(res.pcId, res.pcName, offer.endpoints, res.deviceId, res.token, endpoint.key)
                 store.upsert(pc)
                 onDone(pc)
             } catch (e: PairException) {
