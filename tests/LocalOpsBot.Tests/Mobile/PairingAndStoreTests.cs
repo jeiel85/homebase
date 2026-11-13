@@ -95,12 +95,20 @@ public class MobileDeviceStoreTests : IDisposable
         Assert.False(store.Revoke(d.DeviceId));
     }
 
-    [Fact]
-    public void Corrupt_state_file_fails_loudly_instead_of_orphaning_paired_phones()
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{not json")]
+    public void Corrupt_state_file_is_kept_aside_and_does_not_stop_the_agent(string content)
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(Path.Combine(_dir, "state.json"), "null");
-        Assert.Throws<InvalidDataException>(() => new MobileDeviceStore(_dir, _time, restrictAcl: false));
+        File.WriteAllText(Path.Combine(_dir, "state.json"), content);
+
+        var store = new MobileDeviceStore(_dir, _time, restrictAcl: false);
+
+        Assert.Empty(store.List());
+        Assert.False(string.IsNullOrEmpty(store.PcId));
+        var aside = Assert.Single(Directory.GetFiles(_dir, "state.json.corrupt-*"));
+        Assert.Equal(content, File.ReadAllText(aside)); // original bytes preserved for inspection
     }
 
     public void Dispose()

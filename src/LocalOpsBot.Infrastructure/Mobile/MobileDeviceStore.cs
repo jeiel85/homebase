@@ -5,6 +5,8 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LocalOpsBot.Infrastructure.Mobile;
 
@@ -44,13 +46,21 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         public DateTimeOffset? LastSeenAt { get; set; }
     }
 
-    public MobileDeviceStore(string directory, TimeProvider time, bool restrictAcl)
+    public MobileDeviceStore(string directory, TimeProvider time, bool restrictAcl, ILogger? logger = null)
     {
         _time = time;
+        var log = logger ?? NullLogger.Instance;
         Directory.CreateDirectory(directory);
-        if (restrictAcl) RestrictToSystemAndAdmins(directory);
+        if (restrictAcl)
+        {
+            try { RestrictToSystemAndAdmins(directory); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or IOException)
+            {
+                log.LogWarning(ex, "Could not restrict the ACL of {Directory}.", directory);
+            }
+        }
         _path = Path.Combine(directory, "state.json");
-        _state = Load(_path);
+        _state = Load(_path, log);
         if (string.IsNullOrEmpty(_state.PcId))
         {
             _state.PcId = Guid.NewGuid().ToString("N");
@@ -116,13 +126,25 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
 
     private static MobileDeviceInfo ToInfo(Device d) => new(d.DeviceId, d.Name, d.Model, d.PairedAt, d.LastSeenAt);
 
-    private static State Load(string path)
+    /// <summary>
+    /// A corrupt file must neither take the Agent down (Telegram monitoring keeps running) nor be
+    /// silently overwritten: it is moved aside as <c>state.json.corrupt-*</c> and logged, and the
+    /// store starts empty — paired phones then get 401 and are told to re-pair.
+    /// </summary>
+    private static State Load(string path, ILogger log)
     {
         if (!File.Exists(path)) return new State();
-        // A corrupt file must not silently become "no devices + new PC id" — that would orphan
-        // every paired phone. Fail loudly; the operator can inspect or delete it.
-        return JsonSerializer.Deserialize<State>(File.ReadAllText(path), MobileProtocol.Json)
-               ?? throw new InvalidDataException($"Mobile device store '{path}' is empty or invalid.");
+        try
+        {
+            var state = JsonSerializer.Deserialize<State>(File.ReadAllText(path), MobileProtocol.Json);
+            if (state is not null) return state;
+        }
+        catch (JsonException) { }
+
+        var aside = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmss}";
+        File.Move(path, aside);
+        log.LogError("Mobile device store {Path} was unreadable; kept it as {Aside} and started empty. Paired phones must pair again.", path, aside);
+        return new State();
     }
 
     private void Save()

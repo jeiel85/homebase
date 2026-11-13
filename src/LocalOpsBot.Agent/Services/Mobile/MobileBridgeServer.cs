@@ -21,6 +21,7 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 public sealed class MobileBridgeServer : BackgroundService
 {
     private const int MaxInstances = 4;
+    private const int PipeBufferBytes = 64 * 1024;
 
     private readonly LiveSnapshotHub _hub;
     private readonly MobileApiServer _api;
@@ -61,13 +62,22 @@ public sealed class MobileBridgeServer : BackgroundService
             {
                 pipe = NamedPipeServerStreamAcl.Create(
                     MobileBridge.PipeName, PipeDirection.InOut, MaxInstances,
-                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, BuildSecurity());
+                    // Non-zero buffers: with 0/0 a write blocks until the peer reads, so the Agent's
+                    // initial "watch" frame and a client's first request deadlock each other.
+                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous, PipeBufferBytes, PipeBufferBytes, BuildSecurity());
             }
             catch (IOException)
             {
                 // All instances busy — wait for one to free up.
                 await Task.Delay(1000, stoppingToken).ContinueWith(_ => { });
                 running.RemoveAll(t => t.IsCompleted);
+                continue;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            {
+                // Never let the bridge take the whole Agent (Telegram monitoring) down with it.
+                _logger.LogError(ex, "Mobile bridge pipe could not be created; retrying in 30 s.");
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ContinueWith(_ => { });
                 continue;
             }
 
@@ -79,6 +89,12 @@ public sealed class MobileBridgeServer : BackgroundService
             {
                 await pipe.DisposeAsync();
                 break;
+            }
+            catch (IOException ex)
+            {
+                _logger.LogDebug("Mobile bridge client vanished before the handshake: {Message}", ex.Message);
+                await pipe.DisposeAsync();
+                continue;
             }
 
             running.RemoveAll(t => t.IsCompleted);
@@ -167,6 +183,10 @@ public sealed class MobileBridgeServer : BackgroundService
         void Allow(SecurityIdentifier sid) => security.AddAccessRule(
             new PipeAccessRule(sid, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
 
+        // The server's own identity needs CreateNewInstance to open the 2nd..Nth instance; without
+        // it the pipe works for exactly one client and then every new instance is access-denied.
+        var self = WindowsIdentity.GetCurrent().User!;
+        security.AddAccessRule(new PipeAccessRule(self, PipeAccessRights.FullControl, AccessControlType.Allow));
         Allow(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
         Allow(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
         SecurityIdentifier? user = null;

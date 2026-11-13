@@ -135,6 +135,13 @@ public sealed class MobileApiServer : BackgroundService
                 foreach (var l in listeners) l.Stop();
                 await DelaySafe(RebindInterval, stoppingToken);
             }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                // A fault here must not stop the Agent host (and with it Telegram monitoring).
+                _logger.LogError(ex, "Mobile API failed; restarting it in {Seconds}s.", RebindInterval.TotalSeconds);
+                foreach (var l in listeners) l.Stop();
+                await DelaySafe(RebindInterval, stoppingToken);
+            }
             finally
             {
                 lock (_gate) { _listening = false; }

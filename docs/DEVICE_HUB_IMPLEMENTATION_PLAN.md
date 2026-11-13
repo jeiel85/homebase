@@ -8,6 +8,10 @@
 
 ---
 
+> **2026-11-13 추가 — Homebase Mobile(모니터링 전용 앱)과의 관계**: 다중 PC 실시간 모니터링 Android 앱(`mobile/`)을 별도로 도입했다.
+> ADR-006을 "모니터링 뷰어는 전용 앱, 기기 연동은 KDE Connect"로 개정했다. 새 파이프 `Homebase.MobileBridge`는 TRAIN-B SessionBridge의 좁은 선행 조각이다.
+> 기기 저장소(`ProgramData\Homebase\mobile\state.json`)는 GOAL-05 이후 `device` 테이블로 옮긴다. 상세는 [`DECISIONS.md`](../DECISIONS.md) M 섹션을 본다.
+
 ## 1. 목표와 원칙
 
 **제품 방향**: Telegram 중심 모니터링 봇 → Windows PC를 중심으로 Telegram·Android(KDE Connect)·로컬 세션을 잇는 개인 **Device Hub**. 핵심은 기능 추가가 아니라 **채널(transport)과 도메인 로직의 분리**다.

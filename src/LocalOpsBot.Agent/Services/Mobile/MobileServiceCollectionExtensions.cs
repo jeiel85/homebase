@@ -25,7 +25,8 @@ public static class MobileServiceCollectionExtensions
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IMobileDeviceStore>(sp => new MobileDeviceStore(
-            MobileDeviceStore.DefaultDirectory, sp.GetRequiredService<TimeProvider>(), restrictAcl: true));
+            MobileDeviceStore.DefaultDirectory, sp.GetRequiredService<TimeProvider>(), restrictAcl: true,
+            sp.GetRequiredService<ILogger<MobileDeviceStore>>()));
         services.AddSingleton<PairingService>();
         services.AddSingleton<IResourceSampler, WindowsResourceSampler>();
         services.AddSingleton<TailscaleAddressResolver>();
