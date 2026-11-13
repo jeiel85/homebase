@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -55,11 +56,15 @@ import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.push.PushNotifier
+import io.github.jeiel85.homebase.push.PushRegistrar
+import io.github.jeiel85.homebase.push.PushState
 import io.github.jeiel85.homebase.update.UpdateSurface
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private sealed interface PcStatus {
     data object Checking : PcStatus
@@ -78,6 +83,7 @@ fun PcListScreen(
     val status = remember { mutableStateMapOf<String, PcStatus>() }
     var confirmRemove by remember { mutableStateOf<PcEntry?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val context = LocalContext.current
 
     // Poll /info for each PC while the list is visible (every 15 s; nothing in the background).
     LaunchedEffect(pcs) {
@@ -92,6 +98,7 @@ fun PcListScreen(
                             status[pc.pcId] = try {
                                 val (info, endpoint) = api.info(pc)
                                 store.rememberGood(pc.pcId, endpoint)
+                                PushRegistrar.ensureAsync(context, api, pc)
                                 PcStatus.Online(info.agentVersion, endpoint)
                             } catch (_: Exception) {
                                 PcStatus.Offline
@@ -147,6 +154,7 @@ fun PcListScreen(
                     SectionLabel("앱")
                     Plate {
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            PushSettings(store, api, pcs.size)
                             UpdateSurface.SettingsRows()
                             Text(
                                 "앱 버전 ${BuildConfig.VERSION_NAME}",
@@ -180,6 +188,10 @@ fun PcListScreen(
             text = { Text("${pc.name}을(를) 목록에서 지울까요? PC 쪽 연결 해제는 PC의 \"휴대폰 연결…\" 창에서 합니다.") },
             confirmButton = {
                 TextButton(onClick = {
+                    // Best effort: stop this PC pushing to the phone, then drop its notification channels.
+                    PushRegistrar.scope.launch { runCatching { api.unregisterPush(pc) } }
+                    PushState(context).markRegistered(pc.pcId, false)
+                    PushNotifier.forgetPc(context, pc.pcId)
                     store.remove(pc.pcId)
                     pcs = store.all()
                     confirmRemove = null

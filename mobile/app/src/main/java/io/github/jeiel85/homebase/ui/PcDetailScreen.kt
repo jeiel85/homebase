@@ -41,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -60,6 +61,7 @@ import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.AppEntry
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.net.LiveSnapshot
 import io.github.jeiel85.homebase.net.LiveState
 import io.github.jeiel85.homebase.net.ProcessEntry
@@ -79,10 +81,15 @@ private const val HISTORY = 60
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
+    val context = LocalContext.current
     val flow = remember(pc.pcId) {
         api.live(
             pc,
-            onGoodEndpoint = { e -> store.rememberGood(pc.pcId, e) },
+            onGoodEndpoint = { e ->
+                store.rememberGood(pc.pcId, e)
+                // Every (re)connect re-tells the PC this phone's push endpoint (a PC may have lost it).
+                PushRegistrar.ensureAsync(context, api, store.get(pc.pcId) ?: pc)
+            },
             onEndpoints = { list -> store.updateEndpoints(pc.pcId, list) },
         )
     }

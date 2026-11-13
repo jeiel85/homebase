@@ -113,6 +113,31 @@ public class ProtocolGoldenTests
         Assert.Null(PairingLink.DecodeJson("https://example.com/#abc"));
     }
 
+    /// <summary>
+    /// <c>push-message.v1.aes128gcm.txt</c>: the push-message fixture as the PC encrypts it (RFC 8291,
+    /// Appendix A server key and salt, so the output is deterministic). The Kotlin test decrypts it with
+    /// the Appendix A phone key, proving the two implementations agree end to end.
+    /// </summary>
+    [Fact]
+    public void Encrypted_push_fixture_matches_the_pc_encryption()
+    {
+        using var asKey = LocalOpsBot.Tests.Push.WebPushEncryptionTests.Key(
+            LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPrivate, LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPublic);
+        var body = WebPushEncryption.Encrypt(
+            PushPayload.Serialize(SamplePushMessage()),
+            Base64Url.Decode(LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic),
+            Base64Url.Decode(LocalOpsBot.Tests.Push.WebPushEncryptionTests.AuthSecret),
+            asKey,
+            Base64Url.Decode(LocalOpsBot.Tests.Push.WebPushEncryptionTests.Salt));
+        var actual = Base64Url.Encode(body);
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "push-message.v1.aes128gcm.txt");
+
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual + "\n");
+
+        Assert.Equal(File.ReadAllText(path).Trim(), actual);
+    }
+
     [Fact]
     public void Endpoints_without_a_pin_omit_the_field()
     {
