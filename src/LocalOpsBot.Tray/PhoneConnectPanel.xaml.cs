@@ -60,12 +60,14 @@ public partial class PhoneConnectPanel : UserControl
             await RefreshAsync();
             return;
         }
-        if (MobileHost.IsEnabled() && !_busy)
-        {
-            _statusTimer.Start();
-            await PollStatusAsync();
-            await LoadDevicesAsync();
-        }
+        if (!MobileHost.IsEnabled()) return;
+        // Restart the timer even while an install/apply runs: PollStatusAsync skips ticks while
+        // busy, and the timer must still be running when it finishes (the Agent can take up to a
+        // minute to notice a freshly installed connector).
+        _statusTimer.Start();
+        if (_busy) return;
+        await PollStatusAsync();
+        await LoadDevicesAsync();
     }
 
     /// <summary>The tab left view: stop polling (the QR countdown keeps its own cheap timer).</summary>
