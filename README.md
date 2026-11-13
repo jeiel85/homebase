@@ -33,7 +33,8 @@
 | 🚀 | **부팅 알림** | PC가 부팅되면 Telegram으로 즉시 알림 |
 | 👁️ | **프로세스/서비스 감시** | Ollama, PostgreSQL, 개발 서버 등의 상태 모니터링 |
 | 📋 | **이벤트 로그 감시** | Windows 오류/심각 이벤트를 Telegram으로 전달 |
-| 🔔 | **토스트 알림 전달** | Windows 알림을 프라이버시 필터링과 함께 전달 |
+| 🔔 | **토스트 알림 전달** | Windows 알림을 프라이버시 필터링·앱별 묶음과 함께 휴대폰 앱으로 암호화 전달(기본 켜짐) |
+| 📲 | **앱 푸시 알림** | 경보·부팅·Windows 알림을 Homebase 앱으로 UnifiedPush 종단 암호화(RFC 8291) 전송, 실패 시에만 Telegram |
 | 🔒 | **프라이버시 우선** | 비밀번호, OTP, 토큰 마스킹; 민감 앱 차단 |
 | 🔇 | **조용한 시간** | `/mute 1h`로 일시적으로 알림 음소거 |
 | 📊 | **SQLite 로깅** | 명령 및 알림 이력 영구 저장 |
@@ -118,6 +119,15 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
   앱이 아직 없다면 휴대폰 **기본 카메라**로 QR을 찍으세요. 설치 안내 페이지가 열리고, 설치 후 그 페이지의 **앱에서 열기**로 바로 연결이 이어집니다.
   창의 CONNECTION PATHS에서 경로별 상태를 보고, 빠진 구성 요소(Tailscale·cloudflared)는 INSTALL(winget)로 설치합니다.
   QR은 5분 동안 한 번만 쓸 수 있고, 같은 창에서 연결된 휴대폰을 해제할 수 있습니다.
+- **푸시 알림 (UnifiedPush)**: PC 경보(프로세스·서비스·HTTP·포트 다운, 이벤트 로그, AI 조언), 부팅 알림, Windows 알림이 앱 알림으로 옵니다.
+  휴대폰에 UnifiedPush 배포자 앱 하나가 필요합니다. [ntfy](https://ntfy.sh/)(무료, 계정 없음)를 Play 스토어나 F-Droid에서 설치하면
+  Homebase 앱이 처음 PC를 연결할 때 알아서 켭니다(앱 목록 아래 **푸시 알림** 스위치). 내용은 PC에서 휴대폰 키로 암호화(RFC 8291)되어
+  ntfy 서버는 암호문만 봅니다. 알림 채널이 PC·앱별로 나뉘므로 Android 알림 설정에서 원하는 것만 끌 수 있습니다.
+  - 전환 기간에는 Telegram이 대체 채널입니다. 푸시를 등록한 휴대폰이 없거나 전송이 실패한 경보만 Telegram으로 갑니다.
+    **Windows 알림은 Telegram으로 보내지 않습니다**(평문 클라우드). 예전처럼 받으려면 `notificationForwarding.telegramFallback: true`.
+  - Windows 알림 포워딩은 이제 기본 켜짐이며 1Password·Bitwarden·Authy 등은 항상 차단, 6자리 코드·비밀번호·토큰은 마스킹합니다.
+    같은 앱의 알림은 `bundleSeconds`(기본 60초) 동안 한 건으로 묶고, 하루 `maxPushesPerDay`(기본 150건)를 넘으면 버립니다.
+    ntfy.sh 익명 한도가 IP당 하루 250건이기 때문입니다(2026-11-13 `/v1/account` 확인). 설정 파일에 `"enabled": false`가 이미 적혀 있으면 그대로 꺼져 있습니다.
 - 프로세스별 네트워크는 Agent가 관리자 권한(서비스)으로 돌 때만 집계되고, Claude 세션은 제목·폴더·시간만 읽습니다(대화 내용은 읽지 않음).
   설정의 `mobile.claudeSessions: false`로 끌 수 있습니다. 프로토콜은 [`docs/MOBILE_PROTOCOL.md`](docs/MOBILE_PROTOCOL.md)를 참고하세요.
 

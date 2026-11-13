@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — encrypted push notifications (UnifiedPush)
+
+### Added
+- **Push notifications in the Homebase app.** PC alerts (process/service/HTTP/port down, event log,
+  AI advice), the boot notice and forwarded Windows notifications arrive as phone notifications via
+  UnifiedPush. Install a distributor app such as [ntfy](https://ntfy.sh/) (free, no account); the app
+  turns push on by itself when a PC is paired. Payloads are end-to-end encrypted (RFC 8291), so the
+  push server only relays ciphertext. Notification channels are split per PC and per source app, so
+  you can mute one app on one PC in Android settings.
+- `POST`/`DELETE /api/v1/push` for the app to register its push endpoint with each PC.
+
+### Changed
+- **Push first, Telegram as fallback.** Alerts and the boot notice go to the phone first; Telegram is
+  used only when no phone is registered or push fails. Telegram stays for the transition (DECISIONS M-19).
+- **Windows notification forwarding is on by default** and never goes to Telegram (plaintext cloud)
+  unless `notificationForwarding.telegramFallback` is set. Notifications from one app are bundled for
+  60 s and capped at 150 pushes a day per PC (ntfy.sh allows 250 a day per phone, shared by all PCs). Password managers and
+  authenticators are always blocked — the tray now applies the configured block list too.
+  An existing `"enabled": false` in your config is kept.
+- The tray's "send test message" goes through the Agent (phone push first) when the Agent is reachable.
+
 ## v0.15.0 — Phone connection without Tailscale, console look, tray settings
 
 ### Added
