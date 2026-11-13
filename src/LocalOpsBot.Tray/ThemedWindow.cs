@@ -47,7 +47,14 @@ public class ThemedWindow : Window
             DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
         }
         catch { /* pre-Win11 or unsupported: corners stay square, no harm */ }
+        _configuredMaxHeight = MaxHeight;
     }
+
+    // The MaxHeight the window declares; the effective cap is this or the current monitor's
+    // work area, whichever is smaller, so a window moved to a taller monitor gets its limit back.
+    private double _configuredMaxHeight = double.PositiveInfinity;
+
+    private bool IsContentSized => SizeToContent is SizeToContent.Height or SizeToContent.WidthAndHeight;
 
     /// <summary>
     /// A content-sized window (<see cref="SizeToContent"/> Height) is placed once, at its first
@@ -59,17 +66,32 @@ public class ThemedWindow : Window
     {
         base.OnRenderSizeChanged(sizeInfo);
         if (!sizeInfo.HeightChanged || sizeInfo.PreviousSize.Height <= 0) return;
-        if (SizeToContent is not (SizeToContent.Height or SizeToContent.WidthAndHeight)) return;
-        if (WindowState != WindowState.Normal || WorkArea() is not { } wa) return;
+        if (!IsContentSized || WindowState != WindowState.Normal || WorkArea() is not { } wa) return;
 
-        if (MaxHeight > wa.Height)
-        {
-            MaxHeight = wa.Height; // re-measures; the next size change places the capped window
-            if (sizeInfo.NewSize.Height > wa.Height) return;
-        }
+        // A changed cap re-measures; the size change that follows places the window.
+        if (FitMaxHeight(wa) && sizeInfo.NewSize.Height > MaxHeight) return;
 
         var top = Top - (sizeInfo.NewSize.Height - sizeInfo.PreviousSize.Height) / 2;
         Top = Math.Max(wa.Top, Math.Min(top, wa.Bottom - sizeInfo.NewSize.Height));
+    }
+
+    /// <summary>
+    /// Moving to another monitor changes the work area without a size change (a window already at
+    /// its cap does not grow), so recompute the cap here too.
+    /// </summary>
+    protected override void OnLocationChanged(EventArgs e)
+    {
+        base.OnLocationChanged(e);
+        if (IsContentSized && WindowState == WindowState.Normal && WorkArea() is { } wa) FitMaxHeight(wa);
+    }
+
+    /// <summary>Sets MaxHeight to the configured limit capped at this work area; true if it changed.</summary>
+    private bool FitMaxHeight(Rect wa)
+    {
+        var cap = Math.Min(_configuredMaxHeight, wa.Height);
+        if (MaxHeight.Equals(cap)) return false;
+        MaxHeight = cap;
+        return true;
     }
 
     /// <summary>Work area (DIPs) of the monitor this window is on — not just the primary one.</summary>
