@@ -93,6 +93,30 @@ public class ProtocolGoldenTests
         Assert.True(JsonNode.DeepEquals(expected, actual), $"{file} drifted from the serialized contract:\n{actual}");
     }
 
+    /// <summary>Token whose SHA-256 signs <c>push-endpoints.v1.json</c>; the Kotlin test verifies with it.</summary>
+    public const string EndpointsFixtureToken = "fixture-token";
+
+    /// <summary>
+    /// <c>push-endpoints.v1.json</c> (M-23): the exact plaintext the PC pushes with its paths. The Kotlin
+    /// test checks the MAC with <see cref="EndpointsFixtureToken"/> and reads back the endpoints fixture's paths.
+    /// </summary>
+    [Fact]
+    public void Endpoints_push_matches_the_shared_fixture()
+    {
+        var bytes = PushEndpoints.Serialize("6f1c0d2e9b8a4c7d", SampleEndpoints(),
+            new DateTimeOffset(2026, 11, 14, 8, 30, 0, TimeSpan.Zero), PairingService.HashToken(EndpointsFixtureToken));
+        var actual = JsonNode.Parse(bytes)!;
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "push-endpoints.v1.json");
+
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"push-endpoints.v1.json drifted:\n{actual}");
+        var data = JsonSerializer.Deserialize<PushEndpointsData>(Base64Url.Decode((string?)actual["data"]), MobileProtocol.Json)!;
+        Assert.Equal(SampleEndpoints(), data.Endpoints);
+        Assert.Equal("6f1c0d2e9b8a4c7d", data.PcId);
+    }
+
     /// <summary>The QR text (M-20). The Android app parses the same file back into the offer fixture's paths.</summary>
     [Fact]
     public void Pairing_link_matches_the_shared_fixture_and_round_trips()

@@ -69,6 +69,7 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
   `p256dh`는 P-256 비압축 점 65바이트, `auth`는 16바이트이고 둘 다 패딩 없는 base64url이다. 곡선 위의 점이 아니면 400이다.
   응답은 [`push-subscription-response.v1.json`](mobile-protocol/push-subscription-response.v1.json).
   구독은 기기당 하나이며 `state.json`의 그 기기 항목에 저장한다. 같은 값으로 다시 등록하면 파일을 다시 쓰지 않는다.
+  같은 엔드포인트를 가진 다른 기기는 같은 휴대폰의 예전 페어링이므로 철회한다(M-24). Agent 시작 때도 중복을 정리하고 가장 최근 페어링만 남긴다.
   Tray에서 기기를 철회하면 구독도 함께 지워진다. 앱은 엔드포인트가 바뀔 때, 페어링 직후, PC가 응답할 때(목록 확인·실시간 연결)마다 다시 등록한다.
 - **해제** `DELETE /api/v1/push`: 앱에서 푸시를 끄거나 PC를 목록에서 지울 때 보낸다.
 - **전송**(PC → 엔드포인트): `Content-Encoding: aes128gcm`, `Content-Type: application/octet-stream`, `TTL`(Windows 알림 21600초, 그 밖 86400초),
@@ -92,6 +93,19 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
 - 앱의 Android 알림 채널은 PC(채널 그룹)마다, `source`마다 하나씩이다. 사용자가 PC·앱 단위로 끌 수 있다.
 - 두 구현이 맞는지는 [`push-message.v1.aes128gcm.txt`](mobile-protocol/push-message.v1.aes128gcm.txt)로 확인한다.
   .NET이 RFC 8291 부록 A의 서버 키·salt로 위 메시지를 암호화해 쓰고, Kotlin 테스트가 부록 A의 휴대폰 키로 복호화해 같은 메시지인지 본다.
+
+### 경로 알림 (M-23)
+
+PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 생기면 같은 방식으로 암호화한 **경로 알림**을 보낸다.
+앱은 경로를 연결에 성공한 뒤에만 `/api/v1/endpoints`로 받으므로, 이것이 없으면 옛 주소만 아는 앱은 다시 페어링해야 한다.
+
+- 평문([`push-endpoints.v1.json`](mobile-protocol/push-endpoints.v1.json)): `{schema: 1, kind: "endpoints", pcId, data, mac}`.
+  `data`는 UTF-8 JSON `{schema: 1, pcId, ts, endpoints}`의 base64url이고, `endpoints`는 `/api/v1/endpoints`와 같은 형식이다.
+  `mac`은 `data` 바이트의 HMAC-SHA256(base64url)이며, 키는 이 기기 Bearer 토큰의 SHA-256 원시 32바이트다. 픽스처는 토큰 `fixture-token`으로 서명했다.
+- 앱은 `kind`가 `endpoints`이면 알림을 띄우지 않고, 페어링된 PC의 토큰으로 MAC을 확인하고 안팎 `pcId`가 같은지 본 뒤 경로를 바꾼다.
+  마지막으로 반영한 경로 알림의 `ts`보다 새것만 받는다. 휴대폰 푸시 키는 모든 PC가 공유하므로, MAC이 없으면 한 PC가 다른 PC의 경로를 바꿀 수 있다.
+- PC는 경로 목록이 15초 간격으로 두 번 같고 이전에 알리지 않은 경로가 있을 때만 보낸다. 경로가 빠지기만 하면 보내지 않는다. `TTL` 86400초, `Urgency: normal`. 휴대폰마다 따로 기억하며, 받지 못한 휴대폰에만 5분 뒤 다시 보낸다.
+- 이전 앱은 `id`·`title`이 없으므로 이 메시지를 버린다.
 
 ### 앱 쪽 UnifiedPush 규약 (AND_3.1.0, 라이브러리 없이)
 

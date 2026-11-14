@@ -29,6 +29,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
     private readonly string _path;
     private readonly TimeProvider _time;
     private readonly object _gate = new();
+    private readonly ILogger _log;
     private State _state;
 
     private sealed class State
@@ -52,7 +53,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
     public MobileDeviceStore(string directory, TimeProvider time, bool restrictAcl, ILogger? logger = null)
     {
         _time = time;
-        var log = logger ?? NullLogger.Instance;
+        var log = _log = logger ?? NullLogger.Instance;
         Directory.CreateDirectory(directory);
         if (restrictAcl)
         {
@@ -64,11 +65,13 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         }
         _path = Path.Combine(directory, "state.json");
         _state = Load(_path, log);
+        var dirty = PruneDuplicatesLocked();
         if (string.IsNullOrEmpty(_state.PcId))
         {
             _state.PcId = Guid.NewGuid().ToString("N");
-            Save();
+            dirty = true;
         }
+        if (dirty) Save();
     }
 
     public string PcId => _state.PcId;
@@ -119,6 +122,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
             if (device is null) return false;
             if (device.Push == subscription) return true;
             device.Push = subscription;
+            if (subscription is not null) RevokeSameEndpointLocked(device);
             Save();
             return true;
         }
@@ -130,7 +134,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         {
             return _state.Devices
                 .Where(d => d.Push is not null)
-                .Select(d => new PushTarget(d.DeviceId, d.Name, d.Push!))
+                .Select(d => new PushTarget(d.DeviceId, d.Name, d.Push!, d.TokenSha256))
                 .ToList();
         }
     }
@@ -154,6 +158,33 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
             }
             return null;
         }
+    }
+
+    /// <summary>
+    /// A push endpoint belongs to one app install, and the app keeps one token per PC — so another
+    /// device with the same endpoint is that phone's earlier pairing, left behind by a re-pair. It is
+    /// revoked; otherwise every alert goes to the phone twice (ntfy quota) and the Tray lists it twice.
+    /// </summary>
+    private void RevokeSameEndpointLocked(Device keep)
+    {
+        foreach (var old in _state.Devices.Where(d => d != keep && d.Push?.Endpoint == keep.Push?.Endpoint).ToList())
+        {
+            _state.Devices.Remove(old);
+            _log.LogInformation("Removed {Name} ({Old}): the same phone paired again as {New}.", old.Name, old.DeviceId, keep.DeviceId);
+        }
+    }
+
+    /// <summary>Clean-up for stores written before the rule above: keeps the newest pairing per endpoint.</summary>
+    private bool PruneDuplicatesLocked()
+    {
+        var dirty = false;
+        foreach (var group in _state.Devices.Where(d => d.Push is not null).GroupBy(d => d.Push!.Endpoint, StringComparer.Ordinal)
+                     .Where(g => g.Count() > 1).ToList())
+        {
+            RevokeSameEndpointLocked(group.OrderByDescending(d => d.PairedAt).First());
+            dirty = true;
+        }
+        return dirty;
     }
 
     private static MobileDeviceInfo ToInfo(Device d) => new(d.DeviceId, d.Name, d.Model, d.PairedAt, d.LastSeenAt);

@@ -157,16 +157,19 @@ class HomebaseApi(
      * path for the network the phone is on now); stops on 401 or a schema mismatch. Cancelling
      * the collector closes the socket, which makes the PC stop sampling. After the first
      * snapshot on a path, the PC's current endpoint list is fetched (on every reconnect) and handed to
-     * [onEndpoints] so DHCP or Quick Tunnel address changes follow automatically.
+     * [onEndpoints] so DHCP or Quick Tunnel address changes follow automatically. Each attempt starts
+     * from [latest] (the stored entry), so paths the PC pushed while this was retrying are used (M-23).
      */
     fun live(
         pc: PcEntry,
         onGoodEndpoint: (Endpoint) -> Unit,
         onEndpoints: (List<Endpoint>) -> Unit = {},
+        latest: () -> PcEntry? = { null },
     ): Flow<LiveState> = flow {
         var attempt = 0
         var current = pc
         while (true) {
+            latest()?.let { current = it }
             emit(LiveState.Connecting)
             var failure: Throwable? = null
             for (e in current.orderedEndpoints(networks())) {

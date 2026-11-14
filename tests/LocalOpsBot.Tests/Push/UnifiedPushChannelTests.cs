@@ -39,6 +39,42 @@ public class UnifiedPushChannelTests
             Metadata: meta);
 
     [Fact]
+    public async Task Endpoint_update_is_signed_with_the_devices_token_hash()
+    {
+        Subscribe();
+        var endpoints = new[] { new MobileEndpoint(MobileTransport.Cloudflare, "new-addr.trycloudflare.com", 443, true) };
+
+        Assert.Equal(new[] { _deviceId }, await _channel.SendEndpointsAsync(endpoints, _channel.EndpointTargetIds(), default));
+
+        var req = Assert.Single(_http.Requests);
+        Assert.Equal("normal", req.Headers["Urgency"]);
+        Assert.Equal("86400", req.Headers["TTL"]);
+        var envelope = JsonSerializer.Deserialize<PushEndpointsEnvelope>(WebPushEncryption.Decrypt(req.Body, _phoneKey, _auth), MobileProtocol.Json)!;
+        Assert.Equal(PushEndpoints.Kind, envelope.Kind);
+        Assert.Equal("pc-test", envelope.PcId);
+        var data = Base64Url.Decode(envelope.Data);
+        // The phone holds the token "t"; its SHA-256 is the key.
+        var expectedMac = HMACSHA256.HashData(SHA256.HashData(Encoding.UTF8.GetBytes("t")), data);
+        Assert.Equal(Base64Url.Encode(expectedMac), envelope.Mac);
+        var parsed = JsonSerializer.Deserialize<PushEndpointsData>(data, MobileProtocol.Json)!;
+        Assert.Equal(endpoints, parsed.Endpoints);
+        Assert.Equal(_time.GetUtcNow(), parsed.Ts);
+    }
+
+    [Fact]
+    public async Task Endpoint_update_counts_only_phones_that_accepted_it()
+    {
+        Subscribe();
+        _http.Next = () => new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        Assert.Empty(await _channel.SendEndpointsAsync(
+            new[] { new MobileEndpoint(MobileTransport.Tailscale, "100.1.2.3", 47820, false) }, new[] { _deviceId }, default));
+        _http.Next = () => new HttpResponseMessage(HttpStatusCode.Created);
+        Assert.Empty(await _channel.SendEndpointsAsync(
+            new[] { new MobileEndpoint(MobileTransport.Tailscale, "100.1.2.3", 47820, false) }, Array.Empty<string>(), default));
+        Assert.Single(_http.Requests); // a device not asked for is not sent to
+    }
+
+    [Fact]
     public async Task Not_available_until_a_phone_registers()
     {
         Assert.False(_channel.IsAvailable);
@@ -187,13 +223,16 @@ public class UnifiedPushChannelTests
         public List<CapturedRequest> Requests { get; } = new();
         public Func<HttpResponseMessage> Next { get; set; } = () => new HttpResponseMessage(HttpStatusCode.Created);
 
+        /// <summary>When set, answers per request (by endpoint URL) instead of <see cref="Next"/>.</summary>
+        public Func<string, HttpResponseMessage>? ByUri { get; set; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var headers = request.Headers.ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
             var body = request.Content is null ? Array.Empty<byte>() : await request.Content.ReadAsByteArrayAsync(ct);
             Requests.Add(new CapturedRequest(request.RequestUri!.ToString(),
                 request.Content?.Headers.ContentEncoding.FirstOrDefault(), headers, body));
-            return Next();
+            return ByUri?.Invoke(request.RequestUri!.ToString()) ?? Next();
         }
     }
 }

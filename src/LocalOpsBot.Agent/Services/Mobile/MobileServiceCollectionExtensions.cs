@@ -35,12 +35,13 @@ public static class MobileServiceCollectionExtensions
         // Encrypted UnifiedPush to paired phones that registered an endpoint (DECISIONS M-19).
         // The router prefers it over Telegram; it never subscribes to the live hub (M-13).
         services.AddHttpClient(UnifiedPushHttpClient, c => c.Timeout = TimeSpan.FromSeconds(15));
-        services.AddSingleton<IOutboundChannel>(sp => new UnifiedPushOutboundChannel(
+        services.AddSingleton(sp => new UnifiedPushOutboundChannel(
             sp.GetRequiredService<IMobileDeviceStore>(),
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(UnifiedPushHttpClient),
             sp.GetRequiredService<TimeProvider>(),
             Environment.MachineName,
             sp.GetRequiredService<ILogger<UnifiedPushOutboundChannel>>()));
+        services.AddSingleton<IOutboundChannel>(sp => sp.GetRequiredService<UnifiedPushOutboundChannel>());
         services.AddSingleton<IResourceSampler, WindowsResourceSampler>();
         services.AddSingleton<TailscaleAddressResolver>();
         services.AddSingleton<LanAddressResolver>();
@@ -55,6 +56,12 @@ public static class MobileServiceCollectionExtensions
         // Idle (returns at once) unless mobile:cloudflare:enabled.
         services.AddHostedService(sp => sp.GetRequiredService<CloudflareTunnel>());
         services.AddHostedService<MobileBridgeServer>();
+        // New paths (Quick Tunnel address after a restart, new LAN IP) go to phones by push (M-23).
+        services.AddHostedService(sp => new EndpointAnnouncer(
+            sp.GetRequiredService<MobileApiServer>().Endpoints,
+            sp.GetRequiredService<UnifiedPushOutboundChannel>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<EndpointAnnouncer>>()));
         return services;
     }
 }

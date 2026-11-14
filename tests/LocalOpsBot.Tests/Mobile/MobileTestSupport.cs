@@ -48,7 +48,7 @@ internal sealed class InMemoryDeviceStore : IMobileDeviceStore
     {
         lock (_devices)
             return _devices.Where(d => _push.ContainsKey(d.Info.DeviceId))
-                .Select(d => new PushTarget(d.Info.DeviceId, d.Info.Name, _push[d.Info.DeviceId])).ToList();
+                .Select(d => new PushTarget(d.Info.DeviceId, d.Info.Name, _push[d.Info.DeviceId], d.Hash)).ToList();
     }
 
     public bool IsPaired(string deviceId) { lock (_devices) return _devices.Any(d => d.Info.DeviceId == deviceId); }

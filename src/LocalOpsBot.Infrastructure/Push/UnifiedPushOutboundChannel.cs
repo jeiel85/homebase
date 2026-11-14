@@ -63,7 +63,7 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
 
         foreach (var target in targets)
         {
-            var (ok, kind, error) = await SendOneAsync(target, notification, plaintext, ct);
+            var (ok, kind, error) = await SendOneAsync(target, plaintext, TtlSeconds(notification), Urgency(notification.Priority), ct);
             if (ok) delivered++;
             else failures.Add((kind, $"{target.DeviceName}: {error}"));
         }
@@ -80,8 +80,44 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         return new OutboundAttemptResult(ChannelId, false, worst, string.Join("; ", failures.Select(f => f.Error)));
     }
 
+    /// <summary>Devices that can receive a path update: a push subscription and a token hash to sign with.</summary>
+    public IReadOnlyList<string> EndpointTargetIds() =>
+        _devices.PushTargets().Where(t => !string.IsNullOrEmpty(t.TokenSha256)).Select(t => t.DeviceId).ToList();
+
+    /// <summary>
+    /// Tells the phones in <paramref name="deviceIds"/> this PC's current paths (DECISIONS M-23), signed
+    /// per device with its token hash. Shows nothing on the phone. Returns the devices that accepted it.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> SendEndpointsAsync(
+        IReadOnlyList<MobileEndpoint> endpoints, IReadOnlyCollection<string> deviceIds, CancellationToken ct)
+    {
+        var delivered = new List<string>();
+        var ts = _time.GetUtcNow();
+        foreach (var target in _devices.PushTargets())
+        {
+            if (string.IsNullOrEmpty(target.TokenSha256) || !deviceIds.Contains(target.DeviceId)) continue;
+            byte[] plaintext;
+            try
+            {
+                plaintext = PushEndpoints.Serialize(_devices.PcId, endpoints, ts, target.TokenSha256);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException)
+            {
+                _logger.LogError(ex, "Endpoint update to {Device} could not be built", target.DeviceName);
+                continue;
+            }
+            var (ok, kind, error) = await SendOneAsync(target, plaintext, EndpointsTtlSeconds, "normal", ct);
+            if (ok) delivered.Add(target.DeviceId);
+            else _logger.LogWarning("Endpoint update to {Device} failed ({Kind}): {Error}", target.DeviceName, kind, error);
+        }
+        return delivered;
+    }
+
+    /// <summary>Paths stay valid until the next restart; a day covers a phone that was off overnight.</summary>
+    internal const int EndpointsTtlSeconds = 24 * 3600;
+
     private async Task<(bool Ok, OutboundFailureKind Kind, string? Error)> SendOneAsync(
-        PushTarget target, OutboundNotification notification, byte[] plaintext, CancellationToken ct)
+        PushTarget target, byte[] plaintext, int ttlSeconds, string urgency, CancellationToken ct)
     {
         var endpoint = target.Subscription.Endpoint;
         var now = _time.GetUtcNow();
@@ -116,8 +152,8 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         };
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         request.Content.Headers.ContentEncoding.Add("aes128gcm");
-        request.Headers.TryAddWithoutValidation("TTL", TtlSeconds(notification).ToString(CultureInfo.InvariantCulture));
-        request.Headers.TryAddWithoutValidation("Urgency", Urgency(notification.Priority));
+        request.Headers.TryAddWithoutValidation("TTL", ttlSeconds.ToString(CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation("Urgency", urgency);
 
         HttpResponseMessage response;
         try
