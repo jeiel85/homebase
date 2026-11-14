@@ -164,6 +164,41 @@ public class ConnectionCodeEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task Another_service_answering_on_the_port_does_not_break_the_search()
+    {
+        // Something else on a probed address answers 200 with JSON that has no pcId.
+        var other = new TcpListener(IPAddress.Loopback, 0);
+        other.Start();
+        var otherPort = ((IPEndPoint)other.LocalEndpoint).Port;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        _ = Task.Run(async () =>
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                using var c = await other.AcceptTcpClientAsync(cts.Token);
+                var s = c.GetStream();
+                await s.ReadAsync(new byte[4096], cts.Token);
+                await s.WriteAsync("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"u8.ToArray(), cts.Token);
+            }
+        });
+        try
+        {
+            var code = ConnectionCode.TryDecode(ConnectionCode.Encode(new PairingOffer(1, "pc-z", "Z", Array.Empty<string>(), 1,
+                PairingService.Base64Url(new byte[16]), DateTimeOffset.UtcNow.AddMinutes(5),
+                new[] { new MobileEndpoint(MobileTransport.Tailscale, "100.1.2.3", otherPort, false) })))!;
+            var finder = new HubFinder(_ => new[] { new MobileEndpoint(MobileTransport.Loopback, "127.0.0.1", otherPort, false) },
+                NullLogger.Instance);
+
+            Assert.Null(await finder.FindAsync(code, cts.Token)); // no exception, simply not found
+        }
+        finally
+        {
+            cts.Cancel();
+            other.Stop();
+        }
+    }
+
+    [Fact]
     public async Task Own_code_and_mistyped_words_get_clear_answers()
     {
         var store = new InMemoryDeviceStore("pc-a");

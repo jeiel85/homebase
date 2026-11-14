@@ -12,7 +12,8 @@ public sealed record ConnectionCodeData(byte[] PcTag, byte[]? LanPinPrefix, int 
     /// <summary>The pairing code to send (<c>PairRequest.Code</c>): the secret as base64url, as in the QR.</summary>
     public string PairingCode => PairingService.Base64Url(Secret);
 
-    public bool MatchesPcId(string pcId) => ConnectionCode.Tag(pcId).AsSpan().SequenceEqual(PcTag);
+    public bool MatchesPcId(string? pcId) =>
+        !string.IsNullOrEmpty(pcId) && ConnectionCode.Tag(pcId).AsSpan().SequenceEqual(PcTag);
 
     /// <summary>Whether a certificate with this SHA-256 (hex) is the one the code names.</summary>
     public bool MatchesPin(string sha256Hex) =>

@@ -119,7 +119,8 @@ public sealed class HubFinder
         {
             var json = await http.GetStringAsync(HubClient.Url(ep, "/api/v1/info"), ct);
             var info = JsonSerializer.Deserialize<PcInfo>(json, MobileProtocol.Json);
-            if (info is null || !code.MatchesPcId(info.PcId)) return null;
+            // Another service on the port may answer with any JSON: no pcId means not a Homebase PC.
+            if (info is null || string.IsNullOrEmpty(info.PcId) || !code.MatchesPcId(info.PcId)) return null;
             return new FoundHub(info, ep with { CertSha256 = ep.Tls ? pin : null });
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or SocketException or IOException)

@@ -62,8 +62,8 @@ public sealed class TailscaleAddressResolver
                 CreateNoWindow = true,
             });
             if (proc is null) return null;
-            var output = proc.StandardOutput.ReadToEnd();
-            if (!proc.WaitForExit(5000)) { proc.Kill(); return null; }
+            var output = ReadOutput(proc);
+            if (output is null) return null;
             return ParseSelfDnsName(output);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or JsonException or InvalidOperationException)
@@ -90,8 +90,8 @@ public sealed class TailscaleAddressResolver
                 CreateNoWindow = true,
             });
             if (proc is null) return Array.Empty<IPAddress>();
-            var output = proc.StandardOutput.ReadToEnd();
-            if (!proc.WaitForExit(5000)) { proc.Kill(); return Array.Empty<IPAddress>(); }
+            var output = ReadOutput(proc);
+            if (output is null) return Array.Empty<IPAddress>();
             return ParsePeerAddresses(output);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or JsonException or InvalidOperationException)
@@ -99,6 +99,21 @@ public sealed class TailscaleAddressResolver
             _logger.LogInformation("Tailscale peers unavailable: {Message}", ex.Message);
             return Array.Empty<IPAddress>();
         }
+    }
+
+    /// <summary>
+    /// The CLI's stdout, or null when it doesn't finish within 5 s (then it is killed). Reading
+    /// asynchronously keeps a CLI that never closes stdout from blocking the caller forever.
+    /// </summary>
+    private static string? ReadOutput(Process proc)
+    {
+        var read = proc.StandardOutput.ReadToEndAsync();
+        if (!read.Wait(TimeSpan.FromSeconds(5)) || !proc.WaitForExit(1000))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            return null;
+        }
+        return read.Result;
     }
 
     public static IReadOnlyList<IPAddress> ParsePeerAddresses(string statusJson)
