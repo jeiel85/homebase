@@ -229,6 +229,18 @@ public sealed class NotificationForwardingService : BackgroundService
         }
     }
 
+    /**
+     * The push id of a relayed batch, the same on every PC that relays it: derived from the ids the
+     * notifications carried from their source device. A phone paired with two PCs gets the same
+     * relayed notification from both and shows it once (the app drops a repeated id).
+     */
+    internal static Guid RelayId(ToastBatch batch)
+    {
+        var ids = batch.Items.Select(i => i.Id ?? $"{i.SourceApp}|{i.Title}|{i.Body}|{i.At.ToUnixTimeMilliseconds()}");
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("relay|" + string.Join('|', ids)));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+
     public static OutboundNotification ToOutbound(ToastBatch batch, bool telegramFallback, DateTimeOffset now)
     {
         var origin = batch.Origin;
@@ -269,7 +281,7 @@ public sealed class NotificationForwardingService : BackgroundService
             if (origin.SkipPushHashes.Count > 0) metadata[PushRelay.SkipHashesKey] = string.Join(',', origin.SkipPushHashes);
         }
         return new OutboundNotification(
-            Guid.NewGuid(),
+            origin is null ? Guid.NewGuid() : RelayId(batch),
             origin is null ? "windows-toast" : DeviceCategory,
             OutboundPriority.Info,
             title,

@@ -29,10 +29,16 @@ import kotlinx.coroutines.flow.update
 object MeshSync {
     private const val TAG = "HomebaseMesh"
 
-    private val _hubs = MutableStateFlow<Map<String, DevicesResponse>>(emptyMap())
+    /** How long a PC's answer is trusted for "online": the PC's own window (DeviceStatusBoard.OnlineWindow). */
+    const val FRESH_MS = 2 * 60_000L
+
+    /** A PC's device list and when this phone received it (System.currentTimeMillis). */
+    data class HubView(val response: DevicesResponse, val receivedAt: Long)
+
+    private val _hubs = MutableStateFlow<Map<String, HubView>>(emptyMap())
 
     /** pcId → that PC's last device list. */
-    val hubs: StateFlow<Map<String, DevicesResponse>> = _hubs
+    val hubs: StateFlow<Map<String, HubView>> = _hubs
 
     /** This phone's own state, as far as Android tells it without extra permissions. */
     fun report(context: Context): PresenceReport {
@@ -63,7 +69,7 @@ object MeshSync {
     suspend fun reportTo(context: Context, api: HomebaseApi, pc: PcEntry) {
         try {
             val devices = api.presence(pc, report(context)) ?: return
-            _hubs.update { it + (pc.pcId to devices) }
+            _hubs.update { it + (pc.pcId to HubView(devices, System.currentTimeMillis())) }
         } catch (e: Exception) {
             Log.i(TAG, "presence to ${pc.name} skipped: ${e.message}")
         }
@@ -81,15 +87,19 @@ object MeshSync {
     /**
      * Every device the PCs know, without this phone itself and without the PCs already in the list
      * (they have their own cards). A device listed by two PCs (a phone paired with both) shows once,
-     * with its freshest state.
+     * with its freshest state. "Online" from a PC answer older than [FRESH_MS] (that PC is out of
+     * reach now) is not trusted: nobody can vouch for the device any more.
      */
-    fun otherDevices(hubs: Map<String, DevicesResponse>, myPcs: List<PcEntry>): List<OtherDevice> {
+    fun otherDevices(hubs: Map<String, HubView>, myPcs: List<PcEntry>, now: Long = System.currentTimeMillis()): List<OtherDevice> {
         val myDeviceIds = myPcs.map { it.deviceId }.toSet()
-        val myPcNames = myPcs.map { it.name.lowercase() }.toSet() + hubs.values.map { it.hub.pcName.lowercase() }
+        val myPcNames = myPcs.map { it.name.lowercase() }.toSet() + hubs.values.map { it.response.hub.pcName.lowercase() }
         val merged = LinkedHashMap<String, OtherDevice>()
-        for ((pcId, response) in hubs) {
+        for ((pcId, view) in hubs) {
+            val response = view.response
+            val stale = now - view.receivedAt > FRESH_MS
             val hubName = response.hub.pcName.ifBlank { myPcs.firstOrNull { it.pcId == pcId }?.name ?: "PC" }
-            for (d in response.devices) {
+            for (listed in response.devices) {
+                val d = if (stale && listed.online) listed.copy(online = false) else listed
                 if (d.deviceId in myDeviceIds) continue
                 if (d.kind == DeviceKind.PC && d.name.lowercase() in myPcNames) continue
                 val key = "${d.kind}|${d.name}|${d.model ?: ""}"

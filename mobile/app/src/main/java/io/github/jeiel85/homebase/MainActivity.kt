@@ -81,7 +81,12 @@ class MainActivity : ComponentActivity() {
                         route == ROUTE_SETTINGS -> SettingsScreen(store, api, onBack = { route = "" })
                         route == "+" -> PairScreen(
                             store, api,
-                            onDone = { pairingLink = null; route = it.pcId },
+                            onDone = {
+                                pairingLink = null
+                                route = it.pcId
+                                // The first pairing is when the background state report becomes needed (M-27).
+                                PresenceScheduler.sync(this@MainActivity)
+                            },
                             onBack = { pairingLink = null; route = "" },
                             link = pairingLink,
                         )

@@ -19,8 +19,10 @@ class MeshSyncTest {
     private fun dev(id: String, name: String, kind: String = DeviceKind.PHONE, online: Boolean = true, seen: String? = null) =
         DeviceEntry(id, name, kind, null, seen, online, null)
 
-    private fun hub(name: String, vararg devices: DeviceEntry) =
-        DevicesResponse(HubEntry("x", name, "0.22.0", null), devices.toList())
+    private val now = 10_000_000L
+
+    private fun hub(name: String, vararg devices: DeviceEntry, receivedAt: Long = now) =
+        MeshSync.HubView(DevicesResponse(HubEntry("x", name, "0.22.0", null), devices.toList()), receivedAt)
 
     @Test
     fun this_phone_and_pcs_already_in_the_list_are_left_out() {
@@ -30,7 +32,7 @@ class MeshSyncTest {
             "B" to hub("WORK-PC", dev("meOnB", "My phone"), dev("laptop", "LAPTOP", DeviceKind.PC, online = false)),
         )
 
-        val others = MeshSync.otherDevices(hubs, mine)
+        val others = MeshSync.otherDevices(hubs, mine, now)
 
         // PCs first, then phones; the linked laptop is new to this phone, WORK-PC is already a card.
         assertEquals(listOf("LAPTOP", "Galaxy Tab"), others.map { it.entry.name })
@@ -45,11 +47,30 @@ class MeshSyncTest {
             "B" to hub("WORK-PC", dev("t2", "Galaxy Tab", online = true, seen = "2026-11-14T09:00:00+00:00")),
         )
 
-        val only = MeshSync.otherDevices(hubs, mine).single()
+        val only = MeshSync.otherDevices(hubs, mine, now).single()
 
         assertTrue(only.entry.online)
         assertEquals("t2", only.entry.deviceId)
         assertEquals(listOf("HOME-PC", "WORK-PC"), only.via)
+    }
+
+    @Test
+    fun online_from_a_pc_that_went_quiet_expires() {
+        val mine = listOf(pc("A", "HOME-PC", "me1"))
+        val hubs = mapOf("A" to hub("HOME-PC", dev("t1", "Galaxy Tab", online = true), receivedAt = now - MeshSync.FRESH_MS - 1))
+
+        assertFalse(MeshSync.otherDevices(hubs, mine, now).single().entry.online)
+        assertTrue(MeshSync.otherDevices(hubs, mine, now - 2).single().entry.online)
+    }
+
+    @Test
+    fun a_relayed_push_seen_from_a_second_pc_is_dropped() {
+        val (first, kept) = io.github.jeiel85.homebase.push.RecentPushIds.firstSighting(emptyList(), "n1", now)
+        assertTrue(first)
+        assertFalse(io.github.jeiel85.homebase.push.RecentPushIds.firstSighting(kept, "n1", now + 1_000).first)
+        assertTrue(io.github.jeiel85.homebase.push.RecentPushIds.firstSighting(kept, "n2", now + 1_000).first)
+        val later = now + io.github.jeiel85.homebase.push.RecentPushIds.WINDOW_MS + 1
+        assertTrue(io.github.jeiel85.homebase.push.RecentPushIds.firstSighting(kept, "n1", later).first)
     }
 
     @Test

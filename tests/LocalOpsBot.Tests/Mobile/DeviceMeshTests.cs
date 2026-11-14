@@ -118,6 +118,23 @@ public class RelayBundlingTests
     }
 
     [Fact]
+    public void Two_pcs_relaying_the_same_notification_give_it_the_same_push_id()
+    {
+        // Phone X posts notification n1 to PCs A and B; both push it to phone Y, which keeps one.
+        ToastBatch At(string hubDevice) => new("카카오톡",
+            new[] { new ToastItem("카카오톡", "엄마", null, _time.GetUtcNow(), new ToastOrigin(hubDevice, "X", false, Array.Empty<string>()), "n1") }, 1);
+
+        var a = NotificationForwardingService.ToOutbound(At("x-on-a"), false, _time.GetUtcNow());
+        var b = NotificationForwardingService.ToOutbound(At("x-on-b"), false, _time.GetUtcNow().AddSeconds(2));
+        var other = NotificationForwardingService.ToOutbound(new ToastBatch("카카오톡",
+            new[] { new ToastItem("카카오톡", "엄마", null, _time.GetUtcNow(), new ToastOrigin("x-on-a", "X", false, Array.Empty<string>()), "n2") }, 1),
+            false, _time.GetUtcNow());
+
+        Assert.Equal(a.NotificationId, b.NotificationId);
+        Assert.NotEqual(a.NotificationId, other.NotificationId);
+    }
+
+    [Fact]
     public void A_relayed_batch_is_labelled_with_its_device_and_carries_the_skip_list()
     {
         var origin = new ToastOrigin("p1", "Galaxy S24", false, new[] { new string('a', 64) });

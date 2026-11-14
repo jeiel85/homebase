@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.mesh.MeshSync
+import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import androidx.compose.runtime.collectAsState
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
@@ -92,6 +94,7 @@ fun PcListScreen(
     val status = remember { mutableStateMapOf<String, PcStatus>() }
     var confirmRemove by remember { mutableStateOf<PcEntry?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    var pollRounds by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -128,6 +131,7 @@ fun PcListScreen(
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 pollAll(pcs)
+                pollRounds++
                 delay(15_000)
             }
         }
@@ -153,7 +157,8 @@ fun PcListScreen(
     }
 
     val hubs by MeshSync.hubs.collectAsState()
-    val others = remember(hubs, pcs) { MeshSync.otherDevices(hubs, pcs) }
+    // Recomputed after every poll round too, so "online" from a PC that went quiet expires (FRESH_MS).
+    val others = remember(hubs, pcs, pollRounds) { MeshSync.otherDevices(hubs, pcs) }
     val hb = Hb.colors
     val online = pcs.count { status[it.pcId] is PcStatus.Online }
     Box(Modifier.fillMaxSize().background(hb.background)) {
@@ -236,6 +241,7 @@ fun PcListScreen(
                     PushNotifier.forgetPc(context, pc.pcId)
                     MeshSync.forget(pc.pcId)
                     store.remove(pc.pcId)
+                    PresenceScheduler.sync(context) // the last PC gone: stop the background report
                     pcs = store.all()
                     confirmRemove = null
                 }) { Text("삭제") }
