@@ -38,6 +38,7 @@ public sealed class HubLinkService : BackgroundService
     private readonly bool _allowLoopback;
     private readonly ConcurrentDictionary<string, Link> _links = new(StringComparer.Ordinal);
     private CancellationToken _stopping;
+    private readonly HubFinder? _finder;
 
     private sealed class Link(LinkedHub hub, HubClient client, CancellationTokenSource cts)
     {
@@ -60,8 +61,10 @@ public sealed class HubLinkService : BackgroundService
         TimeProvider time,
         ILogger<HubLinkService> logger,
         NotificationForwardingService? forwarding = null,
-        bool allowLoopback = false)
+        bool allowLoopback = false,
+        HubFinder? finder = null)
     {
+        _finder = finder;
         _store = store;
         _devices = devices;
         _status = status;
@@ -93,8 +96,16 @@ public sealed class HubLinkService : BackgroundService
         .ToList();
 
     /// <summary>Pairs with the PC behind a pairing link (the other Tray's QR link) and starts the link.</summary>
+    /// <summary>
+    /// Pairs with the PC behind a pairing link or a 24-word connection code (DECISIONS M-29, M-30)
+    /// and starts the link.
+    /// </summary>
     public async Task<HubLinkResult> LinkAsync(string link, CancellationToken ct)
     {
+        if (ConnectionCode.TryDecode(link) is { } code) return await LinkWithCodeAsync(code, ct);
+        if (LooksLikeWords(link))
+            return new HubLinkResult(false, null, "invalid_code",
+                "연결 코드가 맞지 않습니다. 24단어를 빠짐없이, 순서대로 붙여 넣었는지 확인하세요.");
         var json = PairingLink.DecodeJson(link.Trim()) ?? (link.TrimStart().StartsWith('{') ? link.Trim() : null);
         PairingOffer? offer = null;
         if (json is not null)
@@ -106,7 +117,34 @@ public sealed class HubLinkService : BackgroundService
             return new HubLinkResult(false, null, "invalid_link", "Homebase 페어링 링크가 아닙니다.");
         if (offer.PcId == _devices.PcId)
             return new HubLinkResult(false, offer.PcName, "self", "이 PC 자신의 링크입니다. 다른 PC의 링크를 붙여 넣으세요.");
+        return await LinkWithOfferAsync(offer, ct);
+    }
 
+    /// <summary>Several plain words and no link or JSON: meant as a code, so say what is wrong with it.</summary>
+    private static bool LooksLikeWords(string text)
+    {
+        var t = text.Trim();
+        return !t.Contains("://") && !t.StartsWith('{') && t.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length >= 6;
+    }
+
+    private async Task<HubLinkResult> LinkWithCodeAsync(ConnectionCodeData code, CancellationToken ct)
+    {
+        if (code.MatchesPcId(_devices.PcId))
+            return new HubLinkResult(false, null, "self", "이 PC 자신의 연결 코드입니다. 다른 PC에서 받은 코드를 붙여 넣으세요.");
+        if (_finder is null) return new HubLinkResult(false, null, "off", "연결 코드를 쓸 수 없습니다.");
+        var found = await _finder.FindAsync(code, ct);
+        if (found is null)
+            return new HubLinkResult(false, null, "not_found",
+                "같은 네트워크(LAN)나 Tailscale에서 그 PC를 찾지 못했습니다. 두 PC가 같은 Wi-Fi 또는 같은 tailnet인지, " +
+                "코드가 5분 안의 것인지 확인하세요. 밖에서 Cloudflare로만 닿는 PC는 '링크 복사'의 링크를 쓰세요.");
+        _logger.LogInformation("Connection code: found {Name} via {Transport} {Host}.", found.Info.PcName, found.Endpoint.Transport, found.Endpoint.Host);
+        var offer = new PairingOffer(1, found.Info.PcId, found.Info.PcName, Array.Empty<string>(), found.Endpoint.Port,
+            code.PairingCode, _time.GetUtcNow() + PairingService.CodeLifetime, new[] { found.Endpoint });
+        return await LinkWithOfferAsync(offer, ct);
+    }
+
+    private async Task<HubLinkResult> LinkWithOfferAsync(PairingOffer offer, CancellationToken ct)
+    {
         var client = new HubClient(_allowLoopback);
         var reply = await client.PostAsync(offer.Endpoints, "/api/v1/pair",
             new PairRequest(offer.Code, Environment.MachineName, "Windows", DeviceKind.Pc), null, CallTimeout, ct);

@@ -34,7 +34,12 @@
                 Click="NewCode_Click"/>
         <Button x:Name="CopyLinkButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneCopyLink}"
                 Margin="8,0,0,0" Click="CopyLink_Click"/>
+        <Button x:Name="CopyCodeButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneCopyCode}"
+                Margin="8,0,0,0" Click="CopyCode_Click"/>
       </StackPanel>
+      <!-- The 24-word connection code (DECISIONS M-30), shown once asked for; same lifetime as the QR. -->
+      <TextBox x:Name="CodeBox" Visibility="Collapsed" IsReadOnly="True" TextWrapping="Wrap" Margin="0,8,0,0"
+               FontFamily="Consolas" FontSize="13" Padding="8" HorizontalAlignment="Stretch"/>
       <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
                  Margin="0,6,0,0" Text="{x:Static local:L.PhoneCopyLinkHint}"/>
     </StackPanel>

@@ -134,7 +134,7 @@ public partial class PhoneConnectPanel : UserControl
 
     private void ShowReady()
     {
-        StatusText.Text = "휴대폰의 Homebase 앱에서 '+ PC 추가'를 누르고 아래 QR 코드를 스캔하세요. " +
+        StatusText.Text = "휴대폰의 Homebase 앱에서 '기기 추가'를 누르고 아래 QR 코드를 스캔하세요. " +
                           "앱이 같은 Wi-Fi → Tailscale → Cloudflare 순으로 되는 경로를 자동으로 고릅니다.";
         PairPanel.Visibility = Visibility.Visible;
     }
@@ -253,6 +253,9 @@ public partial class PhoneConnectPanel : UserControl
             // An https link (M-20): the phone's own camera opens the app, or the install guide when it's missing.
             QrImage.Source = RenderQr(PairingLink.Build(offer));
             _offer = offer;
+            // A shown code belongs to the previous offer; it can't pair any more.
+            CodeBox.Visibility = Visibility.Collapsed;
+            CodeBox.Text = "";
             _offerEndpointsKey = EndpointsKey(offer.Endpoints);
             _expiresAt = offer.ExpiresAt;
             UpdateCountdown();
@@ -313,6 +316,28 @@ public partial class PhoneConnectPanel : UserControl
         {
             Clipboard.SetText(PairingLink.Build(_offer));
             CountdownText.Text = L.PhoneCopyLinkDone;
+        }
+        catch (System.Runtime.InteropServices.COMException) { CountdownText.Text = L.PhoneCopyLinkFailed; }
+    }
+
+    private void CopyCode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_offer is null || _offer.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            CountdownText.Text = L.PhoneCopyLinkExpired;
+            return;
+        }
+        var code = ConnectionCode.Encode(_offer);
+        if (code is null) return;
+        // Four lines of six numbered words: easy to read aloud or check against the other screen.
+        var words = code.Split(' ');
+        CodeBox.Text = string.Join(Environment.NewLine, Enumerable.Range(0, 4).Select(row =>
+            string.Join("  ", Enumerable.Range(row * 6, 6).Select(i => $"{i + 1,2}. {words[i]}"))));
+        CodeBox.Visibility = Visibility.Visible;
+        try
+        {
+            Clipboard.SetText(code);
+            CountdownText.Text = L.PhoneCopyCodeDone;
         }
         catch (System.Runtime.InteropServices.COMException) { CountdownText.Text = L.PhoneCopyLinkFailed; }
     }

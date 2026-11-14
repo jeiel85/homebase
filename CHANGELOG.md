@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.24.0 — Link PCs with a 24-word code
+
+### Added
+- **Link two PCs with a 24-word code.** Settings › Phone has a new "코드 복사" (COPY CODE) button next to
+  "링크 복사": it copies the pairing as 24 words (the BIP39 list, like Brave Sync) and shows them
+  numbered. Paste them into "다른 PC 연결" on the other PC, which finds this one on the same network
+  or tailnet by itself and links (DECISIONS M-30). The link still works too, and is the way when the
+  PCs only reach each other through Cloudflare. A code lasts as long as the QR: 5 minutes, one use.
+
+### Changed
+- The phone app's add button and screen now say "기기 추가" (add device) instead of "PC 추가", and the
+  screen explains how other phones and other PCs join.
+
 ## v0.23.0 — Your PCs and phones see each other
 
 ### Added
