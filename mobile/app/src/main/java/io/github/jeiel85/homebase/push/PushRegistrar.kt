@@ -30,7 +30,8 @@ object PushRegistrar {
     /** pcId → what that PC accepted: its device id (a re-pair issues a new one) and the subscription. */
     private val synced = ConcurrentHashMap<String, String>()
 
-    private fun syncKey(pc: PcEntry, s: PushSubscription) = "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}"
+    private fun syncKey(pc: PcEntry, s: PushSubscription) =
+        "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}|${s.mutedCategories.joinToString(",")}"
 
     fun ensureAsync(context: Context, api: HomebaseApi, pc: PcEntry) {
         val app = context.applicationContext

@@ -88,6 +88,12 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a push from an unpaired PC")
             return
         }
+        // The PC skips muted categories itself (M-25); this catches PCs from before that and the
+        // moments between changing the choice and the PC hearing about it.
+        if (NotificationGroups.isMuted(message.category, state.mutedCategories)) {
+            Log.i(TAG, "dropped a push in muted category ${message.category}")
+            return
+        }
         PushNotifier.show(context, message)
     }
 

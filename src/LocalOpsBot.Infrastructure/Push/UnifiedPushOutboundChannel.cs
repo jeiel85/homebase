@@ -17,6 +17,8 @@ namespace LocalOpsBot.Infrastructure.Push;
 /// <item>429: the endpoint is skipped until its <c>Retry-After</c> (default 60 s, at most 1 h) passes.</item>
 /// <item>404/410: the endpoint no longer exists; the subscription is dropped (the app re-registers on its next connect).</item>
 /// <item>Success when at least one phone accepted the message.</item>
+/// <item>A phone that muted the category (DECISIONS M-25) is skipped. When every phone muted it, that
+/// is a success with nothing sent: the user chose not to receive it, so it must not fall back to Telegram.</item>
 /// </list>
 /// Sending never touches the live sampler, so it does not break "collect only while watched" (M-13).
 /// </summary>
@@ -57,11 +59,18 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         if (targets.Count == 0)
             return new OutboundAttemptResult(ChannelId, false, OutboundFailureKind.NotConfigured, "No phone registered for push.");
 
+        var wanted = targets.Where(t => !t.Subscription.Mutes(notification.Category)).ToList();
+        if (wanted.Count == 0)
+        {
+            _logger.LogInformation("Push skipped: every phone muted category {Category}", notification.Category);
+            return new OutboundAttemptResult(ChannelId, true);
+        }
+
         var plaintext = PushPayload.Serialize(ToMessage(notification));
         var failures = new List<(OutboundFailureKind Kind, string Error)>();
         var delivered = 0;
 
-        foreach (var target in targets)
+        foreach (var target in wanted)
         {
             var (ok, kind, error) = await SendOneAsync(target, plaintext, TtlSeconds(notification), Urgency(notification.Priority), ct);
             if (ok) delivered++;

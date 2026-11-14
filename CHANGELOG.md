@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.21.0 — Choose which notifications reach the phone
+
+### Added
+- **Choose what kinds of PC notification you get on the phone.** Settings → 알림 → "받을 알림" has a
+  switch for each kind — Windows app notifications, watch alerts (process, service, website, port),
+  event log, PC health advice, boot — and two shortcuts, "모두 받기" and "Windows 알림만". The choice
+  goes to every paired PC, which then doesn't send what's off, so muted notifications no longer use
+  the push relay's daily allowance. Muting one app or one PC still works in Android's notification
+  settings. A kind turned off on every phone is not sent to Telegram instead (DECISIONS M-25).
+- The PC needs this version too; with an older PC the phone hides muted notifications itself.
+
 ## v0.20.0 — A settings screen for the phone app
 
 ### Added

@@ -51,7 +51,8 @@ public class ProtocolGoldenTests
     public static PushSubscriptionRequest SampleSubscription() => new(MobileProtocol.Schema,
         "https://ntfy.sh/upK3x9QeZt0b2Wm7?up=1",
         "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
-        "BTBZMqHH6r4Tts7J_aSIgg");
+        "BTBZMqHH6r4Tts7J_aSIgg",
+        ["advisor", "event_log"]);
 
     public static PushMessage SamplePushMessage() => new(MobileProtocol.Schema,
         "5b0e1c2d3f4a49b8a1c2d3e4f5a6b7c8", "6f1c0d2e9b8a4c7d", "HOME-PC", "windows-toast", PushPriority.Info,

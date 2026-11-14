@@ -421,15 +421,18 @@ public sealed class MobileApiServer : BackgroundService
                     return (400, Error("invalid_subscription", invalid));
 
                 var existing = _devices.PushTargets().FirstOrDefault(t => t.DeviceId == device.DeviceId)?.Subscription;
-                var unchanged = existing is not null && existing.Endpoint == req!.Endpoint
-                    && existing.P256dh == req.P256dh && existing.Auth == req.Auth;
+                var muted = PushCategories.Normalize(req!.MutedCategories);
+                var unchanged = existing is not null && existing.Endpoint == req.Endpoint
+                    && existing.P256dh == req.P256dh && existing.Auth == req.Auth
+                    && PushCategories.SameMuted(existing.MutedCategories, muted);
                 if (!unchanged)
                 {
                     // The app re-registers on every reconnect; only a real change rewrites state.json.
                     _devices.SetPushSubscription(device.DeviceId,
-                        new PushSubscription(req!.Endpoint, req.P256dh, req.Auth, DateTimeOffset.UtcNow));
-                    _logger.LogInformation("Push subscription {Action} for {Name} ({DeviceId}) at {Host}.",
-                        existing is null ? "registered" : "updated", device.Name, device.DeviceId, new Uri(req.Endpoint).Host);
+                        new PushSubscription(req.Endpoint, req.P256dh, req.Auth, DateTimeOffset.UtcNow, muted));
+                    _logger.LogInformation("Push subscription {Action} for {Name} ({DeviceId}) at {Host}; muted: {Muted}.",
+                        existing is null ? "registered" : "updated", device.Name, device.DeviceId, new Uri(req.Endpoint).Host,
+                        muted is null ? "none" : string.Join(",", muted));
                 }
                 return (200, Json(new PushSubscriptionResponse(MobileProtocol.Schema, device.DeviceId, true)));
             }

@@ -78,7 +78,11 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
         ) {
             item {
                 SectionLabel("알림")
-                SettingsPlate { PushSettings(store, api, pcCount) }
+                SettingsPlate {
+                    PushSettings(store, api, pcCount)
+                    Divider()
+                    NotificationCategories(store, api)
+                }
             }
             item {
                 SectionLabel("화면")

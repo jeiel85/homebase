@@ -3,6 +3,7 @@ package io.github.jeiel85.homebase.push
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.ProtocolException
 import io.github.jeiel85.homebase.net.SCHEMA
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.time.OffsetDateTime
@@ -15,12 +16,19 @@ import javax.crypto.spec.SecretKeySpec
  */
 
 /** What this phone registers with each PC: its UnifiedPush endpoint and RFC 8291 keys (base64url). */
-data class PushSubscription(val endpoint: String, val p256dh: String, val auth: String) {
+data class PushSubscription(
+    val endpoint: String,
+    val p256dh: String,
+    val auth: String,
+    /** Categories this phone does not want (M-25); the PC skips them. Sorted so equal choices compare equal. */
+    val mutedCategories: List<String> = emptyList(),
+) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
         .put("endpoint", endpoint)
         .put("p256dh", p256dh)
         .put("auth", auth)
+        .put("mutedCategories", JSONArray(mutedCategories.sorted()))
 }
 
 data class PushSubscriptionResponse(val deviceId: String, val registered: Boolean) {

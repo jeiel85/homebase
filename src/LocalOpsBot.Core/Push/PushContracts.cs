@@ -7,15 +7,48 @@ namespace LocalOpsBot.Core.Push;
 /// <summary>
 /// <c>POST /api/v1/push</c> body: the phone's UnifiedPush endpoint and its RFC 8291 subscription
 /// keys, both base64url without padding (<c>docs/MOBILE_PROTOCOL.md</c>, fixture
-/// <c>push-subscription.v1.json</c>).
+/// <c>push-subscription.v1.json</c>). <see cref="MutedCategories"/> lists the notification
+/// categories the phone does not want (DECISIONS M-25); absent means everything, so apps from
+/// before M-25 keep receiving all of them.
 /// </summary>
-public sealed record PushSubscriptionRequest(int Schema, string Endpoint, string P256dh, string Auth);
+public sealed record PushSubscriptionRequest(
+    int Schema, string Endpoint, string P256dh, string Auth, IReadOnlyList<string>? MutedCategories = null);
 
 /// <summary>Answer to <c>POST</c>/<c>DELETE /api/v1/push</c>.</summary>
 public sealed record PushSubscriptionResponse(int Schema, string DeviceId, bool Registered);
 
 /// <summary>A stored subscription (in <c>state.json</c>, next to the paired device it belongs to).</summary>
-public sealed record PushSubscription(string Endpoint, string P256dh, string Auth, DateTimeOffset UpdatedAt);
+public sealed record PushSubscription(
+    string Endpoint, string P256dh, string Auth, DateTimeOffset UpdatedAt, IReadOnlyList<string>? MutedCategories = null)
+{
+    /// <summary>Whether this phone asked not to receive <paramref name="category"/>. The Tray test always goes through.</summary>
+    public bool Mutes(string category) =>
+        category != PushCategories.Test && MutedCategories is { Count: > 0 } muted && muted.Contains(category, StringComparer.Ordinal);
+}
+
+/// <summary>Notification categories a phone can turn off (DECISIONS M-25).</summary>
+public static class PushCategories
+{
+    /// <summary>Tray "send test" — never muted, so the user can always check the path works.</summary>
+    public const string Test = "test";
+
+    public const int MaxMuted = 32;
+    public const int MaxLength = 64;
+
+    /// <summary>Sorted, distinct, or <c>null</c> when nothing is muted — so equal choices compare equal.</summary>
+    public static IReadOnlyList<string>? Normalize(IReadOnlyList<string>? muted) =>
+        muted is null || muted.Count == 0
+            ? null
+            : muted.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+
+    public static bool SameMuted(IReadOnlyList<string>? a, IReadOnlyList<string>? b) =>
+        (Normalize(a) ?? []).SequenceEqual(Normalize(b) ?? [], StringComparer.Ordinal);
+
+    /// <summary>A category id: 1–64 of <c>a-z 0-9 _ -</c>.</summary>
+    public static bool IsValid(string? category) =>
+        !string.IsNullOrEmpty(category) && category.Length <= MaxLength
+        && category.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '_' or '-');
+}
 
 /// <param name="TokenSha256">
 /// Lowercase hex SHA-256 of the device's bearer token: the key that signs endpoint announcements
@@ -135,6 +168,9 @@ public static class PushPayload
         {
             return "Subscription keys are invalid.";
         }
+        if (request.MutedCategories is { } muted
+            && (muted.Count > PushCategories.MaxMuted || !muted.All(PushCategories.IsValid)))
+            return "Muted categories are invalid.";
         return null;
     }
 
