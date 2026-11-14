@@ -228,18 +228,22 @@ public static class L
         "Turning this on or changing paths asks for administrator approval, then the Homebase service restarts.",
         "켜거나 경로를 바꾸면 관리자 승인 후 Homebase 서비스가 다시 시작됩니다.");
     public static string PhoneCopyLink => T("COPY LINK", "링크 복사");
+    public static string PhoneCopyCode => T("COPY CODE", "코드 복사");
+    public static string PhoneCopyCodeDone => T(
+        "24-word code copied — paste it on the other PC within the time left.",
+        "24단어 코드를 복사했습니다 — 남은 시간 안에 다른 PC에 붙여 넣으세요.");
     public static string PhoneCopyLinkHint => T(
-        "To link another PC, paste this link into \"Link another PC\" on that PC.",
-        "다른 PC와 연결하려면 이 링크를 그 PC의 \"다른 PC 연결\"에 붙여 넣으세요.");
+        "To link another PC, paste the link or the 24-word code into \"Link another PC\" on that PC. The code works on the same network or tailnet; the link works everywhere.",
+        "다른 PC와 연결하려면 링크나 24단어 코드를 그 PC의 \"다른 PC 연결\"에 붙여 넣으세요. 코드는 같은 네트워크·Tailscale에서, 링크는 어디서나 됩니다.");
     public static string PhoneCopyLinkDone => T("Link copied — paste it on the other PC within the time left.", "링크를 복사했습니다 — 남은 시간 안에 다른 PC에 붙여 넣으세요.");
     public static string PhoneCopyLinkExpired => T("The code expired — press NEW CODE first.", "코드가 만료됐습니다 — 먼저 새 코드를 누르세요.");
     public static string PhoneCopyLinkFailed => T("Couldn't copy to the clipboard. Try again.", "클립보드에 복사하지 못했습니다. 다시 누르세요.");
     public static string PhoneLinkHeader => T("LINK ANOTHER PC", "다른 PC 연결");
     public static string PhoneLinkIntro => T(
-        "Paste the link from the other PC's Settings › Phone (COPY LINK). Both PCs then see each other's status and get each other's notifications; phones paired with either PC see both.",
-        "다른 PC의 설정 → 휴대폰에서 '링크 복사'로 받은 링크를 붙여 넣으세요. 두 PC가 서로의 상태를 보고 서로의 알림을 받으며, 어느 쪽에 붙은 휴대폰이든 둘 다 볼 수 있습니다.");
+        "Paste the link (COPY LINK) or the 24-word code (COPY CODE) from the other PC's Settings › Phone. Both PCs then see each other's status and get each other's notifications; phones paired with either PC see both.",
+        "다른 PC의 설정 → 휴대폰에서 받은 링크('링크 복사')나 24단어 코드('코드 복사')를 붙여 넣으세요. 두 PC가 서로의 상태를 보고 서로의 알림을 받으며, 어느 쪽에 붙은 휴대폰이든 둘 다 볼 수 있습니다.");
     public static string PhoneLinkButton => T("LINK", "연결");
-    public static string PhoneLinking => T("Linking…", "연결하는 중…");
+    public static string PhoneLinking => T("Linking… (a code searches the network, up to about 10 seconds)", "연결하는 중… (코드는 네트워크에서 그 PC를 찾느라 10초쯤 걸릴 수 있습니다)");
     public static string PhoneLinked(string name) => T($"Linked to {name}.", $"{name}에 연결했습니다.");
     public static string PhoneLinkFailed => T("Couldn't link.", "연결하지 못했습니다.");
     public static string PhoneUnlink => T("UNLINK", "연결 끊기");

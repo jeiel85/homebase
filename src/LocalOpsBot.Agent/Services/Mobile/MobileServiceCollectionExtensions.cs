@@ -72,7 +72,10 @@ public static class MobileServiceCollectionExtensions
             return new HubLinkService(
                 sp.GetRequiredService<HubStore>(), sp.GetRequiredService<IMobileDeviceStore>(),
                 new SystemStatusProbeAdapter(probe.Report), sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<ILogger<HubLinkService>>(), sp.GetService<NotificationForwardingService>());
+                sp.GetRequiredService<ILogger<HubLinkService>>(), sp.GetService<NotificationForwardingService>(),
+                finder: new HubFinder(
+                    HubFinder.NetworkCandidates(sp.GetRequiredService<TailscaleAddressResolver>(), sp.GetRequiredService<LanAddressResolver>()),
+                    sp.GetRequiredService<ILogger<HubFinder>>()));
         });
         services.AddHostedService(sp => sp.GetRequiredService<HubLinkService>());
         services.AddSingleton(sp => new MobileApiServer(
