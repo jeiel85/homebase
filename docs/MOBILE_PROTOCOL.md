@@ -93,6 +93,19 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
 - 두 구현이 맞는지는 [`push-message.v1.aes128gcm.txt`](mobile-protocol/push-message.v1.aes128gcm.txt)로 확인한다.
   .NET이 RFC 8291 부록 A의 서버 키·salt로 위 메시지를 암호화해 쓰고, Kotlin 테스트가 부록 A의 휴대폰 키로 복호화해 같은 메시지인지 본다.
 
+### 경로 알림 (M-23)
+
+PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 생기면 같은 방식으로 암호화한 **경로 알림**을 보낸다.
+앱은 경로를 연결에 성공한 뒤에만 `/api/v1/endpoints`로 받으므로, 이것이 없으면 옛 주소만 아는 앱은 다시 페어링해야 한다.
+
+- 평문([`push-endpoints.v1.json`](mobile-protocol/push-endpoints.v1.json)): `{schema: 1, kind: "endpoints", pcId, data, mac}`.
+  `data`는 UTF-8 JSON `{schema: 1, pcId, ts, endpoints}`의 base64url이고, `endpoints`는 `/api/v1/endpoints`와 같은 형식이다.
+  `mac`은 `data` 바이트의 HMAC-SHA256(base64url)이며, 키는 이 기기 Bearer 토큰의 SHA-256 원시 32바이트다. 픽스처는 토큰 `fixture-token`으로 서명했다.
+- 앱은 `kind`가 `endpoints`이면 알림을 띄우지 않고, 페어링된 PC의 토큰으로 MAC을 확인하고 안팎 `pcId`가 같은지 본 뒤 경로를 바꾼다.
+  마지막으로 반영한 경로 알림의 `ts`보다 새것만 받는다. 휴대폰 푸시 키는 모든 PC가 공유하므로, MAC이 없으면 한 PC가 다른 PC의 경로를 바꿀 수 있다.
+- PC는 경로 목록이 15초 간격으로 두 번 같고 이전에 알리지 않은 경로가 있을 때만 보낸다. 경로가 빠지기만 하면 보내지 않는다. `TTL` 86400초, `Urgency: normal`. 휴대폰마다 따로 기억하며, 받지 못한 휴대폰에만 5분 뒤 다시 보낸다.
+- 이전 앱은 `id`·`title`이 없으므로 이 메시지를 버린다.
+
 ### 앱 쪽 UnifiedPush 규약 (AND_3.1.0, 라이브러리 없이)
 
 - 배포자 찾기: `queryBroadcastReceivers(org.unifiedpush.android.distributor.REGISTER)`(매니페스트 `<queries>`). 하나면 자동으로 쓰고, 여럿이면 고르게 하고, 없으면 ntfy 설치를 안내한다.

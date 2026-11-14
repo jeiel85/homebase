@@ -130,7 +130,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         {
             return _state.Devices
                 .Where(d => d.Push is not null)
-                .Select(d => new PushTarget(d.DeviceId, d.Name, d.Push!))
+                .Select(d => new PushTarget(d.DeviceId, d.Name, d.Push!, d.TokenSha256))
                 .ToList();
         }
     }

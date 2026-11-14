@@ -16,6 +16,8 @@ data class PcEntry(
     val token: String,
     /** [Endpoint.key] of the path that worked last; preferred among equally good paths. */
     val lastGood: String? = null,
+    /** PC time (epoch ms) of the last path list received by push; older or replayed pushes are ignored. */
+    val pushedEndpointsAt: Long? = null,
 ) {
     /** Paths to try now, best first, for the phone's current network (DECISIONS M-18). */
     fun orderedEndpoints(net: LocalNetworks?): List<Endpoint> = RouteSelector.order(endpoints, net, lastGood)
@@ -66,6 +68,19 @@ class PcStore(context: Context) {
         save(list.map { if (it.pcId == pcId) it.copy(endpoints = endpoints) else it })
     }
 
+    /**
+     * Paths the PC pushed (DECISIONS M-23). Returns false when the PC isn't paired or the push is not
+     * newer than the last one applied (a relayed copy arriving late must not bring back old paths).
+     */
+    @Synchronized
+    fun applyPushedEndpoints(pcId: String, endpoints: List<Endpoint>, pcTimeMillis: Long): Boolean {
+        val list = all()
+        val pc = list.firstOrNull { it.pcId == pcId } ?: return false
+        if (!acceptsPush(pc, endpoints, pcTimeMillis)) return false
+        save(list.map { if (it.pcId == pcId) it.copy(endpoints = endpoints, pushedEndpointsAt = pcTimeMillis) else it })
+        return true
+    }
+
     private fun save(list: List<PcEntry>) {
         val arr = JSONArray()
         list.forEach { arr.put(toJson(it)) }
@@ -79,6 +94,7 @@ class PcStore(context: Context) {
         .put("deviceId", pc.deviceId)
         .put("token", encrypt(pc.token))
         .put("lastGood", pc.lastGood)
+        .apply { pc.pushedEndpointsAt?.let { put("pushedEndpointsAt", it) } }
 
     private fun fromJson(o: JSONObject): PcEntry? {
         val token = decrypt(o.optString("token")) ?: return null
@@ -90,6 +106,7 @@ class PcStore(context: Context) {
             deviceId = o.optString("deviceId"),
             token = token,
             lastGood = lastGood,
+            pushedEndpointsAt = if (o.has("pushedEndpointsAt")) o.optLong("pushedEndpointsAt") else null,
         )
     }
 
@@ -99,6 +116,10 @@ class PcStore(context: Context) {
     private fun decrypt(encoded: String): String? = cipher.decrypt(encoded)?.toString(Charsets.UTF_8)
 
     companion object {
+        /** Whether a pushed path list should replace [pc]'s: non-empty and newer than the last push applied. */
+        fun acceptsPush(pc: PcEntry, endpoints: List<Endpoint>, pcTimeMillis: Long): Boolean =
+            endpoints.isNotEmpty() && (pc.pushedEndpointsAt == null || pcTimeMillis > pc.pushedEndpointsAt)
+
         /**
          * Endpoints and last-good key from a stored entry. Entries saved before multi-path support
          * have `hosts` + `port` + `lastGoodHost` (Tailscale only); they are read as Tailscale endpoints.

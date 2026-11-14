@@ -17,7 +17,41 @@ public sealed record PushSubscriptionResponse(int Schema, string DeviceId, bool 
 /// <summary>A stored subscription (in <c>state.json</c>, next to the paired device it belongs to).</summary>
 public sealed record PushSubscription(string Endpoint, string P256dh, string Auth, DateTimeOffset UpdatedAt);
 
-public sealed record PushTarget(string DeviceId, string DeviceName, PushSubscription Subscription);
+/// <param name="TokenSha256">
+/// Lowercase hex SHA-256 of the device's bearer token: the key that signs endpoint announcements
+/// (<see cref="PushEndpoints"/>), which only this PC and that phone know.
+/// </param>
+public sealed record PushTarget(string DeviceId, string DeviceName, PushSubscription Subscription, string? TokenSha256 = null);
+
+/// <summary>
+/// Decrypted push that carries this PC's current paths instead of a notification (DECISIONS M-23).
+/// <see cref="Data"/> is base64url of a UTF-8 <see cref="PushEndpointsData"/>; <see cref="Mac"/> is
+/// base64url HMAC-SHA256 over those bytes, keyed with the raw SHA-256 of the device's token. Every
+/// paired PC shares the phone's push keys, so the MAC is what stops one PC from rewriting another's
+/// paths (and harvesting its token). Fixture <c>push-endpoints.v1.json</c>.
+/// </summary>
+public sealed record PushEndpointsEnvelope(int Schema, string Kind, string PcId, string Data, string Mac);
+
+/// <summary>The signed part of <see cref="PushEndpointsEnvelope"/>.</summary>
+public sealed record PushEndpointsData(int Schema, string PcId, DateTimeOffset Ts, IReadOnlyList<MobileEndpoint> Endpoints);
+
+public static class PushEndpoints
+{
+    public const string Kind = "endpoints";
+
+    /// <summary>The plaintext push for one device, signed with that device's token hash.</summary>
+    public static byte[] Serialize(string pcId, IReadOnlyList<MobileEndpoint> endpoints, DateTimeOffset ts, string tokenSha256Hex)
+    {
+        var data = JsonSerializer.SerializeToUtf8Bytes(new PushEndpointsData(MobileProtocol.Schema, pcId, ts, endpoints), MobileProtocol.Json);
+        var mac = System.Security.Cryptography.HMACSHA256.HashData(Convert.FromHexString(tokenSha256Hex), data);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(
+            new PushEndpointsEnvelope(MobileProtocol.Schema, Kind, pcId, Base64Url.Encode(data), Base64Url.Encode(mac)),
+            MobileProtocol.Json);
+        if (bytes.Length > WebPushEncryption.MaxPlaintextBytes)
+            throw new ArgumentException($"Endpoint list is too long for one push ({bytes.Length} bytes).", nameof(endpoints));
+        return bytes;
+    }
+}
 
 /// <summary>
 /// The decrypted push payload (UTF-8 JSON, fixture <c>push-message.v1.json</c>). The app shows one

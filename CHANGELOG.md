@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.18.1 — The phone finds the PC again after a restart
+
+### Fixed
+- **A paired phone no longer loses the PC after the PC restarts.** The Cloudflare Quick Tunnel
+  address changes on every Agent start (an update, a reboot), and the app only learned new paths
+  after it had connected, so a phone that could reach the PC only through the tunnel showed
+  "PC에 닿지 않습니다" until it was paired again. The PC now pushes its new paths to paired phones
+  (signed per phone, so one PC can't rewrite another's), and a retrying phone picks them up on its
+  next try. Needs push notifications on in the app; without them the screen now says to re-pair
+  (DECISIONS M-23).
 ## v0.18.0 — Update notifications, phone-viewing indicator
 
 ### Added

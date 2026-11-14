@@ -91,6 +91,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
                 PushRegistrar.ensureAsync(context, api, store.get(pc.pcId) ?: pc)
             },
             onEndpoints = { list -> store.updateEndpoints(pc.pcId, list) },
+            latest = { store.get(pc.pcId) },
         )
     }
     val state by flow.collectAsStateWithLifecycle(initialValue = LiveState.Connecting)
@@ -120,7 +121,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
         }
         val snapshot = last
         if (snapshot == null) {
-            if (state is LiveState.Connecting || state is LiveState.Retrying) Waiting(state)
+            if (state is LiveState.Connecting || state is LiveState.Retrying) Waiting(state, pc.endpoints.any { it.isQuickTunnel })
             return@Column
         }
         LazyColumn(
@@ -206,7 +207,7 @@ private fun statusLine(state: LiveState): String = when (state) {
 
 /** Before the first snapshot: say what is happening and what to check, not just a spinner. */
 @Composable
-private fun Waiting(state: LiveState) {
+private fun Waiting(state: LiveState, quickTunnel: Boolean) {
     val hb = Hb.colors
     val retrying = state as? LiveState.Retrying
     Column(Modifier.fillMaxWidth().background(hb.slab).padding(horizontal = 20.dp, vertical = 28.dp)) {
@@ -231,6 +232,14 @@ private fun Waiting(state: LiveState) {
             style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
             color = hb.onSlabSoft,
         )
+        if (retrying != null && quickTunnel) {
+            Text(
+                "PC가 다시 시작되면 Cloudflare 임시 주소가 바뀝니다. 이 앱의 푸시 알림이 켜져 있으면 PC가 새 주소를 보내 줘서 곧 다시 연결되고, 꺼져 있으면 PC의 \"설정…\" → \"휴대폰\" 탭 QR로 다시 연결해야 합니다.",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = hb.onSlabSoft,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
         if (retrying != null && retrying.reason.isNotBlank()) {
             Text(
                 retrying.reason,

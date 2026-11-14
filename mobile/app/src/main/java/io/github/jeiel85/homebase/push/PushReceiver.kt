@@ -67,11 +67,21 @@ class PushReceiver : BroadcastReceiver() {
     }
 
     private fun handleMessage(context: Context, state: PushState, bytes: ByteArray) {
-        val message = try {
+        val plain = try {
             val keys = state.keys()
-            PushMessage.parse(WebPush.decrypt(bytes, keys.privateKey, keys.publicKey, keys.authSecret).toString(Charsets.UTF_8))
+            WebPush.decrypt(bytes, keys.privateKey, keys.publicKey, keys.authSecret).toString(Charsets.UTF_8)
         } catch (e: Exception) {
             Log.w(TAG, "dropped an undecryptable push: ${e.javaClass.simpleName}")
+            return
+        }
+        if (PushEndpointsUpdate.kindOf(plain) == PushEndpointsUpdate.KIND) {
+            handleEndpoints(context, plain)
+            return
+        }
+        val message = try {
+            PushMessage.parse(plain)
+        } catch (e: Exception) {
+            Log.w(TAG, "dropped an unreadable push: ${e.message}")
             return
         }
         if (PcStore(context).get(message.pcId) == null) {
@@ -79,6 +89,23 @@ class PushReceiver : BroadcastReceiver() {
             return
         }
         PushNotifier.show(context, message)
+    }
+
+    /** A PC's new paths (M-23): stored silently; a retrying detail screen picks them up on its next try. */
+    private fun handleEndpoints(context: Context, plain: String) {
+        val store = PcStore(context)
+        val pc = store.get(PushEndpointsUpdate.pcIdOf(plain)) ?: run {
+            Log.i(TAG, "dropped a path update from an unpaired PC")
+            return
+        }
+        val update = try {
+            PushEndpointsUpdate.verify(plain, pc.token)
+        } catch (e: Exception) {
+            Log.w(TAG, "dropped a path update: ${e.message}")
+            return
+        }
+        val applied = store.applyPushedEndpoints(update.pcId, update.endpoints, update.tsEpochMillis)
+        Log.i(TAG, "path update from ${pc.name}: ${if (applied) "applied" else "older than the last one, ignored"}")
     }
 
     /** A broadcast may only run ~10 s; PCs not reached by then catch up on their next contact. */
