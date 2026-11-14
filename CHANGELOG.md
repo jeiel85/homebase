@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.18.0 — Update notifications, phone-viewing indicator
 
 ### Added
 - **Update notification on the phone.** The Homebase app now checks for a new version in the
