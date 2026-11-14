@@ -71,6 +71,16 @@ class UpdateDecisionTest {
     }
 
     @Test
+    fun shouldNotify_notifiesEachVersionOnce() {
+        // 백그라운드 확인은 하루에도 여러 번 같은 캐시로 같은 판정을 한다. 이미 알린 버전을 다시
+        // 알리면 사용자가 지운 알림이 계속 되살아난다.
+        assertTrue(UpdateDecision.shouldNotify(offeredVersionCode = 1800, notifiedVersionCode = 0))
+        assertFalse(UpdateDecision.shouldNotify(offeredVersionCode = 1800, notifiedVersionCode = 1800))
+        // 그 사이 더 새 버전이 나오면 다시 알린다.
+        assertTrue(UpdateDecision.shouldNotify(offeredVersionCode = 1801, notifiedVersionCode = 1800))
+    }
+
+    @Test
     fun shouldOffer_staysQuietWhenTheDeviceIsTooOld() {
         // 받으라고 안내한 뒤 시스템이 설치를 거부하면 사용자는 원인을 알 수 없다.
         assertFalse(

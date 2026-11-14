@@ -22,6 +22,8 @@ public static class L
     public static string MenuExit => T("Exit", "종료");
     public static string MenuCheckUpdates(string version) => T($"Check for updates (v{version})", $"업데이트 확인 (v{version})");
     public static string MenuUpdateAvailable(object version) => T($"Install update v{version}", $"새 버전 v{version} 설치");
+    public static string MenuPhoneWatching => T("● A phone is viewing this PC", "● 휴대폰이 이 PC를 보는 중");
+    public static string TrayTipWatching => T("Homebase — a phone is viewing this PC", "Homebase — 휴대폰이 이 PC를 보는 중");
 
     // ── Common ───────────────────────────────────────────────────────────────
     public static string Close => T("CLOSE", "닫기");

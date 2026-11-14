@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using LocalOpsBot.Core.Updates;
 using LocalOpsBot.Tray.Services;
+using LocalOpsBot.Tray.Services.Mobile;
 using Application = System.Windows.Application;
 
 namespace LocalOpsBot.Tray;
@@ -21,21 +22,33 @@ public sealed class TrayIconManager : IDisposable
     private readonly NotifyIcon _trayIcon;
     private readonly UpdateCoordinator _updates = new();
     private readonly ToolStripMenuItem _updateItem;
+    private readonly ToolStripMenuItem _watchingItem;
+    private readonly ToolStripSeparator _watchingSeparator;
+    private readonly Icon _baseIcon;
+    private Icon? _watchingIcon;
+    private bool _disposed;
     private DashboardWindow? _popup;
     private SettingsWindow? _settings;
     private OnboardingWindow? _onboarding;
 
     public TrayIconManager()
     {
+        _baseIcon = LoadTrayIcon();
         _trayIcon = new NotifyIcon
         {
             Text = "Homebase",
-            Icon = LoadTrayIcon(),
+            Icon = _baseIcon,
             Visible = true
         };
         _trayIcon.MouseClick += OnTrayClick;
 
         var menu = new ContextMenuStrip();
+        // Shown only while a phone is viewing this PC (see OnWatchingChanged). Informational, so disabled.
+        _watchingItem = new ToolStripMenuItem(L.MenuPhoneWatching) { Enabled = false, Visible = false };
+        _watchingSeparator = new ToolStripSeparator { Visible = false };
+        menu.Items.Add(_watchingItem);
+        menu.Items.Add(_watchingSeparator);
+
         // Look (dashboard) → change (settings, phone included), then housekeeping. Labels follow the UI
         // language (see L); "Open Homebase" is bold as the left-click default.
         var openItem = new ToolStripMenuItem(L.MenuOpen) { Font = new Font(menu.Font, FontStyle.Bold) };
@@ -63,6 +76,12 @@ public sealed class TrayIconManager : IDisposable
 
         _trayIcon.ContextMenuStrip = menu;
 
+        // A phone watching this PC turns on per-process sampling and window reports (DECISIONS M-13),
+        // so say so where the user always looks: a dot on the tray icon, a tooltip and a menu line
+        // (M-22). The bridge raises this on a background thread.
+        MobileHost.WatchingChanged += OnWatchingChanged;
+        ApplyWatching(MobileHost.IsWatching);
+
         _ = BackgroundCheckAsync();
 
         // First launch for this Windows user: walk them through the connection checklist
@@ -74,6 +93,23 @@ public sealed class TrayIconManager : IDisposable
                 ShowOnboarding();
         }
         catch { /* onboarding is non-essential — never let it break tray startup */ }
+    }
+
+    private void OnWatchingChanged(bool on) =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() => ApplyWatching(on)));
+
+    private void ApplyWatching(bool on)
+    {
+        if (_disposed) return;
+        if (on)
+        {
+            try { _watchingIcon ??= DrawWatchingIcon(_baseIcon); }
+            catch { /* drawing failed: tooltip and menu line still tell the user */ }
+        }
+        _trayIcon.Icon = on && _watchingIcon is not null ? _watchingIcon : _baseIcon;
+        _trayIcon.Text = on ? L.TrayTipWatching : "Homebase";
+        _watchingItem.Visible = on;
+        _watchingSeparator.Visible = on;
     }
 
     private void OnTrayClick(object? sender, MouseEventArgs e)
@@ -254,10 +290,43 @@ public sealed class TrayIconManager : IDisposable
         }
     }
 
+    // The tray icon with a green "live" dot in the lower-right corner, drawn over the normal icon at
+    // the same size so the house stays recognizable.
+    private static Icon DrawWatchingIcon(Icon baseIcon)
+    {
+        var size = baseIcon.Size;
+        using var bmp = new Bitmap(size.Width, size.Height);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Color.Transparent);
+            g.DrawIcon(baseIcon, new Rectangle(0, 0, size.Width, size.Height));
+            var d = Math.Max(6f, size.Width * 0.5f);
+            var rect = new RectangleF(size.Width - d, size.Height - d, d - 0.5f, d - 0.5f);
+            using var dot = new SolidBrush(Color.FromArgb(0x2E, 0xCC, 0x71));
+            using var ring = new Pen(Color.FromArgb(0x21, 0x24, 0x2E), Math.Max(1f, size.Width / 16f));
+            g.FillEllipse(dot, rect);
+            g.DrawEllipse(ring, rect);
+        }
+        var handle = bmp.GetHicon();
+        try
+        {
+            using var icon = Icon.FromHandle(handle);
+            return (Icon)icon.Clone();
+        }
+        finally
+        {
+            DestroyIcon(handle);
+        }
+    }
+
     public void Dispose()
     {
+        _disposed = true;
+        MobileHost.WatchingChanged -= OnWatchingChanged;
         _trayIcon.Visible = false;
-        _trayIcon.Icon?.Dispose();
         _trayIcon.Dispose();
+        _baseIcon.Dispose();
+        _watchingIcon?.Dispose();
     }
 }

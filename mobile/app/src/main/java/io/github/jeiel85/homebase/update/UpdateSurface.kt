@@ -1,5 +1,6 @@
 package io.github.jeiel85.homebase.update
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -30,13 +31,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import io.github.jeiel85.homebase.BuildConfig
+import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.SettingsSwitchRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,7 +58,7 @@ internal object UpdateSurface {
      * 설정 → 앱 섹션에 붙는 행들.
      *
      * Input : [titleModifier] — 설정 검색이 이 행으로 이동할 때 쓰는 앵커(#517). 상태는 [UpdatePreferences]에서 읽는다
-     * Output: 기본 꺼짐 토글 한 줄과 그 아래 설명
+     * Output: 기본 켜짐 토글 한 줄과 그 아래 설명(알림 권한이 없으면 허용 버튼 한 줄)
      *
      * 핵심 로직: 켜는 순간 무엇이 달라지는지를 **같은 화면에서** 말한다. F-Droid 포함 정책은
      * 추가 실행 파일을 받는 동작에 옵트인을 요구하면서, 사용자가 "F-Droid의 검사를 우회하는
@@ -68,18 +70,48 @@ internal object UpdateSurface {
         val context = LocalContext.current
         val preferences = remember(context) { UpdatePreferences(context) }
         var enabled by remember { mutableStateOf(preferences.isEnabled()) }
+        var canNotify by remember { mutableStateOf(PushNotifier.canNotify(context)) }
+        var askedPermission by rememberSaveable { mutableStateOf(false) }
+        val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            canNotify = PushNotifier.canNotify(context)
+        }
+        // 알림 설정 화면에서 돌아오면 다시 읽는다.
+        val notificationSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            canNotify = PushNotifier.canNotify(context)
+        }
 
         Spacer(Modifier.height(12.dp))
         SettingsSwitchRow(
             title = "업데이트 확인",
             titleModifier = titleModifier,
-            description = "하루 한 번 GitHub Releases에서 새 버전을 확인합니다. 설치는 내가 누를 때만 진행되고, 받은 APK는 SHA-256을 대조한 뒤 Android 설치 화면으로 넘깁니다.",
+            description = "하루 한 번 GitHub Releases에서 새 버전을 확인하고, 새 버전이 나오면 알림으로 한 번 알립니다. 설치는 내가 누를 때만 진행되고, 받은 APK는 SHA-256을 대조한 뒤 Android 설치 화면으로 넘깁니다.",
             checked = enabled,
             onCheckedChange = { checked ->
                 preferences.setEnabled(checked)
                 enabled = checked
+                UpdateCheckScheduler.sync(context)
             },
         )
+        // 알림 권한이 없으면 확인은 돌아도 알림이 뜨지 않는다(목록 위 배너만 남는다). 그 사실을
+        // 이 자리에서 말하고 고칠 길을 준다. 처음엔 권한을 묻고, 이미 거부돼 다시 물을 수 없으면
+        // (두 번째 누름) 앱 알림 설정을 연다.
+        if (enabled && !canNotify) {
+            TextButton(
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= 33 && !askedPermission) {
+                        askedPermission = true
+                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        notificationSettings.launch(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                        )
+                    }
+                },
+            ) {
+                Text("알림이 꺼져 있어 새 버전을 알림으로 받지 못합니다 — 허용하기")
+            }
+        }
     }
 
     /**
@@ -92,7 +124,7 @@ internal object UpdateSurface {
      * 않는 것이 UX 계약이다 — 업데이트는 사용자가 지금 하려던 일이 아니다.
      *
      * 상태를 화면에 들고 있는 이유: 확인 자체는 하루 1회지만 배너는 그 사이에도 떠 있어야 하고,
-     * 그 판단은 캐시된 원문으로 네트워크 없이 재현된다([refresh] 참조).
+     * 그 판단은 캐시된 원문으로 네트워크 없이 재현된다([UpdateRefresh.run] 참조).
      */
     @Composable
     fun Banner(modifier: Modifier = Modifier) {
@@ -100,8 +132,11 @@ internal object UpdateSurface {
         val preferences = remember(context) { UpdatePreferences(context) }
         var offered by remember { mutableStateOf<UpdateManifest?>(null) }
         var dialogOpen by remember { mutableStateOf(false) }
+        val openRequested = openRequest
 
-        LaunchedEffect(Unit) {
+        // 업데이트 알림을 눌러 들어왔으면(openRequested) 판단을 다시 하고 모달을 바로 연다. 그사이
+        // 설치했거나 건너뛰어 더 알릴 것이 없으면 모달 없이 요청만 지운다.
+        LaunchedEffect(openRequested) {
             offered = withContext(Dispatchers.IO) {
                 // 지난번 설치 앱에 넘긴 APK는 여기서 치운다(`UpdateInstaller.install` 참조).
                 // 설치 앱은 뜨자마자 파일을 자기 쪽으로 복사하므로, 사용자가 이 화면으로 다시
@@ -109,7 +144,13 @@ internal object UpdateSurface {
                 if (!downloadInProgress.get()) {
                     UpdateInstaller.deleteLeftovers(File(context.cacheDir, DOWNLOAD_DIR))
                 }
-                refresh(preferences)
+                UpdateRefresh.run(preferences)
+            }
+            // 알릴 것이 없으면(설치를 마쳤거나 건너뛰었거나 확인을 껐다) 남은 알림도 치운다.
+            if (offered == null) UpdateNotifier.cancel(context)
+            if (openRequested) {
+                if (offered != null) dialogOpen = true
+                openRequest = false
             }
         }
 
@@ -139,6 +180,7 @@ internal object UpdateSurface {
                 onDismiss = { dialogOpen = false },
                 onSkip = {
                     preferences.setSkippedVersionCode(manifest.versionCode)
+                    UpdateNotifier.cancel(context)
                     offered = null
                     dialogOpen = false
                 },
@@ -151,6 +193,18 @@ internal object UpdateSurface {
      * 이 상태로 돌아오지 않는다 — 설치가 넘어간 뒤에 이 모달이 여전히 무언가를 보여줄 이유가
      * 없다(그 다음은 시스템 설치 앱의 몫).
      */
+    /**
+     * 업데이트 알림을 눌러 앱이 열렸다는 표시. [MainActivity]가 켜고 [Banner]가 소비한다.
+     * 프로세스 전역 상태인 이유: 알림은 액티비티가 이미 떠 있을 때(onNewIntent)도 눌릴 수 있고,
+     * 그때 배너는 이미 컴포지션에 있다 — 값이 바뀌면 배너의 LaunchedEffect가 다시 돈다.
+     */
+    private var openRequest by mutableStateOf(false)
+
+    /** 업데이트 알림을 눌러 들어왔을 때 부른다. 목록 화면의 배너가 모달을 연다. */
+    fun requestOpen() {
+        openRequest = true
+    }
+
     private enum class DownloadFlowState { Offer, NeedsInstallPermission, Downloading, Failed }
 
     // 프로세스 전체에서 하나만 도는 다운로드/설치를 보장하는 재진입 가드. `UpdateDialog`가
@@ -319,42 +373,6 @@ internal object UpdateSurface {
                 }
             },
         )
-    }
-
-    /**
-     * Input : [UpdatePreferences]
-     * Output: 지금 알릴 만한 [UpdateManifest], 아니면 null
-     *
-     * 핵심 로직: 네트워크는 하루 1회만 타고, 배너 판단은 캐시된 원문으로 매번 다시 한다.
-     *
-     * **온전하게 파싱되는 응답만 저장하고, 그때만 확인 시각을 찍는다.** 실패로 하루를 소모하면
-     * 잠깐 오프라인이었던 사용자가 다음 날까지 확인하지 못하고, 깨진 응답을 캐시하면 그 하루
-     * 동안 매 실행에서 같은 쓰레기를 파싱하고 버린다.
-     *
-     * 이 함수는 IO 스레드에서 불린다 — [Banner]의 `LaunchedEffect` 참조.
-     */
-    private fun refresh(preferences: UpdatePreferences): UpdateManifest? {
-        if (!preferences.isEnabled()) return null
-
-        val now = System.currentTimeMillis()
-        if (UpdateDecision.shouldCheckNow(preferences.lastCheckedAt(), now)) {
-            UpdateChecker().fetchRaw()?.let { raw ->
-                if (UpdateManifestParser.parse(raw) != null) {
-                    preferences.setCachedManifest(raw)
-                    preferences.setLastCheckedAt(now)
-                }
-            }
-        }
-
-        val manifest = preferences.cachedManifest()?.let(UpdateManifestParser::parse) ?: return null
-        return manifest.takeIf {
-            UpdateDecision.shouldOffer(
-                manifest = it,
-                installedVersionCode = BuildConfig.VERSION_CODE,
-                skippedVersionCode = preferences.skippedVersionCode(),
-                deviceSdk = Build.VERSION.SDK_INT,
-            )
-        }
     }
 
     /** 링크는 OS에 넘긴다. 앱이 직접 여는 브라우저는 없다 — 실패해도 조용히 넘어간다. */
