@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import io.github.jeiel85.homebase.BuildConfig
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.SettingsSwitchRow
 import kotlinx.coroutines.Dispatchers
@@ -133,10 +134,12 @@ internal object UpdateSurface {
         var offered by remember { mutableStateOf<UpdateManifest?>(null) }
         var dialogOpen by remember { mutableStateOf(false) }
         val openRequested = openRequest
+        val epoch = refreshEpoch
 
         // 업데이트 알림을 눌러 들어왔으면(openRequested) 판단을 다시 하고 모달을 바로 연다. 그사이
-        // 설치했거나 건너뛰어 더 알릴 것이 없으면 모달 없이 요청만 지운다.
-        LaunchedEffect(openRequested) {
+        // 설치했거나 건너뛰어 더 알릴 것이 없으면 모달 없이 요청만 지운다. 당겨서 새로고침으로
+        // 확인을 마치면(epoch) 방금 저장된 결과로 배너를 다시 그린다.
+        LaunchedEffect(openRequested, epoch) {
             offered = withContext(Dispatchers.IO) {
                 // 지난번 설치 앱에 넘긴 APK는 여기서 치운다(`UpdateInstaller.install` 참조).
                 // 설치 앱은 뜨자마자 파일을 자기 쪽으로 복사하므로, 사용자가 이 화면으로 다시
@@ -203,6 +206,28 @@ internal object UpdateSurface {
     /** 업데이트 알림을 눌러 들어왔을 때 부른다. 목록 화면의 배너가 모달을 연다. */
     fun requestOpen() {
         openRequest = true
+    }
+
+    /** [checkNow]가 끝날 때마다 하나씩 올라간다. [Banner]가 이 값으로 판단을 다시 한다. */
+    private var refreshEpoch by mutableIntStateOf(0)
+
+    /**
+     * Input : [context]
+     * Output: 사용자에게 한 줄로 알릴 결과 문구, 알릴 것이 없으면 null
+     *
+     * 핵심 로직: 목록을 아래로 당겼을 때 부른다. 하루 1회 규칙 없이 지금 확인하고
+     * ([UpdateRefresh.runNow]), 새 버전이 있으면 배너가 뜨도록 [Banner]를 다시 돌린다.
+     * "업데이트 확인"을 꺼 두었으면 확인하지 않고 아무 말도 하지 않는다.
+     */
+    suspend fun checkNow(context: Context): String? {
+        val result = withContext(Dispatchers.IO) { UpdateRefresh.runNow(UpdatePreferences(context)) }
+        refreshEpoch++
+        return when (result) {
+            is UpdateRefresh.ManualResult.Offer -> "새 버전 ${result.manifest.versionName}이 있습니다"
+            UpdateRefresh.ManualResult.UpToDate -> "최신 버전입니다 (${BuildConfig.VERSION_NAME})"
+            UpdateRefresh.ManualResult.Failed -> "업데이트를 확인하지 못했습니다 — 네트워크를 확인하세요"
+            UpdateRefresh.ManualResult.Disabled -> null
+        }
     }
 
     private enum class DownloadFlowState { Offer, NeedsInstallPermission, Downloading, Failed }
