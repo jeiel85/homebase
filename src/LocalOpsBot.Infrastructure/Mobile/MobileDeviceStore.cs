@@ -43,7 +43,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         public string DeviceId { get; set; } = "";
         public string Name { get; set; } = "";
         public string? Model { get; set; }
-        /// <summary><c>phone</c> or <c>pc</c>; absent in files written before v0.22.0 (all phones then).</summary>
+        /// <summary><c>phone</c> or <c>pc</c>; absent in files written before v0.23.0 (all phones then).</summary>
         public string? Kind { get; set; }
         public string TokenSha256 { get; set; } = "";
         public DateTimeOffset PairedAt { get; set; }

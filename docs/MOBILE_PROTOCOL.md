@@ -56,8 +56,21 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | GET | `/api/v1/snapshot` | `Authorization: Bearer <token>` | 200 `LiveSnapshot` · 401 `unauthorized` |
 | POST | `/api/v1/push` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, registered: true}` · 400 `invalid_subscription` · 401 |
 | DELETE | `/api/v1/push` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, registered: false}` · 401 |
+| POST | `/api/v1/presence` | `Authorization: Bearer <token>` | 200 `DevicesResponse` · 400 `invalid_presence` · 401 (M-27) |
+| GET | `/api/v1/devices` | `Authorization: Bearer <token>` | 200 `DevicesResponse` · 401 (M-27) |
+| POST | `/api/v1/notifications` | `Authorization: Bearer <token>` | 202 `{schema, accepted: true}` · 400 `invalid_notification` · 401 · 503 `forwarding_off` (M-28) |
+| GET | `/api/v1/inbox?after=<seq>` | `Authorization: Bearer <token>` | 200 `{schema, next, items[]}` — 새 항목이 없으면 최대 25초 기다린다 · 401 (M-28) |
+| DELETE | `/api/v1/device` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, removed}` — 기기가 스스로 페어링을 끊는다 · 401 (M-29) |
 
-`POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel" }`이다. 오류 응답은 항상 `{schema, error, message}` 형태다.
+`POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
+
+### 기기 공유 (M-27 ~ M-29)
+
+PC는 페어링한 기기(휴대폰·다른 PC)의 허브다.
+- **상태**: 기기는 `POST /api/v1/presence`로 자기 상태를 보낸다([`presence.v1.json`](mobile-protocol/presence.v1.json)): `{schema, kind, appVersion?, battery?, charging?, network?, cpuPct?, memUsedBytes?, memTotalBytes?, uptimeSec?, pushHashes?}`. 휴대폰은 배터리·네트워크를, PC는 CPU·메모리·가동 시간을 채운다. 응답과 `GET /api/v1/devices`는 [`devices.v1.json`](mobile-protocol/devices.v1.json): `{schema, hub: {pcId, pcName, agentVersion, status}, devices: [{deviceId, name, kind, model?, lastSeenAt?, online, status?}], pushHashes?}`. 상태는 PC 메모리에만 있고 2분 넘게 보고가 없으면 `online=false`. 휴대폰은 앱을 열거나 목록이 PC를 확인할 때, 그리고 30분 주기 잡에서, PC는 30초마다 보고한다.
+- **`pushHashes`**: UnifiedPush 엔드포인트 URL의 SHA-256(소문자 hex). PC가 자기 휴대폰 목록을 보내고(presence), 허브는 자기 휴대폰 목록을 돌려준다(devices). 같은 휴대폰이 두 PC에 붙어 있으면 중계 알림을 한 번만 받도록 보내는 쪽에서 건너뛴다.
+- **알림 중계**: `POST /api/v1/notifications` 본문은 [`device-notification.v1.json`](mobile-protocol/device-notification.v1.json): `{schema, id, app (≤64), title (≤200), body? (≤1000), ts}`. 허브는 마스킹한 뒤 자기 트레이에 띄우고, 범주 **`device-notification`**으로 다른 휴대폰에 푸시한다(보낸 기기와 그 기기의 `pushHashes`는 제외). 푸시 제목은 `"<기기> · <앱>: <제목>"`이다. 허브의 Windows 알림 forwarding이 꺼져 있으면 503 `forwarding_off`.
+- **inbox**: 연결된 PC가 롱 폴링한다. `{schema, next, items: [{seq, id, originId, originName, app, title, body?, ts}]}` — 허브의 Windows 알림(`originId: "self"`)과 기기에서 받은 알림의 최근 200건·30분, 요청한 기기가 보낸 것은 뺀다. `after`가 허브의 `next`보다 크면(허브 재시작) 처음부터 준다. 받은 PC는 이 항목을 다시 중계하지 않는다(한 단계). `id`는 모든 경로에서 같아서, 두 PC가 서로 연결돼 같은 알림이 두 길로 와도 한 번만 띄운다.
 
 ## 푸시 알림 (UnifiedPush, M-19 · M-21)
 
@@ -135,7 +148,8 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 | `netPerProcess` | ETW 세션이 도는가. false면 프로세스별 `netRxBps/netTxBps` 필드가 빠진다(→ 앱은 "—") |
 | `apps[]` | 창을 가진 프로세스 하나당 항목 하나. `windows[]`(제목, 전경 여부)와, 자기 창이 없는 자손 프로세스까지 합친 `usage`, 상위 20개 `children[]` |
 | `processes[]` | CPU 상위 30개 프로세스(창 없는 백그라운드 에이전트용) |
-| `claudeSessions[]` | 최근 10분 안에 활동한 Claude Code 세션의 제목, 작업 폴더, 마지막 활동 시각 |
+| `claudeSessions[]` | 최근 10분 안에 활동한 Claude Code 세션의 제목, 작업 폴더, 마지막 활동 시각(옛 앱용, `work`에도 들어 있다) |
+| `work[]` | 작업 탭(M-26): `{kind, app, title, detail?, lastActivity?, foreground}`. `kind`는 `agent`(Claude Code·Codex 세션, `detail`=폴더) · `editor`(코드 편집기, `detail`=프로젝트) · `document`(Office·한글·PDF 등) · `browser`(브라우저 창의 활성 탭). 순서는 agent(최근 활동순) → 전경 창 → editor → document → browser, 최대 30개. v0.23.0 전 PC는 보내지 않는다 |
 
 집계 규칙(`AppAggregator`):
 - 부모 PID가 재사용된 경우(부모가 자식보다 늦게 생성됨)는 부모로 보지 않는다.
@@ -145,7 +159,10 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 ## Tray ↔ Agent (`\\.\pipe\Homebase.MobileBridge`)
 
 프레임은 4바이트 LE 길이 + UTF-8 JSON `{op, id?, payload?}`이고 최대 1MiB다.
-- Agent → Tray: `watch {on}`, `response {id, ok, payload?, error?}`.
+- Agent → Tray: `watch {on}`, `toast.show {title, body?}`(다른 기기 알림을 이 PC에 띄움, M-28), `response {id, ok, payload?, error?}`.
 - Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`,
-  `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`).
+  `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`),
+  `devices.overview`(→ `{here: DevicesResponse, hubs: [{pcId, pcName, online, lastContactAt?, status?, devices[], error?, selfDeviceId?}]}`),
+  `hubs.link {link}`(다른 PC의 페어링 링크로 연결 → `{linked, pcName?, error?, message?}`), `hubs.unlink {pcId}`(M-29).
+  `session.report`에는 `agents[]`(Codex 세션 등 Claude 밖의 작업, M-26)가 더해졌다.
 - 그 밖의 op는 연결을 끊는다.

@@ -103,7 +103,7 @@ data class LiveSnapshot(
     val apps: List<AppEntry>,
     val processes: List<ProcessEntry>,
     val claudeSessions: List<ClaudeSession>,
-    /** The work tab (DECISIONS M-26); null from a PC older than v0.22.0, which only sends [claudeSessions]. */
+    /** The work tab (DECISIONS M-26); null from a PC older than v0.23.0, which only sends [claudeSessions]. */
     val work: List<WorkItem>? = null,
 ) {
     /** What the work tab lists: [work] when the PC sends it, else the Claude sessions as work items. */

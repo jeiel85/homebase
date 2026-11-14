@@ -603,7 +603,7 @@ private fun ProcessRow(p: ProcessEntry, memTotal: Long, compact: Boolean) {
 /**
  * The work tab (DECISIONS M-26): AI coding sessions (Claude Code, Codex) with their last activity,
  * then the foreground window and the other editors, documents and browser tabs. A PC older than
- * v0.22.0 sends only Claude sessions, which [LiveSnapshot.workItems] turns into the same list.
+ * v0.23.0 sends only Claude sessions, which [LiveSnapshot.workItems] turns into the same list.
  */
 private fun LazyListScope.sessionItems(s: LiveSnapshot) {
     val work = s.workItems
