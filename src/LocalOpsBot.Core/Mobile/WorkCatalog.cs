@@ -37,6 +37,9 @@ public static class WorkCatalog
 {
     public const int MaxItems = 30;
 
+    private static readonly string ZeroWidthSpace = ((char)0x200B).ToString();
+    private const char NoBreakSpace = (char)0x00A0;
+
     private sealed record Entry(string Kind, string App, string[] Suffixes, bool ProjectAfterFile = false);
 
     // Process name (no ".exe") → how its windows read. Suffixes are tried longest first.
@@ -86,7 +89,7 @@ public static class WorkCatalog
     {
         if (!Table.TryGetValue(processName, out var entry)) return null;
         // Edge writes "Microsoft<U+200B> Edge" with a zero-width space; other apps pad with no-break spaces.
-        var title = windowTitle.Replace("​", "").Replace(' ', ' ').TrimEnd();
+        var title = windowTitle.Replace(ZeroWidthSpace, "").Replace(NoBreakSpace, ' ').TrimEnd();
         foreach (var suffix in entry.Suffixes.OrderByDescending(s => s.Length))
         {
             // "Google Chrome" alone (no page) is the suffix without its separator.
