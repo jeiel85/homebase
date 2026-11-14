@@ -94,6 +94,11 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     val groups = remember(entries) { entries.map { PushHistoryRules.categoryLabel(it.category) }.distinct() }
     // Latest name per PC, in the order they last sent something.
     val pcs = remember(entries) { entries.distinctBy { it.pcId }.map { it.pcId to it.pcName } }
+    // A filter whose last entry was deleted would hide everything with its chip row (and "전체") gone: drop it.
+    LaunchedEffect(groups, pcs) {
+        if (groupFilter != null && groupFilter !in groups) groupFilter = null
+        if (pcFilter != null && pcs.none { it.first == pcFilter }) pcFilter = null
+    }
     val shown = remember(entries, groupFilter, pcFilter) {
         entries.filter { e ->
             (groupFilter == null || PushHistoryRules.categoryLabel(e.category) == groupFilter) &&
