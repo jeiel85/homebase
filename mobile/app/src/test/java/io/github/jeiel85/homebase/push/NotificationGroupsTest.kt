@@ -9,6 +9,7 @@ class NotificationGroupsTest {
     /** The `category` values in docs/MOBILE_PROTOCOL.md, minus the Tray test. */
     private val protocolCategories = setOf(
         "windows-toast", "process_watch", "service_watch", "http_monitor", "port_monitor", "event_log", "advisor", "boot",
+        "device-notification",
     )
 
     @Test
@@ -19,8 +20,8 @@ class NotificationGroupsTest {
     }
 
     @Test
-    fun windows_only_preset_mutes_everything_but_toasts() {
-        assertEquals(protocolCategories - "windows-toast", NotificationGroups.ALL_BUT_TOASTS)
+    fun app_notifications_preset_mutes_everything_but_this_pcs_and_other_devices_notifications() {
+        assertEquals(protocolCategories - "windows-toast" - "device-notification", NotificationGroups.ALL_BUT_TOASTS)
     }
 
     @Test

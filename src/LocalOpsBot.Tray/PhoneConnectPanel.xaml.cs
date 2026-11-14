@@ -37,6 +37,10 @@ public partial class PhoneConnectPanel : UserControl
 
     private sealed record DeviceRow(string DeviceId, string Name, string Detail);
 
+    private sealed record HubRow(string PcId, string Name, string Detail, Brush Dot);
+
+    private PairingOffer? _offer;
+
     private sealed record PathRow(string Title, string Detail, Brush Dot, string? ActionLabel = null, string? ActionKey = null)
     {
         public Visibility ActionVisibility => ActionLabel is null ? Visibility.Collapsed : Visibility.Visible;
@@ -91,7 +95,7 @@ public partial class PhoneConnectPanel : UserControl
         {
             StatusText.Text = "휴대폰 연결이 꺼져 있습니다. 쓸 경로를 고른 뒤 ENABLE을 누르세요.";
             IntroCard.Visibility = Visibility.Visible;
-            PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = Visibility.Collapsed;
+            PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = Visibility.Collapsed;
             ApplyButtonText.Text = "ENABLE";
             return;
         }
@@ -118,6 +122,7 @@ public partial class PhoneConnectPanel : UserControl
 
         PathsPanel.Visibility = Visibility.Visible;
         DevicesPanel.Visibility = Visibility.Visible;
+        LinkPanel.Visibility = Visibility.Visible;
         ShowPaths(status);
         if (_inView) _statusTimer.Start();
         await LoadDevicesAsync();
@@ -247,6 +252,7 @@ public partial class PhoneConnectPanel : UserControl
             }
             // An https link (M-20): the phone's own camera opens the app, or the install guide when it's missing.
             QrImage.Source = RenderQr(PairingLink.Build(offer));
+            _offer = offer;
             _offerEndpointsKey = EndpointsKey(offer.Endpoints);
             _expiresAt = offer.ExpiresAt;
             UpdateCountdown();
@@ -269,11 +275,83 @@ public partial class PhoneConnectPanel : UserControl
             DeviceList.ItemsSource = devices.Select(d => new DeviceRow(
                 d.DeviceId,
                 d.Name,
-                $"{d.Model ?? "Android"} · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
+                (d.Kind == DeviceKind.Pc ? "PC" : d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
                 (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""))).ToList();
             NoDevicesText.Visibility = devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+        await LoadHubsAsync();
+    }
+
+    private async Task LoadHubsAsync()
+    {
+        var client = MobileHost.Client;
+        if (client is null) return;
+        try
+        {
+            var r = await client.RequestAsync(MobileBridge.OpDevicesOverview);
+            if ((bool?)r["ok"] != true) return;
+            var overview = r["payload"]?.Deserialize<DeviceOverview>(MobileProtocol.Json);
+            if (overview is null) return;
+            HubList.ItemsSource = overview.Hubs.Select(h => new HubRow(
+                h.PcId,
+                h.PcName,
+                DeviceText.Hub(h),
+                (Brush)FindResource(h.Online ? "Brush.StatusOk" : "Brush.StatusWarn"))).ToList();
+        }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+    }
+
+    private void CopyLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (_offer is null || _offer.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            CountdownText.Text = L.PhoneCopyLinkExpired;
+            return;
+        }
+        try
+        {
+            Clipboard.SetText(PairingLink.Build(_offer));
+            CountdownText.Text = L.PhoneCopyLinkDone;
+        }
+        catch (System.Runtime.InteropServices.COMException) { CountdownText.Text = L.PhoneCopyLinkFailed; }
+    }
+
+    private async void Link_Click(object sender, RoutedEventArgs e)
+    {
+        if (MobileHost.Client is not { } client) return;
+        var link = LinkBox.Text.Trim();
+        if (link.Length == 0) return;
+        LinkButton.IsEnabled = false;
+        LinkResultText.Visibility = Visibility.Visible;
+        LinkResultText.Text = L.PhoneLinking;
+        try
+        {
+            // Pairing tries each of the other PC's paths in turn (up to ~15 s each), so allow longer than the usual 10 s.
+            var r = await client.RequestAsync(MobileBridge.OpHubsLink, new { link }, timeout: TimeSpan.FromSeconds(75));
+            var result = r["payload"]?.Deserialize<HubLinkResult>(MobileProtocol.Json);
+            if (result is { Linked: true })
+            {
+                LinkResultText.Text = L.PhoneLinked(result.PcName ?? "");
+                LinkBox.Text = "";
+            }
+            else LinkResultText.Text = result?.Message ?? L.PhoneLinkFailed;
+        }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException)
+        {
+            LinkResultText.Text = L.PhoneLinkFailed + " " + ex.Message;
+        }
+        finally { LinkButton.IsEnabled = true; }
+        await LoadDevicesAsync();
+    }
+
+    private async void Unlink_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string pcId || MobileHost.Client is not { } client) return;
+        if (!MessageDialog.Show("Homebase", L.PhoneUnlinkConfirm, L.PhoneUnlink, L.Cancel)) return;
+        try { await client.RequestAsync(MobileBridge.OpHubsUnlink, new { pcId }, timeout: TimeSpan.FromSeconds(20)); }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+        await LoadDevicesAsync();
     }
 
     private void UpdateCountdown()

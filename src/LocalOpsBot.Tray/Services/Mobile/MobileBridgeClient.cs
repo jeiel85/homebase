@@ -10,7 +10,8 @@ namespace LocalOpsBot.Tray.Services.Mobile;
 /// <summary>
 /// Tray side of <c>\\.\pipe\Homebase.MobileBridge</c>. Stays connected while the Agent runs, but
 /// collects nothing until the Agent says a phone is watching (<c>watch on</c>); then it reports
-/// windows every 2 s and Claude sessions every 10 s, and stops on <c>watch off</c>.
+/// windows every 2 s and AI coding sessions (Claude Code, Codex) every 10 s, and stops on <c>watch off</c>.
+/// <c>mobile:claudeSessions</c> turns both session readers off (DECISIONS M-9, M-26).
 /// </summary>
 internal sealed class MobileBridgeClient : IDisposable
 {
@@ -25,7 +26,9 @@ internal sealed class MobileBridgeClient : IDisposable
     private readonly ClaudeSessionReader _claude = new(ClaudeSessionReader.DefaultProjectsDir);
     private NamedPipeClientStream? _pipe;
     private CancellationTokenSource? _reportCts;
+    private readonly CodexSessionReader _codex = new(CodexSessionReader.DefaultHome);
     private IReadOnlyList<ClaudeSession> _claudeCache = Array.Empty<ClaudeSession>();
+    private IReadOnlyList<WorkItem> _codexCache = Array.Empty<WorkItem>();
     private DateTime _claudeReadAt;
 
     public MobileBridgeClient(bool claudeSessions)
@@ -39,6 +42,9 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>True between the Agent's <c>watch on</c> and <c>watch off</c> (or a lost pipe): a phone is viewing this PC.</summary>
     public bool IsWatching { get; private set; }
 
+    /// <summary>A notification from another device to show here (DECISIONS M-28). Background thread.</summary>
+    public event Action<TrayToast>? ToastRequested;
+
     /// <summary>Raised on a background thread whenever <see cref="IsWatching"/> changes.</summary>
     public event Action<bool>? WatchingChanged;
 
@@ -49,8 +55,8 @@ internal sealed class MobileBridgeClient : IDisposable
         WatchingChanged?.Invoke(on);
     }
 
-    /// <summary>Sends a request and waits for the Agent's response (10 s timeout).</summary>
-    public async Task<JsonObject> RequestAsync(string op, object? payload = null, CancellationToken ct = default)
+    /// <summary>Sends a request and waits for the Agent's response (10 s timeout unless given).</summary>
+    public async Task<JsonObject> RequestAsync(string op, object? payload = null, CancellationToken ct = default, TimeSpan? timeout = null)
     {
         var pipe = _pipe;
         if (pipe is null || !pipe.IsConnected)
@@ -62,9 +68,9 @@ internal sealed class MobileBridgeClient : IDisposable
         try
         {
             await SendAsync(pipe, MobileBridge.Message(op, payload, id), ct);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(10));
-            await using (timeout.Token.Register(() => tcs.TrySetCanceled()))
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(timeout ?? TimeSpan.FromSeconds(10));
+            await using (limit.Token.Register(() => tcs.TrySetCanceled()))
                 return await tcs.Task;
         }
         finally
@@ -126,6 +132,9 @@ internal sealed class MobileBridgeClient : IDisposable
                         SetWatching(false);
                     }
                     break;
+                case MobileBridge.OpToast:
+                    if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);
+                    break;
                 case MobileBridge.OpResponse when msg["id"] is JsonValue idNode && _pending.TryRemove((string)idNode!, out var tcs):
                     tcs.TrySetResult(msg);
                     break;
@@ -144,7 +153,8 @@ internal sealed class MobileBridgeClient : IDisposable
             {
                 while (!cts.IsCancellationRequested)
                 {
-                    var report = new SessionReport(WindowEnumerator.Enumerate(), ReadClaude());
+                    var claude = ReadClaude();
+                    var report = new SessionReport(WindowEnumerator.Enumerate(), claude, _codexCache);
                     await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpSessionReport, report), cts.Token);
                     await Task.Delay(ReportInterval, cts.Token);
                 }
@@ -167,6 +177,7 @@ internal sealed class MobileBridgeClient : IDisposable
         if (now - _claudeReadAt >= ClaudeInterval)
         {
             _claudeCache = _claude.ReadActive(now);
+            _codexCache = _codex.ReadActive(now);
             _claudeReadAt = now;
         }
         return _claudeCache;

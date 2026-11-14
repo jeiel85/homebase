@@ -20,6 +20,11 @@
         <intent>
             <action android:name="org.unifiedpush.android.distributor.REGISTER" />
         </intent>
+        <!-- App names for forwarded notifications (DECISIONS M-28): launcher apps only, not every package. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application
@@ -90,6 +95,24 @@
             android:name=".update.UpdateCheckJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Tells the paired PCs this phone's state every ~30 min (DECISIONS M-27). -->
+        <service
+            android:name=".mesh.PresenceJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Forwards this phone's notifications to the PCs (DECISIONS M-28). Only runs once the user
+             grants notification access; the in-app switch (off by default) gates it again. -->
+        <service
+            android:name=".mesh.NotificationForwarder"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

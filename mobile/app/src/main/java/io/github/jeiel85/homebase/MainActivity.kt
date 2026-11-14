@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
@@ -51,6 +52,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null && intent.isUpdateTap()) UpdateSurface.requestOpen()
         // Keeps the background update check (DECISIONS M-22) scheduled — or cancelled — to match the setting.
         UpdateCheckScheduler.sync(this)
+        // Keeps this phone's state reaching the paired PCs while the app is closed (DECISIONS M-27).
+        PresenceScheduler.sync(this)
         val store = PcStore(this)
         val probe = NetworkProbe(this)
         val api = HomebaseApi(networks = probe::current)
@@ -78,7 +81,12 @@ class MainActivity : ComponentActivity() {
                         route == ROUTE_SETTINGS -> SettingsScreen(store, api, onBack = { route = "" })
                         route == "+" -> PairScreen(
                             store, api,
-                            onDone = { pairingLink = null; route = it.pcId },
+                            onDone = {
+                                pairingLink = null
+                                route = it.pcId
+                                // The first pairing is when the background state report becomes needed (M-27).
+                                PresenceScheduler.sync(this@MainActivity)
+                            },
                             onBack = { pairingLink = null; route = "" },
                             link = pairingLink,
                         )

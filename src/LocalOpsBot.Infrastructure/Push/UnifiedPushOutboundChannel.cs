@@ -59,7 +59,14 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         if (targets.Count == 0)
             return new OutboundAttemptResult(ChannelId, false, OutboundFailureKind.NotConfigured, "No phone registered for push.");
 
-        var wanted = targets.Where(t => !t.Subscription.Mutes(notification.Category)).ToList();
+        // Relayed notifications (M-28) skip the device that sent them and phones that got them elsewhere.
+        var relayed = targets.Where(t => !PushRelay.Skips(t, notification.Metadata)).ToList();
+        if (relayed.Count == 0)
+        {
+            _logger.LogInformation("Push skipped: every phone already has this relayed notification");
+            return new OutboundAttemptResult(ChannelId, true);
+        }
+        var wanted = relayed.Where(t => !t.Subscription.Mutes(notification.Category)).ToList();
         if (wanted.Count == 0)
         {
             _logger.LogInformation("Push skipped: every phone muted category {Category}", notification.Category);
@@ -240,7 +247,7 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
     /// <summary>Forwarded toasts go stale quickly; alerts stay relevant for a day.</summary>
     internal static int TtlSeconds(OutboundNotification n)
     {
-        var ttl = n.Category == "windows-toast" ? 6 * 3600 : 24 * 3600;
+        var ttl = n.Category is "windows-toast" or "device-notification" ? 6 * 3600 : 24 * 3600;
         if (n.ExpiresAt is { } exp)
             ttl = (int)Math.Clamp((exp - DateTimeOffset.UtcNow).TotalSeconds, 0, ttl);
         return ttl;

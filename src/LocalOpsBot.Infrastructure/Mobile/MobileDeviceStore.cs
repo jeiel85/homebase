@@ -43,6 +43,8 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         public string DeviceId { get; set; } = "";
         public string Name { get; set; } = "";
         public string? Model { get; set; }
+        /// <summary><c>phone</c> or <c>pc</c>; absent in files written before v0.23.0 (all phones then).</summary>
+        public string? Kind { get; set; }
         public string TokenSha256 { get; set; } = "";
         public DateTimeOffset PairedAt { get; set; }
         public DateTimeOffset? LastSeenAt { get; set; }
@@ -81,7 +83,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         lock (_gate) return _state.Devices.Select(ToInfo).ToList();
     }
 
-    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex)
+    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone)
     {
         lock (_gate)
         {
@@ -90,6 +92,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
                 DeviceId = Guid.NewGuid().ToString("N")[..12],
                 Name = name,
                 Model = model,
+                Kind = DeviceKind.Normalize(kind),
                 TokenSha256 = tokenSha256Hex,
                 PairedAt = _time.GetUtcNow(),
             };
@@ -187,7 +190,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         return dirty;
     }
 
-    private static MobileDeviceInfo ToInfo(Device d) => new(d.DeviceId, d.Name, d.Model, d.PairedAt, d.LastSeenAt);
+    private static MobileDeviceInfo ToInfo(Device d) => new(d.DeviceId, d.Name, d.Model, d.PairedAt, d.LastSeenAt, DeviceKind.Normalize(d.Kind));
 
     /// <summary>
     /// A corrupt file must neither take the Agent down (Telegram monitoring keeps running) nor be

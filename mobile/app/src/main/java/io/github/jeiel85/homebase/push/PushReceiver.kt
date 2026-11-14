@@ -94,6 +94,11 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a push in muted category ${message.category}")
             return
         }
+        // The same relayed notification can come from two PCs (both paired with both phones): show it once.
+        if (message.category == NotificationGroups.DEVICE && !RecentPushIds(context).firstSighting(message.id)) {
+            Log.i(TAG, "dropped a relayed notification already shown")
+            return
+        }
         PushNotifier.show(context, message)
     }
 

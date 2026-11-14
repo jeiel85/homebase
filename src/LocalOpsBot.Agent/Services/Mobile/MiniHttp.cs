@@ -4,8 +4,20 @@ using System.Text;
 namespace LocalOpsBot.Agent.Services.Mobile;
 
 /// <summary>A parsed HTTP/1.1 request head. Header names are case-insensitive.</summary>
-public sealed record HttpRequestHead(string Method, string Path, IReadOnlyDictionary<string, string> Headers)
+public sealed record HttpRequestHead(string Method, string Path, IReadOnlyDictionary<string, string> Headers, string? Query = null)
 {
+    /// <summary>A query parameter (no percent-decoding: the API only uses plain numbers).</summary>
+    public string? QueryValue(string name)
+    {
+        if (string.IsNullOrEmpty(Query)) return null;
+        foreach (var pair in Query.Split('&'))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq > 0 && pair[..eq] == name) return pair[(eq + 1)..];
+        }
+        return null;
+    }
+
     public string? Header(string name) => Headers.TryGetValue(name, out var v) ? v : null;
 
     public string? BearerToken()
@@ -34,7 +46,8 @@ public sealed record HttpRequestHead(string Method, string Path, IReadOnlyDictio
 public static class MiniHttp
 {
     public const int MaxHeadBytes = 8 * 1024;
-    public const int MaxBodyBytes = 4 * 1024;
+    /// <summary>A relayed notification (M-28) is the largest body: 1000 chars of Korean text is ~3 KB.</summary>
+    public const int MaxBodyBytes = 16 * 1024;
 
     private const string WebSocketGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -68,8 +81,13 @@ public static class MiniHttp
         var requestLine = lines[0].Split(' ');
         if (requestLine.Length != 3 || !requestLine[2].StartsWith("HTTP/1.", StringComparison.Ordinal)) return null;
         var path = requestLine[1];
+        string? query = null;
         var q = path.IndexOf('?');
-        if (q >= 0) path = path[..q];
+        if (q >= 0)
+        {
+            query = path[(q + 1)..];
+            path = path[..q];
+        }
 
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var line in lines.Skip(1))
@@ -78,7 +96,7 @@ public static class MiniHttp
             if (colon <= 0) return null;
             headers[line[..colon].Trim()] = line[(colon + 1)..].Trim();
         }
-        return new HttpRequestHead(requestLine[0].ToUpperInvariant(), path, headers);
+        return new HttpRequestHead(requestLine[0].ToUpperInvariant(), path, headers, query);
     }
 
     /// <summary>Reads exactly Content-Length body bytes (bounded), using bytes already buffered first.</summary>
@@ -127,6 +145,7 @@ public static class MiniHttp
     private static string Reason(int status) => status switch
     {
         200 => "OK",
+        202 => "Accepted",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",

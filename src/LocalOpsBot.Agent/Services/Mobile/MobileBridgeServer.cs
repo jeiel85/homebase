@@ -30,6 +30,9 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly MobileApiServer _api;
     private readonly IMobileDeviceStore _devices;
     private readonly IOutboundRouter? _router;
+    private readonly DeviceHub? _deviceHub;
+    private readonly HubLinkService? _hubLinks;
+    private readonly TrayToastRelay? _toasts;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
@@ -47,8 +50,15 @@ public sealed class MobileBridgeServer : BackgroundService
         IMobileDeviceStore devices,
         IOptions<MobileOptions> options,
         ILogger<MobileBridgeServer> logger,
-        IOutboundRouter? router = null)
+        IOutboundRouter? router = null,
+        DeviceHub? deviceHub = null,
+        HubLinkService? hubLinks = null,
+        TrayToastRelay? toasts = null)
     {
+        _deviceHub = deviceHub;
+        _hubLinks = hubLinks;
+        _toasts = toasts;
+        if (_toasts is not null) _toasts.Requested += OnToastRequested;
         _hub = hub;
         _api = api;
         _devices = devices;
@@ -155,6 +165,21 @@ public sealed class MobileBridgeServer : BackgroundService
             await SendAsync(conn, MobileBridge.Response(id, true, await SendTestNotificationAsync(ct)), ct);
             return;
         }
+        if (op == MobileBridge.OpHubsLink)
+        {
+            var link = (string?)payload?["link"] ?? "";
+            var result = _hubLinks is null
+                ? new HubLinkResult(false, null, "off", "휴대폰 연결 기능이 꺼져 있습니다.")
+                : await _hubLinks.LinkAsync(link, ct);
+            await SendAsync(conn, MobileBridge.Response(id, true, result), ct);
+            return;
+        }
+        if (op == MobileBridge.OpHubsUnlink)
+        {
+            var ok = _hubLinks is not null && await _hubLinks.UnlinkAsync((string?)payload?["pcId"] ?? "");
+            await SendAsync(conn, MobileBridge.Response(id, ok), ct);
+            return;
+        }
         JsonObject response = op switch
         {
             MobileBridge.OpPairingBegin => _api.CreateOffer() is { } offer
@@ -164,6 +189,10 @@ public sealed class MobileBridgeServer : BackgroundService
             MobileBridge.OpDevicesRevoke => MobileBridge.Response(id,
                 _devices.Revoke((string?)payload?["deviceId"] ?? "")),
             MobileBridge.OpStatus => MobileBridge.Response(id, true, _api.Status()),
+            MobileBridge.OpDevicesOverview => _deviceHub is null
+                ? MobileBridge.Response(id, false, error: "unsupported")
+                : MobileBridge.Response(id, true, new DeviceOverview(_deviceHub.Devices(),
+                    _hubLinks?.Views() ?? (IReadOnlyList<LinkedHubView>)Array.Empty<LinkedHubView>())),
             _ => MobileBridge.Response(id, false, error: "unsupported"),
         };
         await SendAsync(conn, response, ct);
@@ -182,6 +211,18 @@ public sealed class MobileBridgeServer : BackgroundService
         var via = result.Attempts.FirstOrDefault(a => a.Success)?.ChannelId;
         _logger.LogInformation("Test notification from the Tray: delivered={Delivered} via {Channel}", result.Delivered, via ?? "-");
         return new NotifyTestResult(result.Delivered, via, result.Delivered ? null : result.CombinedError);
+    }
+
+    private void OnToastRequested(TrayToast toast)
+    {
+        List<Connection> conns;
+        lock (_gate) conns = _connections.ToList();
+        foreach (var c in conns)
+        {
+            _ = SendAsync(c, MobileBridge.Message(MobileBridge.OpToast, toast), CancellationToken.None)
+                .ContinueWith(t => _logger.LogDebug("Toast to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
+                    TaskContinuationOptions.OnlyOnFaulted);
+        }
     }
 
     private void OnWatchingChanged(bool on)
@@ -228,6 +269,7 @@ public sealed class MobileBridgeServer : BackgroundService
     public override void Dispose()
     {
         _hub.WatchingChanged -= OnWatchingChanged;
+        if (_toasts is not null) _toasts.Requested -= OnToastRequested;
         base.Dispose();
     }
 }

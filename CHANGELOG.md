@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.23.0 — Your PCs and phones see each other
+
+### Added
+- **Every device sees the others.** Each PC now keeps a list of everything paired with it — phones
+  and other PCs — with their state: battery and network for phones, CPU, memory and uptime for PCs,
+  and whether each one is online. The phone app shows them under "다른 기기" below your PC list;
+  the PC shows them in a new DEVICES section of the dashboard. Phones report about every 30 minutes
+  in the background and whenever the app checks a PC (DECISIONS M-27).
+- **Link two PCs.** Settings › Phone on one PC has a new "COPY LINK" button; paste that link into
+  "Link another PC" on the other PC. The two PCs then see each other's state and get each other's
+  Windows notifications, and a phone paired with either PC sees both (DECISIONS M-29).
+- **Notifications travel between devices.** A notification that reaches one device is shown on the
+  others: a PC's Windows notifications reach the PCs linked to it, and — if you turn on
+  Settings › 다른 기기 › "이 휴대폰 알림을 PC로 보내기" and allow Android's notification access —
+  a phone's notifications appear on its PCs and on the other phones paired with them. Relayed
+  notifications go one step only, never loop back, and a phone paired with two PCs gets each once.
+  Authenticators, password managers and phone-mirroring apps are left out by default, and any app
+  can be left out after it shows up (DECISIONS M-28). The phone can mute these with the new
+  "다른 기기 알림" switch under 받을 알림.
+- **The work tab shows more than Claude Code.** It now lists Codex sessions (title and folder from
+  Codex's own session index), the documents open in Word, Excel, PowerPoint, OneNote, Hangul,
+  Acrobat and similar apps, code editors and IDEs with their project, and the active tab of each
+  browser window — with the window you're looking at first (DECISIONS M-26).
+
+### Changed
+- The "Windows 알림만" shortcut under 받을 알림 is now "앱 알림만" and keeps notifications from your
+  other devices on too.
+
+### Notes
+- Both sides need this version: an older PC doesn't list devices or relay notifications, and an
+  older phone app shows only Claude sessions in the work tab.
+- Relayed phone notifications share the push relay's daily allowance (250 a day per phone on
+  ntfy.sh) and the PC's forwarding limit (150 a day).
+
 ## v0.22.0 — A steady app list
 
 ### Changed

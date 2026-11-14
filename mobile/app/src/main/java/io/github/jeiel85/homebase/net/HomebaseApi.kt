@@ -142,6 +142,57 @@ class HomebaseApi(
         throw last
     }
 
+    /**
+     * Tells [pc] this phone's state and returns every device paired with it (DECISIONS M-27).
+     * Null when the PC predates the route (404). Throws [UnauthorizedException] on 401, [IOException]
+     * when no path answered.
+     */
+    suspend fun presence(pc: PcEntry, report: PresenceReport): DevicesResponse? =
+        authedCall(pc, "/api/v1/presence", Request.Builder().post(report.toJson().toString().toRequestBody(JSON))) { code, text ->
+            when {
+                code in 200..299 -> DevicesResponse.parse(text!!)
+                code == 404 -> null
+                else -> throw IOException(errorMessage(text) ?: "상태 보고 실패 (HTTP $code)")
+            }
+        }
+
+    /**
+     * Forwards one of this phone's notifications to [pc] (DECISIONS M-28). False when the PC can't
+     * relay it (too old: 404, or Windows notification forwarding is off: 503).
+     */
+    suspend fun sendNotification(pc: PcEntry, n: DeviceNotification): Boolean =
+        authedCall(pc, "/api/v1/notifications", Request.Builder().post(n.toJson().toString().toRequestBody(JSON))) { code, text ->
+            when {
+                code in 200..299 -> true
+                code == 404 || code == 503 -> false
+                else -> throw IOException(errorMessage(text) ?: "알림 전달 실패 (HTTP $code)")
+            }
+        }
+
+    /** One authenticated call over [pc]'s paths in order; the first path that answers decides. */
+    private suspend fun <T> authedCall(
+        pc: PcEntry,
+        path: String,
+        builder: Request.Builder,
+        handle: (code: Int, body: String?) -> T,
+    ): T = withContext(Dispatchers.IO) {
+        var last: Exception = IOException("no endpoints")
+        for (e in pc.orderedEndpoints(networks())) {
+            val req = builder.url(e.url(path)).header("Authorization", "Bearer ${pc.token}").build()
+            val res = try {
+                clientFor(e, quick).newCall(req).execute()
+            } catch (ex: IOException) {
+                last = IOException("${e.label}: ${describe(ex)}")
+                continue
+            }
+            res.use {
+                if (it.code == 401) throw UnauthorizedException()
+                return@withContext handle(it.code, it.body?.string())
+            }
+        }
+        throw last
+    }
+
     /** The PC's current endpoints (null when the PC predates the route, or on any failure). */
     private fun fetchEndpoints(pc: PcEntry, e: Endpoint): List<Endpoint>? = try {
         val req = Request.Builder().url(e.url("/api/v1/endpoints")).header("Authorization", "Bearer ${pc.token}").build()

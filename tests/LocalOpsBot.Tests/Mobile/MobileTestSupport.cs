@@ -13,12 +13,15 @@ internal sealed class ManualTimeProvider : TimeProvider
 internal sealed class InMemoryDeviceStore : IMobileDeviceStore
 {
     private readonly List<(MobileDeviceInfo Info, string Hash)> _devices = new();
-    public string PcId => "pc-test";
+
+    public InMemoryDeviceStore(string pcId = "pc-test") => PcId = pcId;
+
+    public string PcId { get; }
     public IReadOnlyList<MobileDeviceInfo> List() => _devices.Select(d => d.Info).ToList();
 
-    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex)
+    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone)
     {
-        var info = new MobileDeviceInfo($"dev{_devices.Count + 1}", name, model, DateTimeOffset.UnixEpoch, null);
+        var info = new MobileDeviceInfo($"dev{_devices.Count + 1}", name, model, DateTimeOffset.UnixEpoch, null, kind);
         _devices.Add((info, tokenSha256Hex));
         return info;
     }

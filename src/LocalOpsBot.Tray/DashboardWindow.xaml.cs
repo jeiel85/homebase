@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Text.Json;
+using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Core.Monitoring;
 using LocalOpsBot.Infrastructure.Windows;
 using LocalOpsBot.Tray.Services;
@@ -63,6 +65,9 @@ public partial class DashboardWindow : ThemedWindow
             ApplyNetwork(network);
             ApplyDisks(disks);
 
+            // Other devices report every 30 s (PCs) or less often (phones); every ~9 s is plenty.
+            if (_ticks % 3 == 0) await RefreshDevicesAsync();
+
             // Config-backed rows change rarely; re-read them every ~30 s rather than every tick.
             if (_ticks++ % 10 == 0)
             {
@@ -80,6 +85,77 @@ public partial class DashboardWindow : ThemedWindow
         {
             _refreshing = false;
         }
+    }
+
+    private async Task RefreshDevicesAsync()
+    {
+        if (MobileHost.Client is not { IsConnected: true } client)
+        {
+            ShowDeviceMessage(MobileHost.IsEnabled() ? L.DevNone : L.DevFeatureOff);
+            return;
+        }
+        DeviceOverview? overview = null;
+        try
+        {
+            var r = await client.RequestAsync(MobileBridge.OpDevicesOverview);
+            if ((bool?)r["ok"] == true) overview = r["payload"]?.Deserialize<DeviceOverview>(MobileProtocol.Json);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or TaskCanceledException or OperationCanceledException) { }
+        if (overview is null) return; // keep what is shown
+        ApplyDevices(overview);
+    }
+
+    private void ShowDeviceMessage(string text)
+    {
+        DevicePanel.Children.Clear();
+        DevicePanel.Children.Add(new TextBlock { Text = text, Style = (Style)FindResource("Type.Micro"), TextWrapping = TextWrapping.Wrap });
+    }
+
+    private void ApplyDevices(DeviceOverview overview)
+    {
+        DevicePanel.Children.Clear();
+        var shown = new HashSet<(string, string)>();
+        foreach (var d in overview.Here.Devices)
+        {
+            shown.Add((d.Kind, d.Name));
+            AddDeviceRow(d.Kind, d.Name, DeviceText.Entry(d), d.Online);
+        }
+        foreach (var h in overview.Hubs)
+        {
+            AddDeviceRow(DeviceKind.Pc, h.PcName, DeviceText.Hub(h), h.Online);
+            foreach (var d in h.Devices)
+            {
+                // Skip this PC itself, and a phone already listed because it is paired here too.
+                if (d.DeviceId == h.SelfDeviceId || !shown.Add((d.Kind, d.Name))) continue;
+                AddDeviceRow(d.Kind, d.Name, DeviceText.Entry(d, h.PcName), d.Online);
+            }
+        }
+        if (DevicePanel.Children.Count == 0) ShowDeviceMessage(L.DevNone);
+    }
+
+    private void AddDeviceRow(string kind, string name, string detail, bool online)
+    {
+        var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var chip = new Border
+        {
+            Style = (Style)FindResource("Chip"),
+            Background = (Brush)FindResource(online ? "Brush.StatusOk" : "Brush.Hairline"),
+            VerticalAlignment = VerticalAlignment.Top,
+            Child = new TextBlock
+            {
+                Text = kind == DeviceKind.Pc ? L.DevKindPc : L.DevKindPhone,
+                Style = (Style)FindResource("ChipText"),
+            },
+        };
+        var text = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = name, Style = (Style)FindResource("Type.BodyStrong") });
+        text.Children.Add(new TextBlock { Text = detail, Style = (Style)FindResource("Type.Micro"), TextWrapping = TextWrapping.Wrap });
+        Grid.SetColumn(text, 1);
+        row.Children.Add(chip);
+        row.Children.Add(text);
+        DevicePanel.Children.Add(row);
     }
 
     private static bool SafeForwardingEnabled()

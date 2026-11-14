@@ -227,6 +227,48 @@ public static class L
     public static string PhoneApplyNote => T(
         "Turning this on or changing paths asks for administrator approval, then the Homebase service restarts.",
         "켜거나 경로를 바꾸면 관리자 승인 후 Homebase 서비스가 다시 시작됩니다.");
+    public static string PhoneCopyLink => T("COPY LINK", "링크 복사");
+    public static string PhoneCopyLinkHint => T(
+        "To link another PC, paste this link into \"Link another PC\" on that PC.",
+        "다른 PC와 연결하려면 이 링크를 그 PC의 \"다른 PC 연결\"에 붙여 넣으세요.");
+    public static string PhoneCopyLinkDone => T("Link copied — paste it on the other PC within the time left.", "링크를 복사했습니다 — 남은 시간 안에 다른 PC에 붙여 넣으세요.");
+    public static string PhoneCopyLinkExpired => T("The code expired — press NEW CODE first.", "코드가 만료됐습니다 — 먼저 새 코드를 누르세요.");
+    public static string PhoneCopyLinkFailed => T("Couldn't copy to the clipboard. Try again.", "클립보드에 복사하지 못했습니다. 다시 누르세요.");
+    public static string PhoneLinkHeader => T("LINK ANOTHER PC", "다른 PC 연결");
+    public static string PhoneLinkIntro => T(
+        "Paste the link from the other PC's Settings › Phone (COPY LINK). Both PCs then see each other's status and get each other's notifications; phones paired with either PC see both.",
+        "다른 PC의 설정 → 휴대폰에서 '링크 복사'로 받은 링크를 붙여 넣으세요. 두 PC가 서로의 상태를 보고 서로의 알림을 받으며, 어느 쪽에 붙은 휴대폰이든 둘 다 볼 수 있습니다.");
+    public static string PhoneLinkButton => T("LINK", "연결");
+    public static string PhoneLinking => T("Linking…", "연결하는 중…");
+    public static string PhoneLinked(string name) => T($"Linked to {name}.", $"{name}에 연결했습니다.");
+    public static string PhoneLinkFailed => T("Couldn't link.", "연결하지 못했습니다.");
+    public static string PhoneUnlink => T("UNLINK", "연결 끊기");
+    public static string PhoneUnlinkConfirm => T(
+        "Unlink this PC? Status and notifications stop flowing between the two PCs. To link again you need a new link.",
+        "이 PC와의 연결을 끊을까요? 두 PC 사이의 상태·알림 전달이 멈춥니다. 다시 연결하려면 새 링크가 필요합니다.");
+
+    // ── Devices (dashboard and Phone tab; DECISIONS M-27, M-29) ──────────────
+    public static string DashDevices => T("DEVICES", "기기");
+    public static string DevNone => T(
+        "No other devices yet. Pair a phone or link another PC in Settings › Phone.",
+        "아직 다른 기기가 없습니다. 설정 → 휴대폰에서 휴대폰을 연결하거나 다른 PC를 연결하세요.");
+    public static string DevFeatureOff => T("Turn on the phone connection to see your other devices here.", "휴대폰 연결을 켜면 여기에 다른 기기가 보입니다.");
+    public static string DevKindPc => T("PC", "PC");
+    public static string DevKindPhone => T("PHONE", "휴대폰");
+    public static string DevOnline => T("online", "온라인");
+    public static string DevOffline => T("offline", "오프라인");
+    public static string DevNoReport => T("no report yet", "아직 보고 없음");
+    public static string DevSeen(string ago) => T($"seen {ago}", $"{ago} 확인");
+    public static string DevJustNow => T("just now", "방금");
+    public static string DevMinutes(int n) => T($"{n} min ago", $"{n}분 전");
+    public static string DevHours(int n) => T($"{n} h ago", $"{n}시간 전");
+    public static string DevDays(int n) => T($"{n} d ago", $"{n}일 전");
+    public static string DevBattery(int pct, bool charging) => T($"battery {pct}%{(charging ? " (charging)" : "")}", $"배터리 {pct}%{(charging ? " (충전 중)" : "")}");
+    public static string DevUptime(TimeSpan t) => T($"up {(int)t.TotalDays}d {t.Hours}h", $"가동 {(int)t.TotalDays}일 {t.Hours}시간");
+    public static string DevVia(string hub) => T($"via {hub}", $"{hub} 경유");
+    public static string DevHubRejected => T("this link was removed on that PC", "그 PC에서 연결이 해제됨");
+    public static string DevHubConnecting => T("connecting…", "연결하는 중…");
+    public static string DevHubPhones(int n) => T($"{n} phone(s) there", $"휴대폰 {n}대 연결됨");
 
     // ── Updates (UpdateCoordinator / progress window) ────────────────────────
     public static string UpdChecking => T("Checking…", "확인하는 중…");

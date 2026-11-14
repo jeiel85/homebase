@@ -85,6 +85,10 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
                 }
             }
             item {
+                SectionLabel("다른 기기")
+                SettingsPlate { DeviceSharingSettings() }
+            }
+            item {
                 SectionLabel("화면")
                 SettingsPlate { ThemeChoice() }
             }

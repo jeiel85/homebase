@@ -64,6 +64,7 @@ import io.github.jeiel85.homebase.net.AppEntry
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.net.LiveSnapshot
+import io.github.jeiel85.homebase.net.WorkItem
 import io.github.jeiel85.homebase.net.LiveState
 import io.github.jeiel85.homebase.net.ProcessEntry
 import io.github.jeiel85.homebase.net.WindowTitle
@@ -141,7 +142,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
                     listOf(
                         "앱" to if (snapshot.sessionAvailable) snapshot.apps.size.toString() else "—",
                         "프로세스" to snapshot.processes.size.toString(),
-                        "작업" to snapshot.claudeSessions.size.toString(),
+                        "작업" to snapshot.workItems.size.toString(),
                     ),
                 ) { tab = it }
             }
@@ -599,39 +600,53 @@ private fun ProcessRow(p: ProcessEntry, memTotal: Long, compact: Boolean) {
     }
 }
 
-/** Work sessions — today the PC reports Claude Code sessions; the list is generic on purpose. */
+/**
+ * The work tab (DECISIONS M-26): AI coding sessions (Claude Code, Codex) with their last activity,
+ * then the foreground window and the other editors, documents and browser tabs. A PC older than
+ * v0.23.0 sends only Claude sessions, which [LiveSnapshot.workItems] turns into the same list.
+ */
 private fun LazyListScope.sessionItems(s: LiveSnapshot) {
-    if (s.claudeSessions.isEmpty()) {
+    val work = s.workItems
+    if (work.isEmpty()) {
         item(key = "nosess") {
-            EmptyNote("최근 10분 안에 활동한 작업 세션이 없습니다", "지금은 Claude Code 세션을 인식합니다.")
+            EmptyNote(
+                "지금 보이는 작업이 없습니다",
+                "최근 10분 안의 Claude Code·Codex 세션과 열린 문서(Word·Excel·한글 등), 코드 편집기, 브라우저 탭을 보여 줍니다.",
+            )
         }
         return
     }
-    // Positional keys: the protocol has no session id, and title + folder can repeat (two
-    // untitled sessions in one folder), which would crash LazyColumn with a duplicate key.
-    itemsIndexed(s.claudeSessions, key = { i, _ -> "c$i" }) { _, c ->
+    // Positional keys: the protocol has no item id, and app + title can repeat (two untitled
+    // sessions in one folder), which would crash LazyColumn with a duplicate key.
+    itemsIndexed(work, key = { i, _ -> "w$i" }) { _, w ->
         val hb = Hb.colors
-        val secs = agoSeconds(c.lastActivity, s.ts)
-        val active = secs != null && secs < 60
+        val secs = w.lastActivity?.let { agoSeconds(it, s.ts) }
+        val active = if (w.kind == WorkItem.AGENT) secs != null && secs < 60 else w.foreground
         Plate(Modifier.padding(horizontal = 12.dp, vertical = 5.dp), rail = active) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Led(if (active) hb.ledOn else hb.meterOk, size = 7.dp, pulse = active)
                     Text(
-                        ago(secs),
+                        when {
+                            w.kind == WorkItem.AGENT -> ago(secs)
+                            w.foreground -> "지금 보는 창"
+                            else -> workKindLabel(w.kind)
+                        },
                         style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.3.sp),
                         color = hb.inkSoft,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).padding(start = 6.dp),
                     )
-                    Tag("Claude Code", hb.hairline, hb.inkSoft)
+                    Tag(w.app, hb.hairline, hb.inkSoft)
                 }
                 Text(
-                    c.title,
+                    w.title,
                     style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
                     color = hb.ink,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                c.project?.let {
+                w.detail?.let {
                     Text(
                         it,
                         style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
@@ -644,6 +659,13 @@ private fun LazyListScope.sessionItems(s: LiveSnapshot) {
             }
         }
     }
+}
+
+private fun workKindLabel(kind: String): String = when (kind) {
+    WorkItem.BROWSER -> "브라우저 탭"
+    WorkItem.DOCUMENT -> "문서"
+    WorkItem.EDITOR -> "코드 편집기"
+    else -> "작업"
 }
 
 @Composable

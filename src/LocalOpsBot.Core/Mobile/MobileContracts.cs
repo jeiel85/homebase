@@ -73,7 +73,8 @@ public sealed record PairingOffer(
 /// <summary><c>GET /api/v1/endpoints</c>: the current paths, so a paired phone follows DHCP or tunnel-address changes.</summary>
 public sealed record EndpointsResponse(int Schema, IReadOnlyList<MobileEndpoint> Endpoints);
 
-public sealed record PairRequest(string Code, string DeviceName, string? DeviceModel);
+/// <summary><c>Kind</c> (DECISIONS M-27): <c>phone</c> (default, what older apps send by omission) or <c>pc</c>.</summary>
+public sealed record PairRequest(string Code, string DeviceName, string? DeviceModel, string? Kind = null);
 
 public sealed record PairResponse(int Schema, string DeviceId, string Token, string PcId, string PcName);
 
@@ -110,7 +111,13 @@ public sealed record AppEntry(
     ResourceUsage Usage,
     IReadOnlyList<ProcessEntry> Children);
 
-public sealed record ClaudeSession(string Title, string? Project, DateTimeOffset LastActivity);
+public sealed record ClaudeSession(string Title, string? Project, DateTimeOffset LastActivity)
+{
+    public const string AppName = "Claude Code";
+
+    /// <summary>The same session as a work-tab entry (DECISIONS M-26).</summary>
+    public WorkItem ToWork() => new(WorkKind.Agent, AppName, Title, Project, LastActivity);
+}
 
 public sealed record LiveSnapshot(
     int Schema,
@@ -121,4 +128,5 @@ public sealed record LiveSnapshot(
     bool NetPerProcess,
     IReadOnlyList<AppEntry> Apps,
     IReadOnlyList<ProcessEntry> Processes,
-    IReadOnlyList<ClaudeSession> ClaudeSessions);
+    IReadOnlyList<ClaudeSession> ClaudeSessions,
+    IReadOnlyList<WorkItem>? Work = null);

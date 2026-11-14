@@ -3,6 +3,8 @@ using System.Runtime.Versioning;
 using System.Text;
 using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Localization;
+using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Protocol.Messaging;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +19,10 @@ namespace LocalOpsBot.Agent.Services;
 /// <see cref="DeliveryPolicy.EncryptedOnly"/> — KDE Connect or encrypted UnifiedPush, never the
 /// Telegram cloud in plaintext — unless <c>notificationForwarding:telegramFallback</c> is set
 /// (DECISIONS M-19).
+/// <para>Notifications from paired devices and linked hub PCs (DECISIONS M-28) take the same path with
+/// category <c>device-notification</c>: they are shown on this PC through the Tray, and the push skips
+/// the device that sent them and the phones that got them elsewhere. This PC's own toasts and what its
+/// devices sent go to the <see cref="NotificationInbox"/> for linked PCs; what came from a hub does not.</para>
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class NotificationForwardingService : BackgroundService
@@ -31,6 +37,8 @@ public sealed class NotificationForwardingService : BackgroundService
     private readonly TimeProvider _time;
     private readonly ILogger<NotificationForwardingService> _logger;
     private readonly ToastBundler _bundler;
+    private readonly NotificationInbox? _inbox;
+    private readonly ITrayToaster? _toaster;
     private readonly object _gate = new();
     private int _droppedReported;
     private DateTimeOffset _lastBudgetWarning = DateTimeOffset.MinValue;
@@ -41,8 +49,12 @@ public sealed class NotificationForwardingService : BackgroundService
         ITextMasker masker,
         ToastForwardingOptions options,
         ILogger<NotificationForwardingService> logger,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        NotificationInbox? inbox = null,
+        ITrayToaster? toaster = null)
     {
+        _inbox = inbox;
+        _toaster = toaster;
         _bridgeServer = bridgeServer;
         _outbound = outbound;
         _masker = masker;
@@ -82,6 +94,15 @@ public sealed class NotificationForwardingService : BackgroundService
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
+    /// <summary>
+    /// Raised for each of this PC's own Windows toasts after filtering and masking — the hub link
+    /// (DECISIONS M-29) sends them on to the PCs this one is linked to.
+    /// </summary>
+    public event Action<ToastItem>? LocalAccepted;
+
+    /// <summary>Category of notifications relayed from another device (DECISIONS M-28).</summary>
+    public const string DeviceCategory = "device-notification";
+
     private void OnNotificationReceived(ToastNotificationEvent notification)
     {
         _ = AcceptAsync(notification);
@@ -102,20 +123,71 @@ public sealed class NotificationForwardingService : BackgroundService
                 notification.SourceApp,
                 _masker.Mask(notification.Title ?? string.Empty),
                 _masker.Mask(notification.Body ?? string.Empty),
-                notification.CreatedAt);
+                notification.CreatedAt,
+                Id: Guid.NewGuid().ToString("N"));
 
-            ToastBatch? batch;
-            lock (_gate)
-            {
-                batch = _bundler.Add(item);
-                ReportBudgetDrops();
-            }
-            if (batch is not null) await SendAsync(batch);
+            _inbox?.Add(NotificationInbox.SelfOrigin, Environment.MachineName, item.SourceApp, item.Title,
+                item.Body is { Length: > 0 } b ? b : null, item.At, item.Id);
+            try { LocalAccepted?.Invoke(item); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Hub link rejected a local notification"); }
+            await BundleAsync(item);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to forward notification");
         }
+    }
+
+    /// <summary>
+    /// A notification another device sent (DECISIONS M-28): masked, shown on this PC, kept for linked
+    /// PCs unless it came from a hub, and pushed to this PC's other phones through the bundler.
+    /// </summary>
+    public async Task AcceptFromDeviceAsync(ToastOrigin origin, string app, string title, string? body, DateTimeOffset at, string? id = null)
+    {
+        try
+        {
+            if (id is not null && !FirstSighting(id)) return;
+            var item = new ToastItem(app, _masker.Mask(title), body is null ? null : _masker.Mask(body), at, origin, id);
+            _toaster?.Show($"{origin.Name} · {app}", ToastText(item));
+            if (!origin.FromHub) _inbox?.Add(origin.DeviceId, origin.Name, app, item.Title, item.Body, at, id);
+            await BundleAsync(item);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to relay a notification from {Device}", origin.Name);
+        }
+    }
+
+    private readonly Dictionary<string, DateTimeOffset> _seenIds = new(StringComparer.Ordinal);
+
+    /// <summary>False when this id arrived in the last 30 minutes (the same notification by another path).</summary>
+    private bool FirstSighting(string id)
+    {
+        var now = _time.GetUtcNow();
+        lock (_seenIds)
+        {
+            if (_seenIds.Count > 1000)
+                foreach (var old in _seenIds.Where(kv => now - kv.Value > NotificationInbox.Retention).Select(kv => kv.Key).ToList())
+                    _seenIds.Remove(old);
+            if (_seenIds.TryGetValue(id, out var at) && now - at <= NotificationInbox.Retention) return false;
+            _seenIds[id] = now;
+            return true;
+        }
+    }
+
+    private static string? ToastText(ToastItem item) =>
+        string.IsNullOrWhiteSpace(item.Body) ? (string.IsNullOrWhiteSpace(item.Title) ? null : item.Title)
+        : string.IsNullOrWhiteSpace(item.Title) ? item.Body : item.Title + "\n" + item.Body;
+
+    private async Task BundleAsync(ToastItem item)
+    {
+        ToastBatch? batch;
+        lock (_gate)
+        {
+            batch = _bundler.Add(item);
+            ReportBudgetDrops();
+        }
+        if (batch is not null) await SendAsync(batch);
     }
 
     /// <summary>Visible for tests: drain bundles whose window ended.</summary>
@@ -157,19 +229,34 @@ public sealed class NotificationForwardingService : BackgroundService
         }
     }
 
+    /**
+     * The push id of a relayed batch, the same on every PC that relays it: derived from the ids the
+     * notifications carried from their source device. A phone paired with two PCs gets the same
+     * relayed notification from both and shows it once (the app drops a repeated id).
+     */
+    internal static Guid RelayId(ToastBatch batch)
+    {
+        var ids = batch.Items.Select(i => i.Id ?? $"{i.SourceApp}|{i.Title}|{i.Body}|{i.At.ToUnixTimeMilliseconds()}");
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("relay|" + string.Join('|', ids)));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+
     public static OutboundNotification ToOutbound(ToastBatch batch, bool telegramFallback, DateTimeOffset now)
     {
+        var origin = batch.Origin;
+        // A relayed notification is labelled with the device it came from: "Galaxy S24 · 카카오톡".
+        var source = origin is null ? batch.SourceApp : $"{origin.Name} · {batch.SourceApp}";
         string title;
         string? body;
         if (batch.Count == 1)
         {
             var only = batch.Items[0];
-            title = string.IsNullOrWhiteSpace(only.Title) ? batch.SourceApp : $"{batch.SourceApp}: {only.Title}";
+            title = string.IsNullOrWhiteSpace(only.Title) ? source : $"{source}: {only.Title}";
             body = string.IsNullOrWhiteSpace(only.Body) ? null : only.Body;
         }
         else
         {
-            title = Strings.ToastBundleTitle(batch.SourceApp, batch.Count);
+            title = Strings.ToastBundleTitle(source, batch.Count);
             var sb = new StringBuilder();
             foreach (var item in batch.Items)
             {
@@ -182,22 +269,28 @@ public sealed class NotificationForwardingService : BackgroundService
             body = sb.ToString();
         }
 
+        var metadata = new Dictionary<string, string>
+        {
+            ["sourceApp"] = source,
+            ["origin"] = origin is null ? "windows-toast" : DeviceCategory,
+            ["count"] = batch.Count.ToString(CultureInfo.InvariantCulture),
+        };
+        if (origin is not null)
+        {
+            metadata[PushRelay.OriginDeviceKey] = origin.DeviceId;
+            if (origin.SkipPushHashes.Count > 0) metadata[PushRelay.SkipHashesKey] = string.Join(',', origin.SkipPushHashes);
+        }
         return new OutboundNotification(
-            Guid.NewGuid(),
-            "windows-toast",
+            origin is null ? Guid.NewGuid() : RelayId(batch),
+            origin is null ? "windows-toast" : DeviceCategory,
             OutboundPriority.Info,
             title,
             body,
-            $"toast:{batch.SourceApp}:{now.ToUnixTimeMilliseconds()}",
+            $"toast:{source}:{now.ToUnixTimeMilliseconds()}",
             MessageSensitivity.Sensitive,
             telegramFallback ? DeliveryPolicy.LocalPreferred : DeliveryPolicy.EncryptedOnly,
             batch.Items[^1].At,
-            Metadata: new Dictionary<string, string>
-            {
-                ["sourceApp"] = batch.SourceApp,
-                ["origin"] = "windows-toast",
-                ["count"] = batch.Count.ToString(CultureInfo.InvariantCulture),
-            });
+            Metadata: metadata);
     }
 }
 

@@ -10,7 +10,7 @@ public interface IMobileDeviceStore
 
     IReadOnlyList<MobileDeviceInfo> List();
 
-    MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex);
+    MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone);
 
     bool Revoke(string deviceId);
 
@@ -69,7 +69,7 @@ public sealed class PairingService
         }
     }
 
-    public PairResult TryPair(string? code, string? deviceName, string? deviceModel)
+    public PairResult TryPair(string? code, string? deviceName, string? deviceModel, string? kind = null)
     {
         lock (_gate)
         {
@@ -93,7 +93,7 @@ public sealed class PairingService
 
             _code = null; // single use
             var token = Base64Url(RandomNumberGenerator.GetBytes(32));
-            var device = _store.Add(CleanName(deviceName), CleanModel(deviceModel), HashToken(token));
+            var device = _store.Add(CleanName(deviceName, kind), CleanModel(deviceModel), HashToken(token), DeviceKind.Normalize(kind));
             return new PairResult(PairOutcome.Paired, device.DeviceId, token);
         }
     }
@@ -104,10 +104,10 @@ public sealed class PairingService
     public static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private static string CleanName(string? name)
+    private static string CleanName(string? name, string? kind = null)
     {
         var n = (name ?? "").Trim();
-        if (n.Length == 0) return "Android";
+        if (n.Length == 0) return DeviceKind.Normalize(kind) == DeviceKind.Pc ? "PC" : "Android";
         return n.Length > 64 ? n[..64] : n;
     }
 

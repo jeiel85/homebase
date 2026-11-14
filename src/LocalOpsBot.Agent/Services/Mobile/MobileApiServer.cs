@@ -47,6 +47,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly TailscaleAddressResolver _resolver;
     private readonly LanAddressResolver _lanResolver;
     private readonly CloudflareTunnel? _tunnel;
+    private readonly DeviceHub? _deviceHub;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -66,8 +67,10 @@ public sealed class MobileApiServer : BackgroundService
         IOptions<MobileOptions> options,
         ILogger<MobileApiServer> logger,
         CloudflareTunnel? tunnel = null,
-        X509Certificate2? lanCertificate = null)
+        X509Certificate2? lanCertificate = null,
+        DeviceHub? deviceHub = null)
     {
+        _deviceHub = deviceHub;
         _hub = hub;
         _pairing = pairing;
         _devices = devices;
@@ -377,11 +380,12 @@ public sealed class MobileApiServer : BackgroundService
                 catch (JsonException) { req = null; }
                 if (req is null) return (400, Error("bad_request", "Invalid pairing request."));
 
-                var result = _pairing.TryPair(req.Code, req.DeviceName, req.DeviceModel);
+                var result = _pairing.TryPair(req.Code, req.DeviceName, req.DeviceModel, req.Kind);
                 switch (result.Outcome)
                 {
                     case PairOutcome.Paired:
-                        _logger.LogInformation("Mobile device paired: {Name} ({DeviceId}).", req.DeviceName, result.DeviceId);
+                        _logger.LogInformation("Device paired: {Name} ({DeviceId}, {Kind}).", req.DeviceName, result.DeviceId,
+                            DeviceKind.Normalize(req.Kind));
                         return (200, Json(new PairResponse(MobileProtocol.Schema, result.DeviceId!, result.Token!,
                             _devices.PcId, Environment.MachineName)));
                     case PairOutcome.Expired:
@@ -446,7 +450,65 @@ public sealed class MobileApiServer : BackgroundService
                 return (200, Json(new PushSubscriptionResponse(MobileProtocol.Schema, device.DeviceId, false)));
             }
 
-            case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"):
+            case ("POST", "/api/v1/presence"):
+            {
+                if (_deviceHub is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                PresenceReport? report;
+                try { report = JsonSerializer.Deserialize<PresenceReport>(body!, MobileProtocol.Json); }
+                catch (JsonException) { report = null; }
+                if (PresenceReport.Validate(report) is { } invalid) return (400, Error("invalid_presence", invalid));
+                return (200, Json(_deviceHub.Presence(device, report!)));
+            }
+
+            case ("GET", "/api/v1/devices"):
+            {
+                if (_deviceHub is null) return (404, Error("not_found", "Not found."));
+                if (_devices.Authenticate(head.BearerToken() ?? "") is null)
+                    return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return (200, Json(_deviceHub.Devices()));
+            }
+
+            case ("POST", "/api/v1/notifications"):
+            {
+                if (_deviceHub is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                if (!_deviceHub.CanRelay)
+                    return (503, Error("forwarding_off", "Notification forwarding is turned off on this PC."));
+                DeviceNotification? n;
+                try { n = JsonSerializer.Deserialize<DeviceNotification>(body!, MobileProtocol.Json); }
+                catch (JsonException) { n = null; }
+                if (DeviceNotification.Validate(n) is { } invalid) return (400, Error("invalid_notification", invalid));
+                // Accept at once: pushing on to the other phones can take seconds (ntfy), and the sender
+                // only needs to know the PC has it. RelayAsync logs its own failures.
+                _ = Task.Run(() => _deviceHub.RelayAsync(device, n!), CancellationToken.None);
+                return (202, "{\"schema\":1,\"accepted\":true}");
+            }
+
+            case ("GET", "/api/v1/inbox"):
+            {
+                if (_deviceHub is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                if (!long.TryParse(head.QueryValue("after"), System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out var after))
+                    after = 0;
+                try { return (200, Json(await _deviceHub.InboxAsync(device, after, ct))); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return (200, Json(_deviceHub.Inbox.Read(after, device.DeviceId))); }
+            }
+
+            case ("DELETE", "/api/v1/device"):
+            {
+                if (_deviceHub is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return (200, Json(new UnpairResponse(MobileProtocol.Schema, device.DeviceId, _deviceHub.Unpair(device))));
+            }
+
+            case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"
+                or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

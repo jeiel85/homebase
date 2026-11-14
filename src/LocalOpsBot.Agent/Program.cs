@@ -119,7 +119,8 @@ if (forwardingEnabled)
     builder.Services.AddSingleton<NotificationBridgeServer>();
     builder.Services.AddSingleton<INotificationBridgeServer>(sp => sp.GetRequiredService<NotificationBridgeServer>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationBridgeServer>());
-    builder.Services.AddHostedService<NotificationForwardingService>();
+    builder.Services.AddSingleton<NotificationForwardingService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<NotificationForwardingService>());
 }
 
 // --- Mobile monitoring (opt-in, DECISIONS M-1..M-11) -----------------------

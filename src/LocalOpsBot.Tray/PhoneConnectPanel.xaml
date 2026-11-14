@@ -29,8 +29,14 @@
         <Image x:Name="QrImage" Width="260" Height="260" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
       </Border>
       <TextBlock x:Name="CountdownText" Style="{StaticResource Type.BodyStrong}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-      <Button x:Name="NewCodeButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneNewCode}"
-              HorizontalAlignment="Center" Margin="0,10,0,0" Click="NewCode_Click"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+        <Button x:Name="NewCodeButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneNewCode}"
+                Click="NewCode_Click"/>
+        <Button x:Name="CopyLinkButton" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneCopyLink}"
+                Margin="8,0,0,0" Click="CopyLink_Click"/>
+      </StackPanel>
+      <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                 Margin="0,6,0,0" Text="{x:Static local:L.PhoneCopyLinkHint}"/>
     </StackPanel>
 
     <StackPanel x:Name="PathsPanel" Visibility="Collapsed">
@@ -72,6 +78,41 @@
                 <StackPanel>
                   <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{Binding Name}"/>
                   <TextBlock Style="{StaticResource Type.Micro}" Text="{Binding Detail}"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <!-- Link another PC (DECISIONS M-29): paste that PC's pairing link; both then see each other's state and notifications. -->
+    <StackPanel x:Name="LinkPanel" Visibility="Collapsed">
+      <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhoneLinkHeader}"/>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.PhoneLinkIntro}"/>
+          <DockPanel Margin="0,8,0,0">
+            <Button x:Name="LinkButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}" Content="{x:Static local:L.PhoneLinkButton}"
+                    Margin="8,0,0,0" Click="Link_Click"/>
+            <TextBox x:Name="LinkBox" VerticalContentAlignment="Center"/>
+          </DockPanel>
+          <TextBlock x:Name="LinkResultText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed"/>
+        </StackPanel>
+      </Border>
+      <ItemsControl x:Name="HubList" Margin="0,6,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,6">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneUnlink}"
+                        Tag="{Binding PcId}" Click="Unlink_Click" VerticalAlignment="Center"/>
+                <Ellipse DockPanel.Dock="Left" Width="9" Height="9" Fill="{Binding Dot}" VerticalAlignment="Top" Margin="0,5,8,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{Binding Name}"/>
+                  <TextBlock Style="{StaticResource Type.Micro}" Text="{Binding Detail}" TextWrapping="Wrap"/>
                 </StackPanel>
               </DockPanel>
             </Border>

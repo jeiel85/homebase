@@ -59,6 +59,33 @@ public class UnifiedPushChannelTests
     }
 
     [Fact]
+    public async Task A_relayed_notification_skips_the_sender_and_phones_that_already_have_it()
+    {
+        var tablet = _store.Add("Tablet", null, PairingService.HashToken("t2")).DeviceId;
+        var other = _store.Add("Other", null, PairingService.HashToken("t3")).DeviceId;
+        Subscribe("https://ntfy.sh/upPhone");                      // the sender
+        Subscribe("https://ntfy.sh/upTablet", deviceId: tablet);   // also paired with the sending PC
+        Subscribe("https://ntfy.sh/upOther", deviceId: other);
+        var meta = new Dictionary<string, string>
+        {
+            [PushRelay.OriginDeviceKey] = _deviceId,
+            [PushRelay.SkipHashesKey] = PushHash.Of("https://ntfy.sh/upTablet"),
+        };
+
+        Assert.True((await _channel.SendAsync(Alert(category: "device-notification", meta: meta), default)).Success);
+        Assert.Equal("https://ntfy.sh/upOther", Assert.Single(_http.Requests).Uri);
+    }
+
+    [Fact]
+    public async Task A_relayed_notification_nobody_else_needs_is_a_success_without_sending()
+    {
+        Subscribe("https://ntfy.sh/upPhone");
+        var meta = new Dictionary<string, string> { [PushRelay.OriginDeviceKey] = _deviceId };
+        Assert.True((await _channel.SendAsync(Alert(category: "device-notification", meta: meta), default)).Success);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
     public async Task The_tray_test_is_never_muted()
     {
         Subscribe(muted: ["test"]);
