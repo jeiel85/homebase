@@ -268,7 +268,8 @@ private fun HistoryCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "${entry.pcName} · $source",
+                    // The tag already names the kind; repeat the source only when it adds something (an app, a monitor).
+                    if (source == PushHistoryRules.categoryLabel(entry.category)) entry.pcName else "${entry.pcName} · $source",
                     style = HbType.label,
                     color = hb.inkSoft,
                     maxLines = 1,
