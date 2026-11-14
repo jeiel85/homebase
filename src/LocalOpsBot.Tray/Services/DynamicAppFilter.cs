@@ -19,6 +19,8 @@ internal sealed class DynamicAppFilter : INotificationFilter
 
     public NotificationFilterResult Evaluate(ToastNotificationEvent notification)
     {
+        // A notification this Tray showed for another device (M-28) must not be forwarded back.
+        if (Mobile.OwnToasts.IsOwn(notification)) return new NotificationFilterResult(false, "Relayed by Homebase");
         if (_config?.Evaluate(notification) is { Allowed: false } denied) return denied;
 
         var block = ForwardingApps.ReadBlockList();

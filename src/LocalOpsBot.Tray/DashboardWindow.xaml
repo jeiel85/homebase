@@ -95,6 +95,16 @@
           <StackPanel x:Name="DiskPanel"/>
         </Border>
 
+        <!-- ═ DEVICES — phones and PCs paired here, and PCs this one is linked to (M-27, M-29) ═ -->
+        <Border Style="{StaticResource SectionHeaderBar}">
+          <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.DashDevices}"/>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel x:Name="DevicePanel">
+            <TextBlock Style="{StaticResource Type.Micro}" Text="—"/>
+          </StackPanel>
+        </Border>
+
         <!-- ═ CONNECTIONS — read-only summary; changes happen in Settings ═ -->
         <Border Style="{StaticResource SectionHeaderBar}">
           <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.DashConnections}"/>

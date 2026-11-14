@@ -197,3 +197,24 @@ public static class Base64Url
         return Convert.FromBase64String(s);
     }
 }
+
+/// <summary>
+/// <see cref="LocalOpsBot.Core.Delivery.OutboundNotification.Metadata"/> keys for relayed notifications
+/// (DECISIONS M-28): the push skips the device that sent it and the phones that already got it.
+/// </summary>
+public static class PushRelay
+{
+    public const string OriginDeviceKey = "originDeviceId";
+
+    /// <summary>Comma-separated <see cref="LocalOpsBot.Core.Mobile.PushHash"/> values.</summary>
+    public const string SkipHashesKey = "skipPushHashes";
+
+    public static bool Skips(PushTarget target, IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null) return false;
+        if (metadata.TryGetValue(OriginDeviceKey, out var origin) && origin == target.DeviceId) return true;
+        if (!metadata.TryGetValue(SkipHashesKey, out var hashes) || string.IsNullOrEmpty(hashes)) return false;
+        var mine = LocalOpsBot.Core.Mobile.PushHash.Of(target.Subscription.Endpoint);
+        return hashes.Split(',').Contains(mine, StringComparer.Ordinal);
+    }
+}

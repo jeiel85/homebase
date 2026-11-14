@@ -81,6 +81,7 @@ public sealed class TrayIconManager : IDisposable
         // (M-22). The bridge raises this on a background thread.
         MobileHost.WatchingChanged += OnWatchingChanged;
         ApplyWatching(MobileHost.IsWatching);
+        MobileHost.ToastRequested += OnToastRequested;
 
         _ = BackgroundCheckAsync();
 
@@ -94,6 +95,21 @@ public sealed class TrayIconManager : IDisposable
         }
         catch { /* onboarding is non-essential — never let it break tray startup */ }
     }
+
+    /// <summary>A notification from another device (M-28), shown as a Windows notification of this tray icon.</summary>
+    private void OnToastRequested(LocalOpsBot.Core.Mobile.TrayToast toast) =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_disposed) return;
+            // NotifyIcon limits: title 63, text 255 characters; an empty text shows no balloon at all.
+            var title = Clip(toast.Title, 63);
+            var text = Clip(string.IsNullOrWhiteSpace(toast.Body) ? " " : toast.Body!, 255);
+            OwnToasts.Remember(title);
+            try { _trayIcon.ShowBalloonTip(6000, title, text, ToolTipIcon.None); }
+            catch (Exception) { /* the shell refused (focus assist etc.): the phones still get it */ }
+        }));
+
+    private static string Clip(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 
     private void OnWatchingChanged(bool on) =>
         Application.Current?.Dispatcher.BeginInvoke(new Action(() => ApplyWatching(on)));
@@ -324,6 +340,7 @@ public sealed class TrayIconManager : IDisposable
     {
         _disposed = true;
         MobileHost.WatchingChanged -= OnWatchingChanged;
+        MobileHost.ToastRequested -= OnToastRequested;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _baseIcon.Dispose();

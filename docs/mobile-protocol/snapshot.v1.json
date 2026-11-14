@@ -84,5 +84,42 @@
       "project": "D:\\Project\\homebase",
       "lastActivity": "2026-11-13T09:29:00+00:00"
     }
+  ],
+  "work": [
+    {
+      "kind": "agent",
+      "app": "Claude Code",
+      "title": "Homebase 모바일 앱",
+      "detail": "D:\\Project\\homebase",
+      "lastActivity": "2026-11-13T09:29:00+00:00",
+      "foreground": false
+    },
+    {
+      "kind": "agent",
+      "app": "Codex",
+      "title": "OpenCode에 모델 추가",
+      "detail": "C:\\Users\\me\\Documents\\Codex",
+      "lastActivity": "2026-11-13T09:25:00+00:00",
+      "foreground": false
+    },
+    {
+      "kind": "document",
+      "app": "Word",
+      "title": "견적서.docx",
+      "foreground": true
+    },
+    {
+      "kind": "editor",
+      "app": "VS Code",
+      "title": "Program.cs",
+      "detail": "homebase",
+      "foreground": false
+    },
+    {
+      "kind": "browser",
+      "app": "Chrome",
+      "title": "Release notes",
+      "foreground": false
+    }
   ]
 }

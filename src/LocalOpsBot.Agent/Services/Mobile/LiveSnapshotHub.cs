@@ -145,6 +145,17 @@ public sealed class LiveSnapshotHub : IDisposable
         {
             session = _time.GetUtcNow() - _sessionAt <= SessionStaleAfter ? _session : null;
         }
+        var claude = session?.ClaudeSessions ?? Array.Empty<ClaudeSession>();
+        IReadOnlyList<WorkItem> work = Array.Empty<WorkItem>();
+        if (session is not null)
+        {
+            var names = new Dictionary<int, string>(processes.Count);
+            foreach (var p in processes) names[p.Pid] = p.Name;
+            work = WorkCatalog.Build(
+                claude.Select(c => c.ToWork()).Concat(session.Agents ?? Array.Empty<WorkItem>()),
+                session.Windows,
+                pid => names.TryGetValue(pid, out var n) ? n : null);
+        }
         return new LiveSnapshot(
             MobileProtocol.Schema,
             _time.GetUtcNow(),
@@ -154,7 +165,8 @@ public sealed class LiveSnapshotHub : IDisposable
             _sampler.NetPerProcess,
             session is null ? Array.Empty<AppEntry>() : AppAggregator.BuildApps(processes, session.Windows),
             AppAggregator.TopProcesses(processes),
-            session?.ClaudeSessions ?? Array.Empty<ClaudeSession>());
+            claude,
+            work);
     }
 
     public void Dispose()

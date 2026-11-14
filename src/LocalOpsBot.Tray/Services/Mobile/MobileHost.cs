@@ -21,6 +21,9 @@ internal static class MobileHost
     /// </summary>
     public static event Action<bool>? WatchingChanged;
 
+    /// <summary>A relayed notification to show (DECISIONS M-28). Background thread.</summary>
+    public static event Action<LocalOpsBot.Core.Mobile.TrayToast>? ToastRequested;
+
     public static bool IsEnabled() => TrayConfig.Load().GetSection("mobile").GetValue<bool>("enabled");
 
     public static MobileBridgeClient EnsureStarted()
@@ -29,6 +32,7 @@ internal static class MobileHost
         var claude = TrayConfig.Load().GetSection("mobile").GetValue("claudeSessions", true);
         _client = new MobileBridgeClient(claude);
         _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
+        _client.ToastRequested += t => ToastRequested?.Invoke(t);
         return _client;
     }
 

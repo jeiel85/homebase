@@ -32,7 +32,34 @@ public class ProtocolGoldenTests
                 Array.Empty<ProcessEntry>()),
         },
         new[] { new ProcessEntry(20480, 15816, "node", new ResourceUsage(30.0, 600_000_000, 4096, 2048, 1024)) },
-        new[] { new ClaudeSession("Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero)) });
+        new[] { new ClaudeSession("Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero)) },
+        new[]
+        {
+            new WorkItem(WorkKind.Agent, "Claude Code", "Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero)),
+            new WorkItem(WorkKind.Agent, "Codex", "OpenCode에 모델 추가", @"C:\Users\me\Documents\Codex", new DateTimeOffset(2026, 11, 13, 9, 25, 0, TimeSpan.Zero)),
+            new WorkItem(WorkKind.Document, "Word", "견적서.docx", Foreground: true),
+            new WorkItem(WorkKind.Editor, "VS Code", "Program.cs", "homebase"),
+            new WorkItem(WorkKind.Browser, "Chrome", "Release notes"),
+        });
+
+    public static PresenceReport SamplePresence() => new(MobileProtocol.Schema, DeviceKind.Phone, "0.22.0",
+        Battery: 76, Charging: false, Network: "wifi");
+
+    public static DevicesResponse SampleDevices() => new(MobileProtocol.Schema,
+        new HubEntry("6f1c0d2e9b8a4c7d", "HOME-PC", "0.22.0",
+            new DeviceStatus("0.22.0", CpuPct: 23.4, MemUsedBytes: 12_884_901_888, MemTotalBytes: 34_359_738_368, UptimeSec: 93_784)),
+        new[]
+        {
+            new DeviceEntry("a1b2c3d4e5f6", "WORK-PC", DeviceKind.Pc, "Windows", new DateTimeOffset(2026, 11, 14, 9, 30, 0, TimeSpan.Zero), true,
+                new DeviceStatus("0.22.0", CpuPct: 8, MemUsedBytes: 8_589_934_592, MemTotalBytes: 17_179_869_184, UptimeSec: 7200)),
+            new DeviceEntry("0f9e8d7c6b5a", "Galaxy S24", DeviceKind.Phone, "SM-S921N", new DateTimeOffset(2026, 11, 14, 9, 29, 0, TimeSpan.Zero), true,
+                new DeviceStatus("0.22.0", Battery: 76, Charging: false, Network: "wifi")),
+            new DeviceEntry("1234567890ab", "Galaxy Tab", DeviceKind.Phone, "SM-X710", new DateTimeOffset(2026, 11, 13, 22, 0, 0, TimeSpan.Zero), false, null),
+        },
+        new[] { "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b" });
+
+    public static DeviceNotification SampleDeviceNotification() => new(MobileProtocol.Schema,
+        "9c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5", "카카오톡", "엄마", "저녁 먹었니?", new DateTimeOffset(2026, 11, 14, 9, 31, 0, TimeSpan.Zero));
 
     public static IReadOnlyList<MobileEndpoint> SampleEndpoints() => new[]
     {
@@ -66,6 +93,9 @@ public class ProtocolGoldenTests
     [InlineData("snapshot.v1.json")]
     [InlineData("pairing-offer.v1.json")]
     [InlineData("endpoints.v1.json")]
+    [InlineData("presence.v1.json")]
+    [InlineData("devices.v1.json")]
+    [InlineData("device-notification.v1.json")]
     public void Serialized_contract_matches_the_shared_fixture(string file)
     {
         object sample = file switch
@@ -75,6 +105,9 @@ public class ProtocolGoldenTests
             "push-subscription.v1.json" => SampleSubscription(),
             "push-subscription-response.v1.json" => new PushSubscriptionResponse(MobileProtocol.Schema, "a1b2c3d4e5f6", true),
             "push-message.v1.json" => SamplePushMessage(),
+            "presence.v1.json" => SamplePresence(),
+            "devices.v1.json" => SampleDevices(),
+            "device-notification.v1.json" => SampleDeviceNotification(),
             _ => new EndpointsResponse(MobileProtocol.Schema, SampleEndpoints()),
         };
         var actual = JsonSerializer.SerializeToNode(sample, sample.GetType(), MobileProtocol.Json)!;
