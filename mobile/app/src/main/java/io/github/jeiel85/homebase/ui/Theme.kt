@@ -151,8 +151,8 @@ private val koreanTypography: Typography = Typography().let { t ->
 }
 
 @Composable
-fun HomebaseTheme(content: @Composable () -> Unit) {
-    val hb = if (isSystemInDarkTheme()) Dark else Light
+fun HomebaseTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    val hb = if (dark) Dark else Light
     // Material components (dialogs, text fields, switches) follow the same roles.
     val scheme = if (hb.dark) {
         darkColorScheme(

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,9 +54,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import io.github.jeiel85.homebase.BuildConfig
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.Endpoint
@@ -83,6 +84,7 @@ fun PcListScreen(
     api: HomebaseApi,
     onOpen: (PcEntry) -> Unit,
     onAdd: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     var pcs by remember { mutableStateOf(store.all()) }
     val status = remember { mutableStateMapOf<String, PcStatus>() }
@@ -91,6 +93,12 @@ fun PcListScreen(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Re-read on every return to this screen: the user may have fixed it in Settings or Android's settings.
+    var needsAttention by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        needsAttention = pushNeedsAttention(context)
+        onPauseOrDispose { }
+    }
 
     // One /info round over every listed PC.
     suspend fun pollAll(listedPcs: List<PcEntry>) = coroutineScope {
@@ -163,6 +171,7 @@ fun PcListScreen(
                             Text(" 온라인", style = HbType.label.copy(fontSize = 10.sp), color = hb.onSlabSoft)
                         }
                     }
+                    SettingsButton(attention = needsAttention, onClick = onSettings)
                 },
             )
             PullToRefreshBox(
@@ -185,19 +194,6 @@ fun PcListScreen(
                         Spacer(Modifier.height(12.dp))
                     }
                     item {
-                        SectionLabel("앱")
-                        Plate {
-                            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                                PushSettings(store, api, pcs.size)
-                                UpdateSurface.SettingsRows()
-                                Text(
-                                    "앱 버전 ${BuildConfig.VERSION_NAME}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = hb.inkSoft,
-                                    modifier = Modifier.padding(bottom = 14.dp),
-                                )
-                            }
-                        }
                         Spacer(Modifier.navigationBarsPadding().height(104.dp))
                     }
                 }
@@ -238,6 +234,24 @@ fun PcListScreen(
     }
 }
 
+/** Gear on the console bar; an amber dot when push is on but Android blocks its notifications. */
+@Composable
+private fun SettingsButton(attention: Boolean, onClick: () -> Unit) {
+    val hb = Hb.colors
+    IconButton(onClick = onClick) {
+        Box {
+            Icon(
+                Icons.Filled.Settings,
+                contentDescription = if (attention) "설정 — 알림 권한 확인 필요" else "설정",
+                tint = hb.onSlab,
+            )
+            if (attention) {
+                Box(Modifier.align(Alignment.TopEnd).size(8.dp).clip(RoundedCornerShape(4.dp)).background(hb.accent))
+            }
+        }
+    }
+}
+
 /** First run: what the app is for and the one thing to do next. */
 @Composable
 private fun EmptyBay(onAdd: () -> Unit) {
@@ -270,6 +284,10 @@ private fun EmptyBay(onAdd: () -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
         SignalButton("PC 추가", onAdd)
+        val context = LocalContext.current
+        TextButton(onClick = { context.openUrl(Links.LATEST_RELEASE) }, modifier = Modifier.padding(top = 4.dp)) {
+            Text("PC에 Homebase가 없나요? Windows 설치 파일 받기")
+        }
     }
 }
 

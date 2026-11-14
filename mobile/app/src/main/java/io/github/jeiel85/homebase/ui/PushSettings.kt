@@ -27,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -89,40 +88,25 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var view by remember { mutableStateOf(readView(context, store)) }
     var picking by remember { mutableStateOf(false) }
-    var askedPermission by rememberSaveable { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         view = readView(context, store)
     }
 
     fun enable(distributor: String) {
-        PushState(context).userDisabled = false
-        PushRegistrar.forgetSynced()
-        UnifiedPush.register(context, distributor)
+        enablePush(context, distributor)
         if (Build.VERSION.SDK_INT >= 33 && !PushNotifier.canNotify(context)) {
-            askedPermission = true
+            NotificationAsk.asked = true
             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         view = readView(context, store)
     }
 
-    LaunchedEffect(pcCount) {
+    // Re-read while visible: the receiver writes the state, and the user may come back from
+    // installing ntfy or from Android's settings. Turning push on by itself is [PushAutoSetup]'s job.
+    LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                val v = readView(context, store)
-                // First run: one distributor, a paired PC, never turned off → just turn it on.
-                if (pcCount > 0 && !v.userDisabled && v.distributor == null && v.distributors.size == 1) {
-                    enable(v.distributors.single())
-                } else {
-                    // The chosen distributor was uninstalled.
-                    if (v.distributor != null && v.distributor !in v.distributors) {
-                        PushState(context).apply { clear(); lastError = "배포자 앱이 제거되었습니다" }
-                    }
-                    view = readView(context, store)
-                }
-                if (pcCount > 0 && v.endpoint != null && Build.VERSION.SDK_INT >= 33 && !v.canNotify && !askedPermission) {
-                    askedPermission = true
-                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
+                view = readView(context, store)
                 delay(2_000)
             }
         }
@@ -176,8 +160,8 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
     if (on && !view.canNotify) {
         Text("Android 알림 권한이 꺼져 있어 푸시를 표시하지 못합니다.", style = MaterialTheme.typography.bodySmall, color = hb.danger)
         TextButton(onClick = {
-            if (Build.VERSION.SDK_INT >= 33 && !askedPermission) {
-                askedPermission = true
+            if (Build.VERSION.SDK_INT >= 33 && !NotificationAsk.asked) {
+                NotificationAsk.asked = true
                 permission.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 openNotificationSettings(context)
@@ -221,6 +205,62 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
     }
     Spacer(Modifier.padding(bottom = 4.dp))
 }
+
+/**
+ * Whether this app process already showed the notification-permission prompt. One flag for both
+ * [PushAutoSetup] and the settings row, so a denial in one is not followed by a second prompt
+ * from the other; after that the settings row sends the user to Android's settings instead.
+ */
+private object NotificationAsk {
+    @Volatile var asked = false
+}
+
+private fun enablePush(context: Context, distributor: String) {
+    PushState(context).userDisabled = false
+    PushRegistrar.forgetSynced()
+    UnifiedPush.register(context, distributor)
+}
+
+/**
+ * Push housekeeping that must not depend on the Settings screen being open, so it runs from the
+ * activity on every screen but pairing:
+ * - first run: one distributor installed, a PC paired, push never turned off → turn it on;
+ * - the chosen distributor was uninstalled → clear the registration and say why;
+ * - push is on but Android notifications are blocked → ask for the permission once.
+ */
+@Composable
+fun PushAutoSetup(store: PcStore) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
+    LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val v = readView(context, store)
+                val pcCount = store.all().size
+                var justEnabled = false
+                if (pcCount > 0 && !v.userDisabled && v.distributor == null && v.distributors.size == 1) {
+                    enablePush(context, v.distributors.single())
+                    justEnabled = true
+                } else if (v.distributor != null && v.distributor !in v.distributors) {
+                    PushState(context).apply { clear(); lastError = "배포자 앱이 제거되었습니다" }
+                }
+                if (pcCount > 0 && (justEnabled || v.endpoint != null) && Build.VERSION.SDK_INT >= 33 &&
+                    !PushNotifier.canNotify(context) && !NotificationAsk.asked
+                ) {
+                    NotificationAsk.asked = true
+                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                delay(2_000)
+            }
+        }
+    }
+}
+
+/** True when push is on but Android blocks its notifications — the settings button shows a dot. */
+fun pushNeedsAttention(context: Context): Boolean =
+    PushState(context).distributor != null && !PushNotifier.canNotify(context)
 
 private fun openStore(context: Context, primary: String, fallback: String?) {
     try {
