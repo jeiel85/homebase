@@ -212,6 +212,8 @@ public class DeviceHubApiTests
             Body(new DeviceNotification(1, "n1", "카카오톡", "엄마", "밥 먹었니?", DateTimeOffset.UtcNow)), default);
 
         Assert.Equal(202, status);
+        // Relayed in the background so the sender isn't held up by the push to other phones.
+        for (var i = 0; i < 50 && _relayed.Count == 0; i++) await Task.Delay(20);
         var (origin, n) = Assert.Single(_relayed);
         Assert.Equal("Galaxy", origin.Name);
         Assert.False(origin.FromHub);

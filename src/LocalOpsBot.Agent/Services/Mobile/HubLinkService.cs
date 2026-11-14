@@ -174,9 +174,18 @@ public sealed class HubLinkService : BackgroundService
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_stopping);
         var link = new Link(hub, new HubClient(_allowLoopback), cts);
         _links[hub.PcId] = link;
-        _ = Task.Run(() => RunPresenceAsync(link, cts.Token), CancellationToken.None);
-        _ = Task.Run(() => RunInboxAsync(link, cts.Token), CancellationToken.None);
-        _ = Task.Run(() => RunOutboxAsync(link, cts.Token), CancellationToken.None);
+        var loops = new[]
+        {
+            Task.Run(() => RunPresenceAsync(link, cts.Token), CancellationToken.None),
+            Task.Run(() => RunInboxAsync(link, cts.Token), CancellationToken.None),
+            Task.Run(() => RunOutboxAsync(link, cts.Token), CancellationToken.None),
+        };
+        // Unlinked, re-linked or stopping: release the sockets once all three loops have ended.
+        _ = Task.WhenAll(loops).ContinueWith(t =>
+        {
+            if (t.Exception is { } ex) _logger.LogWarning(ex.GetBaseException(), "Link to {Name} ended with an error", hub.PcName);
+            link.Client.Dispose();
+        }, TaskScheduler.Default);
     }
 
     private IReadOnlyList<string> OwnPushHashes() =>

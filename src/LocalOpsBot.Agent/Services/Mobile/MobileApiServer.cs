@@ -481,7 +481,9 @@ public sealed class MobileApiServer : BackgroundService
                 try { n = JsonSerializer.Deserialize<DeviceNotification>(body!, MobileProtocol.Json); }
                 catch (JsonException) { n = null; }
                 if (DeviceNotification.Validate(n) is { } invalid) return (400, Error("invalid_notification", invalid));
-                await _deviceHub.RelayAsync(device, n!);
+                // Accept at once: pushing on to the other phones can take seconds (ntfy), and the sender
+                // only needs to know the PC has it. RelayAsync logs its own failures.
+                _ = Task.Run(() => _deviceHub.RelayAsync(device, n!), CancellationToken.None);
                 return (202, "{\"schema\":1,\"accepted\":true}");
             }
 
