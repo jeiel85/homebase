@@ -65,6 +65,7 @@ import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import androidx.compose.runtime.collectAsState
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.push.PushHistory
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.push.PushState
@@ -72,8 +73,10 @@ import io.github.jeiel85.homebase.update.UpdateSurface
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private sealed interface PcStatus {
     data object Checking : PcStatus
@@ -89,6 +92,7 @@ fun PcListScreen(
     onOpen: (PcEntry) -> Unit,
     onAdd: () -> Unit,
     onSettings: () -> Unit,
+    onNotifications: () -> Unit,
 ) {
     var pcs by remember { mutableStateOf(store.all()) }
     val status = remember { mutableStateMapOf<String, PcStatus>() }
@@ -156,6 +160,10 @@ fun PcListScreen(
         }
     }
 
+    // Unread count for the bell; the file is read off the main thread once per process.
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { PushHistory.ensureLoaded(context) } }
+    val history by PushHistory.state.collectAsState()
+
     val hubs by MeshSync.hubs.collectAsState()
     // Recomputed after every poll round too, so "online" from a PC that went quiet expires (FRESH_MS).
     val others = remember(hubs, pcs, pollRounds) { MeshSync.otherDevices(hubs, pcs) }
@@ -182,6 +190,7 @@ fun PcListScreen(
                             Text(" 온라인", style = HbType.label.copy(fontSize = 10.sp), color = hb.onSlabSoft)
                         }
                     }
+                    NotificationCenterButton(unread = history.unread, onClick = onNotifications)
                     SettingsButton(attention = needsAttention, onClick = onSettings)
                 },
             )
@@ -239,6 +248,7 @@ fun PcListScreen(
                     PushRegistrar.forget(pc.pcId)
                     PushState(context).markRegistered(pc.pcId, false)
                     PushNotifier.forgetPc(context, pc.pcId)
+                    PushHistory.forgetPc(context, pc.pcId)
                     MeshSync.forget(pc.pcId)
                     store.remove(pc.pcId)
                     PresenceScheduler.sync(context) // the last PC gone: stop the background report

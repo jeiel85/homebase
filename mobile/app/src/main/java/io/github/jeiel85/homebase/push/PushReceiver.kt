@@ -99,7 +99,13 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a relayed notification already shown")
             return
         }
-        PushNotifier.show(context, message)
+        val shown = PushNotifier.show(context, message)
+        // The notification center keeps it even when Android blocked the notification (DECISIONS M-31).
+        try {
+            PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown))
+        } catch (e: Exception) {
+            Log.w(TAG, "could not add a push to the history: ${e.javaClass.simpleName}")
+        }
     }
 
     /** A PC's new paths (M-23): stored silently; a retrying detail screen picks them up on its next try. */

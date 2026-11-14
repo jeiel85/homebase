@@ -23,6 +23,7 @@ import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.HomebaseTheme
+import io.github.jeiel85.homebase.ui.NotificationCenterScreen
 import io.github.jeiel85.homebase.ui.PairScreen
 import io.github.jeiel85.homebase.ui.PcDetailScreen
 import io.github.jeiel85.homebase.ui.PcListScreen
@@ -33,7 +34,7 @@ import io.github.jeiel85.homebase.update.UpdateCheckScheduler
 import io.github.jeiel85.homebase.update.UpdateNotifier
 import io.github.jeiel85.homebase.update.UpdateSurface
 
-/** Three screens — list, pair, detail — so plain state instead of a navigation library. */
+/** A handful of screens — list, pair, detail, settings, notification center — so plain state instead of a navigation library. */
 class MainActivity : ComponentActivity() {
     /** A pairing link the app was opened with (camera → App Link, or the install page's button). */
     private var pairingLink by mutableStateOf<String?>(null)
@@ -68,7 +69,7 @@ class MainActivity : ComponentActivity() {
             }
             HomebaseTheme(dark = dark) {
                 Surface {
-                    // "" = list, "+" = pair, [ROUTE_SETTINGS] = settings, otherwise a pcId.
+                    // "" = list, "+" = pair, [ROUTE_SETTINGS] = settings, [ROUTE_NOTIFICATIONS] = notification center, otherwise a pcId.
                     // A tapped push notification opens its PC.
                     var route by rememberSaveable { mutableStateOf(intent?.getStringExtra(PushNotifier.EXTRA_PC_ID) ?: "") }
                     val pc = remember(route) { route.takeIf { it.length > 1 }?.let(store::get) }
@@ -79,6 +80,12 @@ class MainActivity : ComponentActivity() {
                     if (route != "+") PushAutoSetup(store)
                     when {
                         route == ROUTE_SETTINGS -> SettingsScreen(store, api, onBack = { route = "" })
+                        route == ROUTE_NOTIFICATIONS -> NotificationCenterScreen(
+                            store,
+                            onBack = { route = "" },
+                            onOpenPc = { route = it },
+                            onSettings = { route = ROUTE_SETTINGS },
+                        )
                         route == "+" -> PairScreen(
                             store, api,
                             onDone = {
@@ -91,7 +98,7 @@ class MainActivity : ComponentActivity() {
                             link = pairingLink,
                         )
                         pc != null -> PcDetailScreen(pc, store, api, onBack = { route = "" })
-                        else -> PcListScreen(store, api, onOpen = { route = it.pcId }, onAdd = { route = "+" }, onSettings = { route = ROUTE_SETTINGS })
+                        else -> PcListScreen(store, api, onOpen = { route = it.pcId }, onAdd = { route = "+" }, onSettings = { route = ROUTE_SETTINGS }, onNotifications = { route = ROUTE_NOTIFICATIONS })
                     }
                 }
             }
@@ -116,6 +123,7 @@ class MainActivity : ComponentActivity() {
         const val KEY_PAIRING_LINK = "pairingLink"
         /** Checked before the pcId branch, so it never reaches the PC store. */
         const val ROUTE_SETTINGS = "app:settings"
+        const val ROUTE_NOTIFICATIONS = "app:notifications"
         // androidx.activity's default navigation-bar scrims for gesture-less (3-button) navigation.
         val NAV_SCRIM_LIGHT = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
         val NAV_SCRIM_DARK = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)

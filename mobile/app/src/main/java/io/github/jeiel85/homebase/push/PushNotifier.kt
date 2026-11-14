@@ -34,8 +34,9 @@ object PushNotifier {
         return NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
 
-    fun show(context: Context, message: PushMessage) {
-        if (!canNotify(context)) return
+    /** Posts [message]; false when Android notifications are blocked (the notification center still has it). */
+    fun show(context: Context, message: PushMessage): Boolean {
+        if (!canNotify(context)) return false
         val channelId = ensureChannel(context, message)
         val open = PendingIntent.getActivity(
             context,
@@ -60,10 +61,12 @@ object PushNotifier {
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
-        try {
+        return try {
             NotificationManagerCompat.from(context).notify(message.id.hashCode(), notification)
+            true
         } catch (_: SecurityException) {
             // Permission revoked between the check and the post.
+            false
         }
     }
 
@@ -107,7 +110,7 @@ object PushNotifier {
     private fun hash(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).take(6).joinToString("") { "%02x".format(it) }
 
-    private val CATEGORY_LABELS = mapOf(
+    internal val CATEGORY_LABELS = mapOf(
         "process_watch" to "프로세스 감시",
         "service_watch" to "서비스 감시",
         "http_monitor" to "HTTP 감시",
