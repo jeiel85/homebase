@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.20.0 — A settings screen for the phone app
+
+### Added
+- **Settings has its own screen.** The phone app's PC list is now only the list; a gear button on
+  the top bar opens Settings with four sections: notifications (push), display, updates and about.
+  The gear shows an amber dot when push is on but Android blocks its notifications.
+- **Light or dark, your choice.** Settings → 화면 picks "시스템 설정 따르기" (default), "밝게" or
+  "어둡게"; the change applies at once, navigation bar included.
+- **About section.** Links to this version's release notes, the Windows installer for another PC
+  (latest release), the GitHub repository, a new GitHub issue with the app and Android versions
+  filled in, and the open-source licenses. It also states what leaves the phone: the update check
+  (GitHub) and end-to-end encrypted push (the distributor's relay) — no ads, analytics or usage data.
+- The first-run screen links to the Windows installer for people who haven't set up the PC yet.
+
+### Changed
+- Push turning itself on after the first pairing, and the notification-permission prompt, no longer
+  depend on the PC list being open; they run on every screen except pairing.
+
 ## v0.19.0 — Pull down to refresh
 
 ### Added
