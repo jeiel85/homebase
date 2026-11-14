@@ -103,7 +103,13 @@ data class LiveSnapshot(
     val apps: List<AppEntry>,
     val processes: List<ProcessEntry>,
     val claudeSessions: List<ClaudeSession>,
+    /** The work tab (DECISIONS M-26); null from a PC older than v0.22.0, which only sends [claudeSessions]. */
+    val work: List<WorkItem>? = null,
 ) {
+    /** What the work tab lists: [work] when the PC sends it, else the Claude sessions as work items. */
+    val workItems: List<WorkItem>
+        get() = work ?: claudeSessions.map { WorkItem(WorkItem.AGENT, "Claude Code", it.title, it.project, it.lastActivity, false) }
+
     companion object {
         fun parse(json: String): LiveSnapshot {
             val o = JSONObject(json)
@@ -133,6 +139,7 @@ data class LiveSnapshot(
                 claudeSessions = o.optJSONArray("claudeSessions").objects().map {
                     ClaudeSession(it.optString("title"), it.optString("project").ifBlank { null }, it.optString("lastActivity"))
                 },
+                work = WorkItem.parseList(o.optJSONArray("work")),
             )
         }
 

@@ -59,6 +59,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.mesh.MeshSync
+import androidx.compose.runtime.collectAsState
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.push.PushNotifier
@@ -111,6 +113,8 @@ fun PcListScreen(
                     val (info, endpoint) = api.info(pc)
                     store.rememberGood(pc.pcId, endpoint)
                     PushRegistrar.ensureAsync(context, api, pc)
+                    // This phone's state to the PC, and the PC's device list back (DECISIONS M-27).
+                    launch { MeshSync.reportTo(context, api, pc) }
                     PcStatus.Online(info.agentVersion, endpoint)
                 } catch (_: Exception) {
                     PcStatus.Offline
@@ -148,6 +152,8 @@ fun PcListScreen(
         }
     }
 
+    val hubs by MeshSync.hubs.collectAsState()
+    val others = remember(hubs, pcs) { MeshSync.otherDevices(hubs, pcs) }
     val hb = Hb.colors
     val online = pcs.count { status[it.pcId] is PcStatus.Online }
     Box(Modifier.fillMaxSize().background(hb.background)) {
@@ -193,6 +199,10 @@ fun PcListScreen(
                         PcBay(pc, status[pc.pcId] ?: PcStatus.Checking, onClick = { onOpen(pc) }, onRemove = { confirmRemove = pc })
                         Spacer(Modifier.height(12.dp))
                     }
+                    if (others.isNotEmpty()) {
+                        item { SectionLabel("다른 기기", trailing = "${others.count { it.entry.online }}/${others.size} 온라인") }
+                        items(others, key = { "dev:" + it.entry.kind + it.entry.deviceId }) { OtherDeviceCard(it) }
+                    }
                     item {
                         Spacer(Modifier.navigationBarsPadding().height(104.dp))
                     }
@@ -224,6 +234,7 @@ fun PcListScreen(
                     PushRegistrar.forget(pc.pcId)
                     PushState(context).markRegistered(pc.pcId, false)
                     PushNotifier.forgetPc(context, pc.pcId)
+                    MeshSync.forget(pc.pcId)
                     store.remove(pc.pcId)
                     pcs = store.all()
                     confirmRemove = null

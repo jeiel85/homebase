@@ -53,7 +53,7 @@ fun NotificationCategories(store: PcStore, api: HomebaseApi) {
         )
         Row {
             TextButton(onClick = { apply(emptySet()) }) { Text("모두 받기") }
-            TextButton(onClick = { apply(NotificationGroups.ALL_BUT_TOASTS) }) { Text("Windows 알림만") }
+            TextButton(onClick = { apply(NotificationGroups.ALL_BUT_TOASTS) }) { Text("앱 알림만") }
         }
         NotificationGroups.ALL.forEach { group ->
             val on = group.categories.none { it in muted }

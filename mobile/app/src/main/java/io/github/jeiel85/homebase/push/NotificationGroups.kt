@@ -16,6 +16,9 @@ data class NotificationGroup(
 object NotificationGroups {
     const val TOAST = "windows-toast"
 
+    /** Notifications another device sent through a PC (DECISIONS M-28). */
+    const val DEVICE = "device-notification"
+
     /** The Tray's "send test" — never muted, so the path can always be checked. */
     const val TEST = "test"
 
@@ -28,10 +31,11 @@ object NotificationGroups {
         NotificationGroup("eventlog", "이벤트 로그", "Windows 이벤트 로그의 오류·경고", listOf("event_log")),
         NotificationGroup("advisor", "PC 상태 조언", "디스크·메모리 같은 상태 점검 결과", listOf("advisor")),
         NotificationGroup("boot", "부팅", "PC가 켜졌다는 알림", listOf("boot")),
+        NotificationGroup("device", "다른 기기 알림", "연결한 다른 휴대폰·PC에 온 알림을 PC가 전달", listOf(DEVICE)),
     )
 
-    /** Every category but Windows toasts — the "Windows 알림만" preset. */
-    val ALL_BUT_TOASTS: Set<String> = ALL.flatMap { it.categories }.filter { it != TOAST }.toSet()
+    /** Every category but app notifications (this PC's and other devices') — the "앱 알림만" preset. */
+    val ALL_BUT_TOASTS: Set<String> = ALL.flatMap { it.categories }.filter { it != TOAST && it != DEVICE }.toSet()
 
     /** Whether a message of [category] should be dropped. [TEST] always passes. */
     fun isMuted(category: String, muted: Set<String>): Boolean = category != TEST && category in muted
