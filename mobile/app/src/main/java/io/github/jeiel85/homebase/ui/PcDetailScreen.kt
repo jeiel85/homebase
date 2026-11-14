@@ -436,11 +436,13 @@ private fun SortBar(sort: AppSort, onSort: (AppSort) -> Unit) {
 private fun AppCard(app: AppEntry, memTotal: Long) {
     val hb = Hb.colors
     var expanded by rememberSaveable(app.pid) { mutableStateOf(false) }
-    val canExpand = app.children.isNotEmpty()
+    // Expandable when there is more to show: child processes, or window titles beyond the one shown.
+    val canExpand = app.children.isNotEmpty() || app.windows.size > 1
     Plate(
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp).animateContentSize(),
-        onClick = if (canExpand) ({ expanded = !expanded }) else null,
-        onClickLabel = if (expanded) "하위 프로세스 접기" else "하위 프로세스 펼치기",
+        // Also while expanded, so a card whose extra windows closed can still be folded.
+        onClick = if (canExpand || expanded) ({ expanded = !expanded }) else null,
+        onClickLabel = if (expanded) "창·하위 프로세스 접기" else "창·하위 프로세스 펼치기",
         rail = app.foreground,
     ) {
         Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
@@ -471,8 +473,8 @@ private fun AppCard(app: AppEntry, memTotal: Long) {
             }
             Spacer(Modifier.height(10.dp))
             UsageBars(app.usage.cpuPct, app.usage.memBytes, memTotal)
-            CardFooter(app, canExpand, expanded)
-            if (canExpand && expanded) {
+            CardFooter(app, canExpand || expanded, expanded)
+            if (expanded && app.children.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Box(Modifier.fillMaxWidth().height(1.dp).background(hb.hairline))
                 app.children.forEach { ProcessRow(it, memTotal, compact = true) }
@@ -508,7 +510,7 @@ private fun CardFooter(app: AppEntry, canExpand: Boolean, expanded: Boolean) {
         append("디스크 ").append(Fmt.rate(u.ioBps))
         if (u.netRxBps != null || u.netTxBps != null) append("  ·  ↓").append(Fmt.rate(u.netRxBps)).append(" ↑").append(Fmt.rate(u.netTxBps))
     }
-    val counts = if (canExpand) "창 ${app.windows.size} · 하위 ${app.children.size}" else "창 ${app.windows.size}"
+    val counts = if (app.children.isNotEmpty()) "창 ${app.windows.size} · 하위 ${app.children.size}" else "창 ${app.windows.size}"
     val angle by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
