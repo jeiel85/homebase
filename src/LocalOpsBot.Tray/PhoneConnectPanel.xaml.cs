@@ -134,7 +134,7 @@ public partial class PhoneConnectPanel : UserControl
 
     private void ShowReady()
     {
-        StatusText.Text = "휴대폰의 Homebase 앱에서 '+ PC 추가'를 누르고 아래 QR 코드를 스캔하세요. " +
+        StatusText.Text = "휴대폰의 Homebase 앱에서 '기기 추가'를 누르고 아래 QR 코드를 스캔하세요. " +
                           "앱이 같은 Wi-Fi → Tailscale → Cloudflare 순으로 되는 경로를 자동으로 고릅니다.";
         PairPanel.Visibility = Visibility.Visible;
     }

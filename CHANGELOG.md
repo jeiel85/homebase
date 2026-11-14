@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- The phone app's add button and screen now say "기기 추가" (add device) instead of "PC 추가", and the
+  screen explains how other phones and other PCs join.
+
 ## v0.23.0 — Your PCs and phones see each other
 
 ### Added

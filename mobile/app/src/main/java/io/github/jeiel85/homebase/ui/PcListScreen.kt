@@ -218,7 +218,7 @@ fun PcListScreen(
             ExtendedFloatingActionButton(
                 onClick = onAdd,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("PC 추가", style = HbType.label.copy(fontSize = 14.sp, letterSpacing = 0.4.sp)) },
+                text = { Text("기기 추가", style = HbType.label.copy(fontSize = 14.sp, letterSpacing = 0.4.sp)) },
                 containerColor = hb.action,
                 contentColor = hb.onAction,
                 shape = RoundedCornerShape(8.dp),
@@ -300,7 +300,7 @@ private fun EmptyBay(onAdd: () -> Unit) {
             color = hb.inkSoft,
         )
         Spacer(Modifier.height(16.dp))
-        SignalButton("PC 추가", onAdd)
+        SignalButton("기기 추가", onAdd)
         val context = LocalContext.current
         TextButton(onClick = { context.openUrl(Links.LATEST_RELEASE) }, modifier = Modifier.padding(top = 4.dp)) {
             Text("PC에 Homebase가 없나요? Windows 설치 파일 받기")

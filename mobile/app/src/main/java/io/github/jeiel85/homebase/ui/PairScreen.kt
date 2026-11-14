@@ -124,7 +124,7 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
 
     val hb = Hb.colors
     Column(Modifier.fillMaxSize().background(hb.background)) {
-        ConsoleBar(title = "PC 추가", onBack = onBack, eyebrow = "QR 페어링")
+        ConsoleBar(title = "기기 추가", onBack = onBack, eyebrow = "QR 페어링")
         Column(
             Modifier
                 .fillMaxSize()
@@ -141,6 +141,12 @@ fun PairScreen(store: PcStore, api: HomebaseApi, onDone: (PcEntry) -> Unit, onBa
                     Step(3, "연결되면 그 PC의 실시간 화면이 바로 열립니다.")
                     Text(
                         "QR 코드는 5분 동안 한 번만 쓸 수 있습니다. 만료되면 PC 창에서 새 코드를 받으세요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = hb.inkSoft,
+                    )
+                    Text(
+                        "다른 휴대폰은 그 휴대폰의 Homebase 앱에서 같은 PC의 QR을 스캔하면 이 휴대폰과 서로 보입니다. " +
+                            "PC끼리는 PC의 \"설정…\" → \"휴대폰\" 탭 → \"다른 PC 연결\"에서 잇습니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = hb.inkSoft,
                     )
