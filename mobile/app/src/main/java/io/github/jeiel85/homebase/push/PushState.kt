@@ -45,6 +45,11 @@ class PushState(context: Context) {
         get() = prefs.getString(KEY_ERROR, null)
         set(value) = prefs.edit().putString(KEY_ERROR, value).apply()
 
+    /** Notification categories the user turned off (M-25); sent with the subscription, and dropped here too. */
+    var mutedCategories: Set<String>
+        get() = prefs.getStringSet(KEY_MUTED, emptySet())?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_MUTED, value.toSet()).apply()
+
     /** PCs that accepted the current endpoint. */
     val registeredPcs: Set<String> get() = prefs.getStringSet(KEY_REGISTERED, emptySet()) ?: emptySet()
 
@@ -79,7 +84,7 @@ class PushState(context: Context) {
     fun subscription(): PushSubscription? {
         val endpoint = endpoint ?: return null
         val keys = keys()
-        return PushSubscription(endpoint, keys.p256dh, keys.auth)
+        return PushSubscription(endpoint, keys.p256dh, keys.auth, mutedCategories.sorted())
     }
 
     /**
@@ -122,6 +127,7 @@ class PushState(context: Context) {
         const val KEY_DISABLED = "userDisabled"
         const val KEY_ERROR = "lastError"
         const val KEY_REGISTERED = "registeredPcs"
+        const val KEY_MUTED = "mutedCategories"
         const val KEY_PRIVATE = "privateKey"
         const val KEY_PUBLIC = "publicKey"
         const val KEY_AUTH = "authSecret"

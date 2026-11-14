@@ -28,9 +28,43 @@ public class UnifiedPushChannelTests
         _channel = new UnifiedPushOutboundChannel(_store, new HttpClient(_http), _time, "HOME-PC");
     }
 
-    private void Subscribe(string endpoint = "https://ntfy.sh/upAbCdEf123?up=1") =>
-        _store.SetPushSubscription(_deviceId, new PushSubscription(
-            endpoint, Base64Url.Encode(WebPushEncryption.ExportUncompressed(_phoneKey)), Base64Url.Encode(_auth), _time.GetUtcNow()));
+    private void Subscribe(string endpoint = "https://ntfy.sh/upAbCdEf123?up=1", IReadOnlyList<string>? muted = null, string? deviceId = null) =>
+        _store.SetPushSubscription(deviceId ?? _deviceId, new PushSubscription(
+            endpoint, Base64Url.Encode(WebPushEncryption.ExportUncompressed(_phoneKey)), Base64Url.Encode(_auth), _time.GetUtcNow(), muted));
+
+    [Fact]
+    public async Task A_category_muted_on_every_phone_is_a_success_without_sending()
+    {
+        Subscribe(muted: ["process_watch"]);
+
+        var result = await _channel.SendAsync(Alert(category: "process_watch"), default);
+
+        // Success, so the router does not fall back to Telegram for something the user turned off.
+        Assert.True(result.Success);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Only_phones_that_want_the_category_get_it()
+    {
+        var other = _store.Add("Tablet", null, PairingService.HashToken("t2")).DeviceId;
+        Subscribe("https://ntfy.sh/upPhone", muted: ["windows-toast"]);
+        Subscribe("https://ntfy.sh/upTablet", deviceId: other);
+
+        Assert.True((await _channel.SendAsync(Alert(category: "windows-toast"), default)).Success);
+        Assert.Equal("https://ntfy.sh/upTablet", Assert.Single(_http.Requests).Uri);
+
+        Assert.True((await _channel.SendAsync(Alert(category: "event_log"), default)).Success);
+        Assert.Equal(3, _http.Requests.Count);
+    }
+
+    [Fact]
+    public async Task The_tray_test_is_never_muted()
+    {
+        Subscribe(muted: ["test"]);
+        Assert.True((await _channel.SendAsync(Alert(category: PushCategories.Test), default)).Success);
+        Assert.Single(_http.Requests);
+    }
 
     private static OutboundNotification Alert(OutboundPriority priority = OutboundPriority.Critical, string? body = "C: 2% free",
         IReadOnlyDictionary<string, string>? meta = null, string category = "process_watch") =>

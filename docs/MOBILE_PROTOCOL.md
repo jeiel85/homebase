@@ -65,7 +65,10 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 앱에 브로드캐스트로 넘긴다. 중계 서버는 평문을 보지 않는다.
 
 - **등록** `POST /api/v1/push` 본문([`push-subscription.v1.json`](mobile-protocol/push-subscription.v1.json)):
-  `{schema: 1, endpoint, p256dh, auth}`. `endpoint`는 `https://` URL, 1000바이트 이하이며 사용자 정보(`user:pw@`)는 거부한다.
+  `{schema: 1, endpoint, p256dh, auth, mutedCategories?}`. `endpoint`는 `https://` URL, 1000바이트 이하이며 사용자 정보(`user:pw@`)는 거부한다.
+  `mutedCategories`(M-25)는 이 휴대폰이 받지 않을 `category` 목록이다(최대 32개, 각 `a-z0-9_-` 1~64자, 아니면 400). 없거나 비면 전부 받는다.
+  PC는 정렬·중복 제거해 저장하고, 이 목록만 바뀐 재등록도 갱신으로 본다. 해당 범주는 그 휴대폰에 보내지 않으며(`test`는 예외),
+  모든 휴대폰이 끈 범주는 전송 성공으로 처리해 Telegram으로 넘기지 않는다.
   `p256dh`는 P-256 비압축 점 65바이트, `auth`는 16바이트이고 둘 다 패딩 없는 base64url이다. 곡선 위의 점이 아니면 400이다.
   응답은 [`push-subscription-response.v1.json`](mobile-protocol/push-subscription-response.v1.json).
   구독은 기기당 하나이며 `state.json`의 그 기기 항목에 저장한다. 같은 값으로 다시 등록하면 파일을 다시 쓰지 않는다.

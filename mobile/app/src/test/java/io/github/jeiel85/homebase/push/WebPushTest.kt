@@ -109,7 +109,11 @@ class PushProtocolTest {
     @Test
     fun subscription_serializes_exactly_like_the_fixture() {
         val expected = JSONObject(fixture("push-subscription.v1.json"))
-        val actual = PushSubscription(expected.getString("endpoint"), expected.getString("p256dh"), expected.getString("auth")).toJson()
+        val actual = PushSubscription(
+            expected.getString("endpoint"), expected.getString("p256dh"), expected.getString("auth"),
+            // Out of order on purpose: the wire form is sorted, like the PC's normalized copy.
+            listOf("event_log", "advisor"),
+        ).toJson()
         assertEquals(expected.toMap(), actual.toMap())
         // The fixture's keys are the Appendix A phone key: a real P-256 point, a 16-byte secret.
         WebPush.publicKey(WebPush.unb64url(actual.getString("p256dh")))

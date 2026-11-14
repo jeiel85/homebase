@@ -13,6 +13,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -30,26 +32,36 @@ object PushRegistrar {
     /** pcId → what that PC accepted: its device id (a re-pair issues a new one) and the subscription. */
     private val synced = ConcurrentHashMap<String, String>()
 
-    private fun syncKey(pc: PcEntry, s: PushSubscription) = "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}"
+    private fun syncKey(pc: PcEntry, s: PushSubscription) =
+        "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}|${s.mutedCategories.joinToString(",")}"
 
     fun ensureAsync(context: Context, api: HomebaseApi, pc: PcEntry) {
         val app = context.applicationContext
         scope.launch { ensure(app, api, pc) }
     }
 
+    /**
+     * One registration at a time per PC. The subscription is read **inside** the lock, so when the
+     * user flips category switches quickly the PC receives the requests in order and the last one
+     * carries the final choice — an earlier, slower request can't land after it and win.
+     */
+    private val locks = ConcurrentHashMap<String, Mutex>()
+
     suspend fun ensure(context: Context, api: HomebaseApi, pc: PcEntry) {
         val state = PushState(context)
-        val subscription = state.subscription() ?: return
-        val key = syncKey(pc, subscription)
-        if (synced[pc.pcId] == key) return
-        try {
-            api.registerPush(pc, subscription)
-            synced[pc.pcId] = key
-            state.markRegistered(pc.pcId, true)
-        } catch (e: UnauthorizedException) {
-            state.markRegistered(pc.pcId, false)
-        } catch (e: Exception) {
-            Log.i(TAG, "push registration with ${pc.name} deferred: ${e.message}")
+        locks.getOrPut(pc.pcId) { Mutex() }.withLock {
+            val subscription = state.subscription() ?: return
+            val key = syncKey(pc, subscription)
+            if (synced[pc.pcId] == key) return
+            try {
+                api.registerPush(pc, subscription)
+                synced[pc.pcId] = key
+                state.markRegistered(pc.pcId, true)
+            } catch (e: UnauthorizedException) {
+                state.markRegistered(pc.pcId, false)
+            } catch (e: Exception) {
+                Log.i(TAG, "push registration with ${pc.name} deferred: ${e.message}")
+            }
         }
     }
 

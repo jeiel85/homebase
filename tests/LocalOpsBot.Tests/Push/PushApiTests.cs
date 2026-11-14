@@ -90,6 +90,40 @@ public class PushApiTests
     }
 
     [Fact]
+    public async Task Muted_categories_are_stored_normalized_and_a_change_alone_updates_them()
+    {
+        var token = Pair();
+        await _api.HandleRestAsync(Req("POST", token), Body(Sub() with { MutedCategories = ["event_log", "advisor", "event_log"] }), default);
+        Assert.Equal(new[] { "advisor", "event_log" }, Assert.Single(_store.PushTargets()).Subscription.MutedCategories);
+
+        // Same endpoint and keys, different choice: still an update.
+        await _api.HandleRestAsync(Req("POST", token), Body(Sub() with { MutedCategories = ["windows-toast"] }), default);
+        Assert.Equal(new[] { "windows-toast" }, Assert.Single(_store.PushTargets()).Subscription.MutedCategories);
+
+        // An app from before M-25 sends no list: everything again.
+        await _api.HandleRestAsync(Req("POST", token), Body(Sub()), default);
+        Assert.Null(Assert.Single(_store.PushTargets()).Subscription.MutedCategories);
+    }
+
+    [Theory]
+    [InlineData("Event_Log")]
+    [InlineData("")]
+    [InlineData("a b")]
+    public async Task Bad_muted_categories_are_400(string category)
+    {
+        var (status, _) = await _api.HandleRestAsync(Req("POST", Pair()), Body(Sub() with { MutedCategories = [category] }), default);
+        Assert.Equal(400, status);
+        Assert.Empty(_store.PushTargets());
+    }
+
+    [Fact]
+    public async Task Too_many_muted_categories_are_400()
+    {
+        var many = Enumerable.Range(0, PushCategories.MaxMuted + 1).Select(i => "c" + i).ToArray();
+        Assert.Equal(400, (await _api.HandleRestAsync(Req("POST", Pair()), Body(Sub() with { MutedCategories = many }), default)).Status);
+    }
+
+    [Fact]
     public async Task Revoking_the_device_removes_its_subscription()
     {
         var token = Pair();
