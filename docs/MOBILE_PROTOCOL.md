@@ -69,6 +69,7 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
   `p256dh`는 P-256 비압축 점 65바이트, `auth`는 16바이트이고 둘 다 패딩 없는 base64url이다. 곡선 위의 점이 아니면 400이다.
   응답은 [`push-subscription-response.v1.json`](mobile-protocol/push-subscription-response.v1.json).
   구독은 기기당 하나이며 `state.json`의 그 기기 항목에 저장한다. 같은 값으로 다시 등록하면 파일을 다시 쓰지 않는다.
+  같은 엔드포인트를 가진 다른 기기는 같은 휴대폰의 예전 페어링이므로 철회한다(M-24). Agent 시작 때도 중복을 정리하고 가장 최근 페어링만 남긴다.
   Tray에서 기기를 철회하면 구독도 함께 지워진다. 앱은 엔드포인트가 바뀔 때, 페어링 직후, PC가 응답할 때(목록 확인·실시간 연결)마다 다시 등록한다.
 - **해제** `DELETE /api/v1/push`: 앱에서 푸시를 끄거나 PC를 목록에서 지울 때 보낸다.
 - **전송**(PC → 엔드포인트): `Content-Encoding: aes128gcm`, `Content-Type: application/octet-stream`, `TTL`(Windows 알림 21600초, 그 밖 86400초),

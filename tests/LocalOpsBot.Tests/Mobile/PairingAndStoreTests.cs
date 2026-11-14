@@ -95,6 +95,50 @@ public class MobileDeviceStoreTests : IDisposable
         Assert.False(store.Revoke(d.DeviceId));
     }
 
+    private static LocalOpsBot.Core.Push.PushSubscription Sub(string endpoint) =>
+        new(endpoint, "p256dh", "auth", DateTimeOffset.UnixEpoch);
+
+    [Fact]
+    public void Re_pairing_the_same_phone_removes_its_earlier_entry()
+    {
+        var store = new MobileDeviceStore(_dir, _time, restrictAcl: false);
+        var old = store.Add("S24", null, PairingService.HashToken("old"));
+        store.SetPushSubscription(old.DeviceId, Sub("https://ntfy.sh/upS24?up=1"));
+        var tablet = store.Add("Tab", null, PairingService.HashToken("tab"));
+        store.SetPushSubscription(tablet.DeviceId, Sub("https://ntfy.sh/upTab?up=1"));
+
+        _time.Advance(TimeSpan.FromHours(12));
+        var again = store.Add("S24", null, PairingService.HashToken("new"));
+        Assert.Equal(3, store.List().Count); // not yet known to be the same phone
+        store.SetPushSubscription(again.DeviceId, Sub("https://ntfy.sh/upS24?up=1"));
+
+        Assert.Equal(new[] { tablet.DeviceId, again.DeviceId }.Order(), store.List().Select(d => d.DeviceId).Order());
+        Assert.Null(store.Authenticate("old"));
+        Assert.Equal(again.DeviceId, store.Authenticate("new")?.DeviceId);
+        Assert.Equal(2, store.PushTargets().Count); // one push per phone
+        Assert.Equal(2, new MobileDeviceStore(_dir, _time, restrictAcl: false).List().Count); // persisted
+    }
+
+    [Fact]
+    public void Duplicates_left_by_an_older_version_are_cleaned_up_on_load_keeping_the_newest()
+    {
+        var store = new MobileDeviceStore(_dir, _time, restrictAcl: false);
+        var old = store.Add("S24", null, PairingService.HashToken("old"));
+        store.SetPushSubscription(old.DeviceId, Sub("https://ntfy.sh/upS24?up=1"));
+        _time.Advance(TimeSpan.FromHours(12));
+        var again = store.Add("S24", null, PairingService.HashToken("new"));
+        store.SetPushSubscription(again.DeviceId, Sub("https://ntfy.sh/upPLACEHOLDER?up=1"));
+        // What v0.18.0 and earlier left behind: two entries with one endpoint.
+        var path = Path.Combine(_dir, "state.json");
+        File.WriteAllText(path, File.ReadAllText(path).Replace("upPLACEHOLDER", "upS24"));
+
+        var reloaded = new MobileDeviceStore(_dir, _time, restrictAcl: false);
+
+        var kept = Assert.Single(reloaded.List());
+        Assert.Equal(again.DeviceId, kept.DeviceId);
+        Assert.DoesNotContain(old.DeviceId, File.ReadAllText(path));
+    }
+
     [Theory]
     [InlineData("null")]
     [InlineData("{not json")]

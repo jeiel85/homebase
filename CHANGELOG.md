@@ -10,6 +10,10 @@
   (signed per phone, so one PC can't rewrite another's), and a retrying phone picks them up on its
   next try. Needs push notifications on in the app; without them the screen now says to re-pair
   (DECISIONS M-23).
+- **Pairing the same phone again no longer leaves a second entry on the PC.** The old entry kept
+  receiving every alert, so the phone got each push twice. The PC now removes the earlier pairing
+  when the phone registers for push, and cleans up duplicates left by earlier versions when it
+  starts (M-24).
 ## v0.18.0 — Update notifications, phone-viewing indicator
 
 ### Added

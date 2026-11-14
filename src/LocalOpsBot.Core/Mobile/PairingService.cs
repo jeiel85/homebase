@@ -22,7 +22,8 @@ public interface IMobileDeviceStore
 
     /// <summary>
     /// Stores (or with <c>null</c> clears) the device's UnifiedPush subscription. Returns <c>false</c>
-    /// when the device is not paired. Revoking a device drops its subscription with it.
+    /// when the device is not paired. Revoking a device drops its subscription with it. Any other device
+    /// with the same endpoint is the same phone's earlier pairing and is revoked.
     /// </summary>
     bool SetPushSubscription(string deviceId, LocalOpsBot.Core.Push.PushSubscription? subscription);
 
