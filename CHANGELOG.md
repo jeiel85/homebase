@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.19.0 — Pull down to refresh
+
+### Added
+- **Pull down on the phone app's PC list to refresh.** It checks every PC again right away instead
+  of waiting for the next 15-second poll, and checks GitHub for a new app version now instead of
+  waiting for the once-a-day check. A short message says whether a new version exists, the app is
+  up to date, or the check failed; a new version also shows the update banner. With "업데이트 확인"
+  turned off, it only refreshes the PCs and doesn't contact GitHub.
+- A version you chose to skip ("이 버전 건너뛰기") is offered again when you pull to refresh, since
+  you asked to check. The notification for that version still doesn't repeat.
+
 ## v0.18.1 — The phone finds the PC again after a restart
 
 ### Fixed

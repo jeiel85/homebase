@@ -1,6 +1,7 @@
 package io.github.jeiel85.homebase.ui
 
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,8 +29,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +76,7 @@ private sealed interface PcStatus {
     data object Offline : PcStatus
 }
 
+@OptIn(ExperimentalMaterial3Api::class) // PullToRefreshBox is experimental in Material3 1.3.
 @Composable
 fun PcListScreen(
     store: PcStore,
@@ -82,31 +87,55 @@ fun PcListScreen(
     var pcs by remember { mutableStateOf(store.all()) }
     val status = remember { mutableStateMapOf<String, PcStatus>() }
     var confirmRemove by remember { mutableStateOf<PcEntry?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // One /info round over every listed PC.
+    suspend fun pollAll(listedPcs: List<PcEntry>) = coroutineScope {
+        listedPcs.map { listed ->
+            async {
+                // Paths may have been refreshed by the live screen since this list was built.
+                val pc = store.get(listed.pcId) ?: listed
+                if (status[pc.pcId] == null) status[pc.pcId] = PcStatus.Checking
+                status[pc.pcId] = try {
+                    val (info, endpoint) = api.info(pc)
+                    store.rememberGood(pc.pcId, endpoint)
+                    PushRegistrar.ensureAsync(context, api, pc)
+                    PcStatus.Online(info.agentVersion, endpoint)
+                } catch (_: Exception) {
+                    PcStatus.Offline
+                }
+            }
+        }.awaitAll()
+    }
 
     // Poll /info for each PC while the list is visible (every 15 s; nothing in the background).
     LaunchedEffect(pcs) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                coroutineScope {
-                    pcs.map { listed ->
-                        async {
-                            // Paths may have been refreshed by the live screen since this list was built.
-                            val pc = store.get(listed.pcId) ?: listed
-                            if (status[pc.pcId] == null) status[pc.pcId] = PcStatus.Checking
-                            status[pc.pcId] = try {
-                                val (info, endpoint) = api.info(pc)
-                                store.rememberGood(pc.pcId, endpoint)
-                                PushRegistrar.ensureAsync(context, api, pc)
-                                PcStatus.Online(info.agentVersion, endpoint)
-                            } catch (_: Exception) {
-                                PcStatus.Offline
-                            }
-                        }
-                    }.awaitAll()
-                }
+                pollAll(pcs)
                 delay(15_000)
+            }
+        }
+    }
+
+    // Pull down: re-read the list, poll every PC now and check for an app update now (skipping the
+    // once-a-day rule). The indicator stays until both are done; the update result is one toast.
+    fun refresh() {
+        if (refreshing) return
+        refreshing = true
+        scope.launch {
+            try {
+                pcs = store.all()
+                val updateMessage = coroutineScope {
+                    launch { pollAll(pcs) }
+                    UpdateSurface.checkNow(context)
+                }
+                updateMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+            } finally {
+                refreshing = false
             }
         }
     }
@@ -136,35 +165,41 @@ fun PcListScreen(
                     }
                 },
             )
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = ::refresh,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 14.dp),
             ) {
-                item { UpdateSurface.Banner(Modifier.padding(top = 12.dp)) }
-                if (pcs.isEmpty()) {
-                    item { EmptyBay(onAdd) }
-                } else {
-                    item { SectionLabel("내 PC", trailing = "${pcs.size}대") }
-                }
-                items(pcs, key = { it.pcId }) { pc ->
-                    PcBay(pc, status[pc.pcId] ?: PcStatus.Checking, onClick = { onOpen(pc) }, onRemove = { confirmRemove = pc })
-                    Spacer(Modifier.height(12.dp))
-                }
-                item {
-                    SectionLabel("앱")
-                    Plate {
-                        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                            PushSettings(store, api, pcs.size)
-                            UpdateSurface.SettingsRows()
-                            Text(
-                                "앱 버전 ${BuildConfig.VERSION_NAME}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = hb.inkSoft,
-                                modifier = Modifier.padding(bottom = 14.dp),
-                            )
-                        }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                ) {
+                    item { UpdateSurface.Banner(Modifier.padding(top = 12.dp)) }
+                    if (pcs.isEmpty()) {
+                        item { EmptyBay(onAdd) }
+                    } else {
+                        item { SectionLabel("내 PC", trailing = "${pcs.size}대") }
                     }
-                    Spacer(Modifier.navigationBarsPadding().height(104.dp))
+                    items(pcs, key = { it.pcId }) { pc ->
+                        PcBay(pc, status[pc.pcId] ?: PcStatus.Checking, onClick = { onOpen(pc) }, onRemove = { confirmRemove = pc })
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    item {
+                        SectionLabel("앱")
+                        Plate {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                PushSettings(store, api, pcs.size)
+                                UpdateSurface.SettingsRows()
+                                Text(
+                                    "앱 버전 ${BuildConfig.VERSION_NAME}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = hb.inkSoft,
+                                    modifier = Modifier.padding(bottom = 14.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.navigationBarsPadding().height(104.dp))
+                    }
                 }
             }
         }
