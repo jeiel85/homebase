@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.25.0 — Notification center
+
+### Added
+- **Notification center in the phone app.** A bell at the top of the PC list shows how many pushes
+  arrived since you last looked; tap it to see every push this phone received, grouped by day, with
+  filters by kind (Windows app notifications, watch alerts, event log…) and by PC. Tap an entry for
+  the full text, when the PC sent it, and buttons to open that PC or delete the entry. Pushes stay
+  there after you clear them from Android's notification shade, and also when Android notifications
+  were turned off. The history is kept on the phone only, encrypted, for 30 days or 500 entries;
+  the trash icon clears it, and removing a PC from the app removes its entries (DECISIONS M-31).
+
+### Fixed
+- README: the phone app's add button is "기기 추가", and the push switch lives in the app's settings.
+
 ## v0.24.0 — Link PCs with a 24-word code
 
 ### Added
