@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.24.0 — Link PCs with a 24-word code
 
 ### Added
 - **Link two PCs with a 24-word code.** Settings › Phone has a new "코드 복사" (COPY CODE) button next to
