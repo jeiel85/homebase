@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.22.0 — A steady app list
+
+### Changed
+- **The 앱 tab says how it is sorted, and you can choose.** Above the cards: "정렬 CPU · 메모리 ·
+  이름" with a line saying what the order means. CPU (default) and 메모리 put the app in use first,
+  then the heaviest; 이름 is alphabetical and never moves. The choice is remembered.
+- **The list no longer reshuffles every second.** The PC sends the apps ranked by the last second's
+  CPU, so idle apps traded places on noise. The phone now re-ranks at most every 10 seconds, by a
+  smoothed CPU average in bands (idle / 1 / 5 / 15 / 40 %) or by memory in ×1.5 steps, and an app
+  must be clearly past a band edge to move; apps in the same band keep their places. New apps still
+  appear where they rank, and closed apps leave, right away. The numbers on the cards stay live.
+- **App cards keep one height.** Collapsed, each card always has the same rows: name, one window
+  title (the one in use), CPU/RAM bars, and a footer with disk (and per-app network where the PC
+  measures it) plus window and child-process counts. Before, the disk/network line vanished at zero
+  and a second title came and went, so cards — and everything below them — jumped.
+
 ## v0.21.0 — Choose which notifications reach the phone
 
 ### Added

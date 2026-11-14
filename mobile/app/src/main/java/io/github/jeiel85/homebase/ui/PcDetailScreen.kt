@@ -1,5 +1,6 @@
 package io.github.jeiel85.homebase.ui
 
+import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -65,6 +66,7 @@ import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.net.LiveSnapshot
 import io.github.jeiel85.homebase.net.LiveState
 import io.github.jeiel85.homebase.net.ProcessEntry
+import io.github.jeiel85.homebase.net.WindowTitle
 import java.time.Duration
 import java.time.OffsetDateTime
 
@@ -99,6 +101,8 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
     (state as? LiveState.Live)?.let { last = it.snapshot }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val history = remember(pc.pcId) { History() }
+    var appSort by remember { mutableStateOf(AppSortSetting.load(context)) }
+    val appOrder = remember(pc.pcId) { AppOrder() }
 
     LaunchedEffect(last?.ts) {
         last?.let {
@@ -124,6 +128,8 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
             if (state is LiveState.Connecting || state is LiveState.Retrying) Waiting(state, pc.endpoints.any { it.isQuickTunnel })
             return@Column
         }
+        // Keyed on the snapshot, so each second's list is ordered once, and a sort change re-ranks at once.
+        val apps = remember(snapshot, appSort) { appOrder.arrange(snapshot.apps, appSort, SystemClock.elapsedRealtime()) }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
@@ -140,7 +146,10 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
                 ) { tab = it }
             }
             when (tab) {
-                0 -> appItems(snapshot)
+                0 -> appItems(snapshot, apps, appSort) {
+                    appSort = it
+                    AppSortSetting.save(context, it)
+                }
                 1 -> processItems(snapshot)
                 else -> sessionItems(snapshot)
             }
@@ -362,20 +371,67 @@ private fun TabSelector(selected: Int, tabs: List<Pair<String, String>>, onSelec
     }
 }
 
-private fun LazyListScope.appItems(s: LiveSnapshot) {
+/** [apps] is [s].apps already in display order ([AppOrder]). */
+private fun LazyListScope.appItems(s: LiveSnapshot, apps: List<AppEntry>, sort: AppSort, onSort: (AppSort) -> Unit) {
     if (!s.sessionAvailable) {
         item(key = "noapps") {
             EmptyNote("창 목록을 받을 수 없습니다", "PC에 사용자가 로그인해 있고 Homebase 트레이 앱이 실행 중이어야 합니다. '프로세스'는 계속 볼 수 있습니다.")
         }
         return
     }
-    if (s.apps.isEmpty()) {
+    if (apps.isEmpty()) {
         item(key = "noapps") { EmptyNote("열린 창이 없습니다", null) }
         return
     }
-    items(s.apps, key = { "a${it.pid}" }) { AppCard(it, s.system.memTotalBytes) }
+    item(key = "asort") { SortBar(sort, onSort) }
+    items(apps, key = { "a${it.pid}" }) { AppCard(it, s.system.memTotalBytes) }
 }
 
+/** Which order the cards are in, said in words, with the three choices next to it. */
+@Composable
+private fun SortBar(sort: AppSort, onSort: (AppSort) -> Unit) {
+    val hb = Hb.colors
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, bottom = 2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("정렬", style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.4.sp), color = hb.inkSoft, modifier = Modifier.padding(end = 6.dp))
+            AppSort.entries.forEach { s ->
+                val on = s == sort
+                // 48 dp touch target around a smaller pill.
+                Box(
+                    Modifier
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.RadioButton) { onSort(s) }
+                        .semantics { this.selected = on }
+                        .padding(horizontal = 3.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        s.label,
+                        style = HbType.label.copy(fontSize = 12.sp, letterSpacing = 0.3.sp),
+                        color = if (on) hb.slab else hb.ink,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(if (on) hb.accent else hb.plate)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
+        Text(
+            sort.description,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            color = hb.inkSoft,
+        )
+    }
+}
+
+/**
+ * Collapsed, every card has the same five rows whatever the numbers do: name, one window title,
+ * the two bars, and a footer that always holds disk (and network) plus the window / child counts.
+ * Rows that came and went with the values (I/O at zero, a second title, the expand hint) made the
+ * list jump under the reader every second.
+ */
 @Composable
 private fun AppCard(app: AppEntry, memTotal: Long) {
     val hb = Hb.colors
@@ -406,30 +462,68 @@ private fun AppCard(app: AppEntry, memTotal: Long) {
                 Spacer(Modifier.width(8.dp))
                 Text(Fmt.pctShort(app.usage.cpuPct), style = HbType.readout.copy(fontSize = 15.sp), color = hb.ink)
             }
-            app.windows.take(if (expanded) 8 else 2).forEach { w ->
-                Text(
-                    w.title,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (w.foreground) FontWeight.SemiBold else FontWeight.Normal,
-                    color = hb.ink,
-                    maxLines = if (expanded) 3 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            if (!expanded && app.windows.size > 2) {
-                Text("창 ${app.windows.size - 2}개 더", style = androidx.compose.material3.MaterialTheme.typography.bodySmall, color = hb.inkSoft)
+            // Collapsed: exactly one title line — the window in use, else the first.
+            val titles = if (expanded) app.windows.take(8) else listOfNotNull(app.windows.firstOrNull { it.foreground } ?: app.windows.firstOrNull())
+            if (titles.isEmpty()) {
+                WindowLine(WindowTitle("", false), expanded)
+            } else {
+                titles.forEach { WindowLine(it, expanded) }
             }
             Spacer(Modifier.height(10.dp))
             UsageBars(app.usage.cpuPct, app.usage.memBytes, memTotal)
-            NetLine(app.usage.ioBps, app.usage.netRxBps, app.usage.netTxBps)
+            CardFooter(app, canExpand, expanded)
+            if (canExpand && expanded) {
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(hb.hairline))
+                app.children.forEach { ProcessRow(it, memTotal, compact = true) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WindowLine(w: WindowTitle, expanded: Boolean) {
+    val hb = Hb.colors
+    Text(
+        w.title.ifBlank { "(제목 없음)" },
+        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        fontWeight = if (w.foreground) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (w.title.isBlank()) hb.inkSoft else hb.ink,
+        maxLines = if (expanded) 3 else 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 2.dp),
+    )
+}
+
+/**
+ * Disk (and per-app network where the PC measures it) on the left, always shown — "0 B/s" is an
+ * answer too, and a line that vanishes at zero resizes the card. Counts and the chevron on the right;
+ * the chevron's slot is kept even when there is nothing to expand, for the same reason.
+ */
+@Composable
+private fun CardFooter(app: AppEntry, canExpand: Boolean, expanded: Boolean) {
+    val hb = Hb.colors
+    val u = app.usage
+    val io = buildString {
+        append("디스크 ").append(Fmt.rate(u.ioBps))
+        if (u.netRxBps != null || u.netTxBps != null) append("  ·  ↓").append(Fmt.rate(u.netRxBps)).append(" ↑").append(Fmt.rate(u.netTxBps))
+    }
+    val counts = if (canExpand) "창 ${app.windows.size} · 하위 ${app.children.size}" else "창 ${app.windows.size}"
+    val angle by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            io,
+            style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
+            color = hb.inkSoft,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(counts, style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.3.sp), color = hb.inkSoft, maxLines = 1)
+        Box(Modifier.size(18.dp)) {
             if (canExpand) {
-                if (expanded) {
-                    Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(hb.hairline))
-                    app.children.forEach { ProcessRow(it, memTotal, compact = true) }
-                }
-                ExpandHint(expanded, app.children.size)
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = hb.inkSoft, modifier = Modifier.size(18.dp).rotate(angle))
             }
         }
     }
@@ -453,38 +547,6 @@ private fun UsageBars(cpuPct: Double, memBytes: Long, memTotal: Long) {
             Spacer(Modifier.width(6.dp))
             Text(Fmt.bytes(memBytes), style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal), color = hb.inkSoft, maxLines = 1)
         }
-    }
-}
-
-@Composable
-private fun NetLine(io: Long, rx: Long?, tx: Long?) {
-    val hb = Hb.colors
-    val parts = buildList {
-        if (io > 0) add("디스크 ${Fmt.rate(io)}")
-        if ((rx ?: 0) > 0 || (tx ?: 0) > 0) add("↓${Fmt.rate(rx)} ↑${Fmt.rate(tx)}")
-    }
-    if (parts.isEmpty()) return
-    Text(
-        parts.joinToString("  ·  "),
-        style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
-        color = hb.inkSoft,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(top = 6.dp),
-    )
-}
-
-@Composable
-private fun ExpandHint(expanded: Boolean, count: Int) {
-    val hb = Hb.colors
-    val angle by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
-    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = hb.inkSoft, modifier = Modifier.size(18.dp).rotate(angle))
-        Text(
-            if (expanded) "접기" else "하위 프로세스 ${count}개",
-            style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.3.sp),
-            color = hb.inkSoft,
-        )
     }
 }
 
