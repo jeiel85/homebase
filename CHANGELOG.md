@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.25.1 — Notification badge fix
+
+### Fixed
+- **The unread badge on the phone app's bell no longer looks cut off.** The badge was drawn inside
+  the bell button, which clips to a circle, so its top-right corner was shaved off along the arc (on
+  "99+" the "+" too). It is now drawn on top of the button: a round badge for 1–9, a pill for
+  10–99 and "99+", with the number centred. Tapping the badge still opens the notification center.
+
 ## v0.25.0 — Notification center
 
 ### Added
