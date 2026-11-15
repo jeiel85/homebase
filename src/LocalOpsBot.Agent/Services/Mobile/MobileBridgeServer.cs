@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Localization;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Protocol.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly DeviceHub? _deviceHub;
     private readonly HubLinkService? _hubLinks;
     private readonly TrayToastRelay? _toasts;
+    private readonly INotificationHistoryStore? _history;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
@@ -53,8 +55,10 @@ public sealed class MobileBridgeServer : BackgroundService
         IOutboundRouter? router = null,
         DeviceHub? deviceHub = null,
         HubLinkService? hubLinks = null,
-        TrayToastRelay? toasts = null)
+        TrayToastRelay? toasts = null,
+        INotificationHistoryStore? history = null)
     {
+        _history = history;
         _deviceHub = deviceHub;
         _hubLinks = hubLinks;
         _toasts = toasts;
@@ -174,6 +178,11 @@ public sealed class MobileBridgeServer : BackgroundService
             await SendAsync(conn, MobileBridge.Response(id, true, result), ct);
             return;
         }
+        if (op is MobileBridge.OpHistoryList or MobileBridge.OpHistoryClear)
+        {
+            await SendAsync(conn, await HistoryAsync(op, id, payload, ct), ct);
+            return;
+        }
         if (op == MobileBridge.OpHubsUnlink)
         {
             var ok = _hubLinks is not null && await _hubLinks.UnlinkAsync((string?)payload?["pcId"] ?? "");
@@ -196,6 +205,30 @@ public sealed class MobileBridgeServer : BackgroundService
             _ => MobileBridge.Response(id, false, error: "unsupported"),
         };
         await SendAsync(conn, response, ct);
+    }
+
+    /// <summary>The Tray's notification center (DECISIONS M-32).</summary>
+    private async Task<JsonObject> HistoryAsync(string op, string id, JsonNode? payload, CancellationToken ct)
+    {
+        if (_history is null) return MobileBridge.Response(id, false, error: "unsupported");
+        try
+        {
+            if (op == MobileBridge.OpHistoryClear)
+            {
+                var removed = await _history.ClearDevicesAsync(ct);
+                _logger.LogInformation("Notification center cleared from the Tray ({Count} relayed notifications)", removed);
+                return MobileBridge.Response(id, true, removed);
+            }
+            var request = payload?.Deserialize<HistoryListRequest>(MobileProtocol.Json);
+            var page = await _history.ListAsync(request?.After, NotificationHistoryRules.ClampLimit(request?.Limit), ct);
+            return MobileBridge.Response(id, true,
+                NotificationHistoryRules.FitToBytes(page, NotificationHistoryRules.MaxResponseBytes, MobileProtocol.Json));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Notification center request {Op} failed", op);
+            return MobileBridge.Response(id, false, error: "store_failed");
+        }
     }
 
     /// <summary>The Tray's "send test" goes through the same router as real alerts (push first, Telegram fallback).</summary>

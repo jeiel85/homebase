@@ -32,9 +32,16 @@ public partial class DashboardWindow : ThemedWindow
     /// <summary>Raised by the "Settings" button; the tray opens the settings window.</summary>
     public event Action? OpenSettingsRequested;
 
+    /// <summary>Raised by the notification center button (DECISIONS M-32).</summary>
+    public event Action? OpenNotificationsRequested;
+
     public DashboardWindow()
     {
         InitializeComponent();
+
+        NotificationsButton.Content = L.DashNotifications(NotificationCenter.Unread);
+        Action<int> onUnread = n => NotificationsButton.Content = L.DashNotifications(n);
+        NotificationCenter.UnreadChanged += onUnread;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _timer.Tick += (_, _) => Refresh();
@@ -42,7 +49,7 @@ public partial class DashboardWindow : ThemedWindow
         // Refresh the connection summary whenever the window is shown again — the user may just
         // have changed something in Settings.
         IsVisibleChanged += (_, _) => { if (IsVisible) { _ticks = 0; Refresh(); _timer.Start(); } else _timer.Stop(); };
-        Closed += (_, _) => _timer.Stop();
+        Closed += (_, _) => { _timer.Stop(); NotificationCenter.UnreadChanged -= onUnread; };
     }
 
     private async void Refresh()
@@ -311,6 +318,8 @@ public partial class DashboardWindow : ThemedWindow
     }
 
     private void OpenSettings_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke();
+
+    private void OpenNotifications_Click(object sender, RoutedEventArgs e) => OpenNotificationsRequested?.Invoke();
 
     private void Close_Click(object sender, RoutedEventArgs e) => Hide();
 

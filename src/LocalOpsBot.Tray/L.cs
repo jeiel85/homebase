@@ -274,6 +274,59 @@ public static class L
     public static string DevHubConnecting => T("connecting…", "연결하는 중…");
     public static string DevHubPhones(int n) => T($"{n} phone(s) there", $"휴대폰 {n}대 연결됨");
 
+    // ── Notification center (DECISIONS M-32) ────────────────────────────────
+    public static string MenuNotifications(int unread) => unread > 0
+        ? T($"Notification center ({Count(unread)})", $"알림 센터 ({Count(unread)})")
+        : T("Notification center", "알림 센터");
+    public static string DashNotifications(int unread) => unread > 0
+        ? T($"NOTIFICATIONS · {Count(unread)}", $"알림 센터 · {Count(unread)}")
+        : T("NOTIFICATIONS", "알림 센터");
+    private static string Count(int n) => n > 99 ? "99+" : n.ToString(CultureInfo.InvariantCulture);
+    public static string CenterTitle => T("Homebase notifications", "Homebase 알림 센터");
+    public static string CenterEyebrow => T("NOTIFICATIONS", "알림 센터");
+    public static string CenterAll => T("ALL", "전체");
+    public static string CenterAlerts => T("THIS PC'S ALERTS", "이 PC 경보");
+    public static string CenterMore => T("OLDER", "더 보기");
+    public static string CenterClear => T("CLEAR ALL", "모두 지우기");
+    public static string CenterLoading => T("Loading…", "불러오는 중…");
+    public static string CenterToday => T("TODAY", "오늘");
+    public static string CenterYesterday => T("YESTERDAY", "어제");
+    public static string CenterKindAlert => T("ALERT", "경보");
+    public static string CenterThisPc => T("This PC", "이 PC");
+    public static string CenterSendFailed => T("not delivered", "전송 실패");
+    public static string CenterUnreadTip => T("New since you last looked", "지난번에 본 뒤 새로 온 알림");
+    public static string CenterExpandTip => T("Click to show or hide the full text", "눌러서 전체 내용 보기/접기");
+    public static string CenterAlertKind(string kind) => kind switch
+    {
+        "event_log" => T("Event log", "이벤트 로그"),
+        "advisor" => T("PC health", "PC 상태 조언"),
+        _ when kind.EndsWith("_monitor", StringComparison.Ordinal) => T("Dev server watch", "개발 서버 감시"),
+        _ when kind.EndsWith("_watch", StringComparison.Ordinal) => T("Watchdog", "감시 대상"),
+        _ => kind,
+    };
+    public static string CenterFeatureOff => T(
+        "The notification center needs the phone connection. Turn it on in Settings › Phone.",
+        "알림 센터는 휴대폰·기기 연결이 켜져 있어야 씁니다. 설정 → 휴대폰에서 켜세요.");
+    public static string CenterNoAgent => T(
+        "Couldn't reach the Homebase service. It may be restarting; this window retries when reopened.",
+        "Homebase 감시 서비스에 연결하지 못했습니다. 다시 시작하는 중일 수 있습니다. 창을 다시 열면 다시 시도합니다.");
+    public static string CenterFailed => T("Couldn't load the notifications.", "알림을 불러오지 못했습니다.");
+    public static string CenterEmpty => T(
+        "Nothing yet. Notifications your phones and linked PCs send here, and this PC's alerts, stay here for 30 days.",
+        "아직 받은 알림이 없습니다. 휴대폰이나 연결한 PC가 보낸 알림과 이 PC의 경보가 여기에 30일 동안 남습니다.");
+    public static string CenterEmptyForwardingOff => T(
+        "Nothing yet. To receive your other devices' notifications here, turn on notification forwarding in Settings.",
+        "아직 받은 알림이 없습니다. 다른 기기의 알림을 여기서 받으려면 설정에서 '알림 전달'을 켜세요.");
+    public static string CenterNoMatch => T("Nothing from this source in what is loaded.", "불러온 알림 중 이 출처의 알림이 없습니다.");
+    public static string CenterCount(int shown, bool more) => T(
+        $"{shown} shown{(more ? " · older ones below" : "")} · kept 30 days",
+        $"{shown}건 표시{(more ? " · 더 오래된 알림 있음" : "")} · 30일 보관");
+    public static string CenterClearTitle => T("Clear notifications", "알림 지우기");
+    public static string CenterClearMessage => T(
+        "Delete every notification received from your other devices? This PC's alerts stay (they are also kept for diagnostics).",
+        "다른 기기에서 받은 알림을 모두 지울까요? 이 PC의 경보는 진단용으로도 쓰여 남겨 둡니다.");
+    public static string CenterClearConfirm => T("Clear", "지우기");
+
     // ── Updates (UpdateCoordinator / progress window) ────────────────────────
     public static string UpdChecking => T("Checking…", "확인하는 중…");
     public static string UpdCheckFailed => T("Update check failed", "업데이트 확인 실패");

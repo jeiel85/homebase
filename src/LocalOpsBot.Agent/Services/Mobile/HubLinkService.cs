@@ -305,7 +305,11 @@ public sealed class HubLinkService : BackgroundService
     {
         if (_forwarding is null) return;
         var name = item.OriginId == NotificationInbox.SelfOrigin ? link.LastDevices?.Hub.PcName ?? link.Hub.PcName : item.OriginName;
-        var origin = new ToastOrigin($"hub:{link.Hub.PcId}:{item.OriginId}", name, FromHub: true, link.HubPushHashes);
+        // The hub's own notifications come from a PC; others from the device the hub listed under that id.
+        var kind = item.OriginId == NotificationInbox.SelfOrigin
+            ? DeviceKind.Pc
+            : link.LastDevices?.Devices.FirstOrDefault(d => d.DeviceId == item.OriginId)?.Kind ?? DeviceKind.Phone;
+        var origin = new ToastOrigin($"hub:{link.Hub.PcId}:{item.OriginId}", name, FromHub: true, link.HubPushHashes, kind);
         await _forwarding.AcceptFromDeviceAsync(origin, item.App, item.Title, item.Body, item.Ts, item.Id);
     }
 

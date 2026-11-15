@@ -66,7 +66,7 @@ public sealed class DeviceHub
     public async Task RelayAsync(MobileDeviceInfo device, DeviceNotification n)
     {
         if (_relay is null) return;
-        var origin = new ToastOrigin(device.DeviceId, device.Name, FromHub: false, _board.PushHashesOf(device.DeviceId));
+        var origin = new ToastOrigin(device.DeviceId, device.Name, FromHub: false, _board.PushHashesOf(device.DeviceId), device.Kind);
         _logger.LogInformation("Notification from {Device} ({App}) received for relay", device.Name, n.App);
         await _relay(origin, n); // n.Id travels along so a PC reached by two paths shows it once
     }

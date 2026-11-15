@@ -39,6 +39,7 @@ public sealed class NotificationForwardingService : BackgroundService
     private readonly ToastBundler _bundler;
     private readonly NotificationInbox? _inbox;
     private readonly ITrayToaster? _toaster;
+    private readonly INotificationHistoryStore? _history;
     private readonly object _gate = new();
     private int _droppedReported;
     private DateTimeOffset _lastBudgetWarning = DateTimeOffset.MinValue;
@@ -51,10 +52,12 @@ public sealed class NotificationForwardingService : BackgroundService
         ILogger<NotificationForwardingService> logger,
         TimeProvider? time = null,
         NotificationInbox? inbox = null,
-        ITrayToaster? toaster = null)
+        ITrayToaster? toaster = null,
+        INotificationHistoryStore? history = null)
     {
         _inbox = inbox;
         _toaster = toaster;
+        _history = history;
         _bridgeServer = bridgeServer;
         _outbound = outbound;
         _masker = masker;
@@ -148,6 +151,8 @@ public sealed class NotificationForwardingService : BackgroundService
         {
             if (id is not null && !FirstSighting(id)) return;
             var item = new ToastItem(app, _masker.Mask(title), body is null ? null : _masker.Mask(body), at, origin, id);
+            // Before the balloon, so the Tray's unread count already includes it when the balloon arrives.
+            await RecordAsync(item, origin);
             _toaster?.Show($"{origin.Name} · {app}", ToastText(item));
             if (!origin.FromHub) _inbox?.Add(origin.DeviceId, origin.Name, app, item.Title, item.Body, at, id);
             await BundleAsync(item);
@@ -234,6 +239,25 @@ public sealed class NotificationForwardingService : BackgroundService
      * notifications carried from their source device. A phone paired with two PCs gets the same
      * relayed notification from both and shows it once (the app drops a repeated id).
      */
+    /// <summary>
+    /// Keeps the relayed notification for the Tray's notification center (DECISIONS M-32). A failed
+    /// write is logged and the relay goes on: the balloon and the push matter more than the history.
+    /// </summary>
+    private async Task RecordAsync(ToastItem item, ToastOrigin origin)
+    {
+        if (_history is null) return;
+        try
+        {
+            await _history.AddAsync(new DeviceNotificationRecord(
+                item.Id, origin.DeviceId, origin.Name, origin.Kind, item.SourceApp, item.Title, item.Body,
+                item.At, _time.GetUtcNow()), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not keep a notification from {Device} in the notification center", origin.Name);
+        }
+    }
+
     internal static Guid RelayId(ToastBatch batch)
     {
         var ids = batch.Items.Select(i => i.Id ?? $"{i.SourceApp}|{i.Title}|{i.Body}|{i.At.ToUnixTimeMilliseconds()}");

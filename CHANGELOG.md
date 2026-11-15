@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.26.0 — Notification center on the PC
+
+### Added
+- **Notification center in the tray.** The tray menu has "알림 센터" (Notification center) with an unread
+  count, the dashboard has the same button, and clicking a relayed notification's balloon opens it. It
+  lists what your phones and linked PCs sent to this PC, plus this PC's own alerts (event log, watchdog,
+  dev server), grouped by day, with a filter per source. Click an entry for its full text. "모두 지우기"
+  (Clear all) removes the relayed notifications; this PC's alerts stay because they also serve
+  diagnostics. The Agent keeps them for 30 days (relayed ones: at most 500), so nothing is missed while
+  nobody is logged on. This PC's own Windows notifications are not added: Windows' notification center
+  already has them (DECISIONS M-32).
+
+### Changed
+- The Agent's data folder (`C:\ProgramData\Homebase\data`) is now readable only by SYSTEM and
+  Administrators. It was readable by every local user, and it now holds relayed notification text.
+- This PC's alert log is trimmed to the last 30 days (it used to grow without limit).
+
 ## v0.25.1 — Notification badge fix
 
 ### Fixed

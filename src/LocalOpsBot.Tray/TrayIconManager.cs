@@ -30,6 +30,9 @@ public sealed class TrayIconManager : IDisposable
     private DashboardWindow? _popup;
     private SettingsWindow? _settings;
     private OnboardingWindow? _onboarding;
+    private NotificationCenterWindow? _center;
+    private readonly ToolStripMenuItem _centerItem;
+    private readonly System.Windows.Threading.DispatcherTimer _unreadTimer;
 
     public TrayIconManager()
     {
@@ -54,6 +57,11 @@ public sealed class TrayIconManager : IDisposable
         var openItem = new ToolStripMenuItem(L.MenuOpen) { Font = new Font(menu.Font, FontStyle.Bold) };
         openItem.Click += (_, _) => TogglePopup();
         menu.Items.Add(openItem);
+
+        // Notification center (DECISIONS M-32): what other devices sent here and this PC's alerts.
+        _centerItem = new ToolStripMenuItem(L.MenuNotifications(0));
+        _centerItem.Click += (_, _) => ShowNotificationCenter();
+        menu.Items.Add(_centerItem);
 
         var settingsItem = new ToolStripMenuItem(L.MenuSettings);
         settingsItem.Click += (_, _) => ShowSettings(SettingsTab.Phone);
@@ -83,6 +91,19 @@ public sealed class TrayIconManager : IDisposable
         ApplyWatching(MobileHost.IsWatching);
         MobileHost.ToastRequested += OnToastRequested;
 
+        // A relayed notification's balloon opens the center; the unread count follows new arrivals
+        // and is re-read every minute (this PC's alerts do not reach the Tray as balloons).
+        _trayIcon.BalloonTipClicked += (_, _) => ShowNotificationCenter();
+        NotificationCenter.UnreadChanged += n => _centerItem.Text = L.MenuNotifications(n);
+        _unreadTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _unreadTimer.Tick += async (_, _) => await NotificationCenter.RefreshUnreadAsync();
+        _unreadTimer.Start();
+        _ = Application.Current?.Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5)); // let the bridge connect first
+            await NotificationCenter.RefreshUnreadAsync();
+        }));
+
         _ = BackgroundCheckAsync();
 
         // First launch for this Windows user: walk them through the connection checklist
@@ -107,6 +128,8 @@ public sealed class TrayIconManager : IDisposable
             OwnToasts.Remember(title);
             try { _trayIcon.ShowBalloonTip(6000, title, text, ToolTipIcon.None); }
             catch (Exception) { /* the shell refused (focus assist etc.): the phones still get it */ }
+            // An open center adds it itself and marks it read; otherwise count it.
+            if (_center is not { IsVisible: true }) _ = NotificationCenter.RefreshUnreadAsync();
         }));
 
     private static string Clip(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
@@ -139,6 +162,7 @@ public sealed class TrayIconManager : IDisposable
         {
             _popup = new DashboardWindow();
             _popup.OpenSettingsRequested += () => ShowSettings(SettingsTab.Phone);
+            _popup.OpenNotificationsRequested += ShowNotificationCenter;
         }
         return _popup;
     }
@@ -172,6 +196,19 @@ public sealed class TrayIconManager : IDisposable
         if (_settings.WindowState == System.Windows.WindowState.Minimized)
             _settings.WindowState = System.Windows.WindowState.Normal;
         _settings.Activate();
+    }
+
+    private void ShowNotificationCenter()
+    {
+        if (_center is not { IsVisible: true })
+        {
+            _center = new NotificationCenterWindow();
+            _center.Closed += (_, _) => _center = null;
+            _center.Show();
+        }
+        if (_center.WindowState == System.Windows.WindowState.Minimized)
+            _center.WindowState = System.Windows.WindowState.Normal;
+        _center.Activate();
     }
 
     private void ShowOnboarding()
@@ -339,6 +376,7 @@ public sealed class TrayIconManager : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _unreadTimer.Stop();
         MobileHost.WatchingChanged -= OnWatchingChanged;
         MobileHost.ToastRequested -= OnToastRequested;
         _trayIcon.Visible = false;

@@ -30,6 +30,8 @@ public sealed class SqliteMigrator : IDatabaseMigrator
 
         if (version < 1)
             await ApplyV1Async(ct);
+        if (version < 2)
+            await ApplyV2Async(ct);
     }
 
     private async Task<int> GetCurrentVersionAsync(CancellationToken ct)
@@ -127,5 +129,35 @@ public sealed class SqliteMigrator : IDatabaseMigrator
         await insertCmd.ExecuteNonQueryAsync(ct);
 
         _logger.LogInformation("Migration V1 complete");
+    }
+
+    /// <summary>
+    /// V2 (DECISIONS M-32): notifications relayed from other devices, for the Tray's notification
+    /// center. Only adds a table, so an older Agent (which checks <c>version &lt; 1</c>) still runs on it.
+    /// </summary>
+    private async Task ApplyV2Async(CancellationToken ct)
+    {
+        _logger.LogInformation("Applying migration V2: notification_history");
+
+        await _db.ExecuteAsync("""
+            CREATE TABLE IF NOT EXISTS notification_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notif_id TEXT,
+                origin_id TEXT NOT NULL,
+                origin_name TEXT NOT NULL,
+                origin_kind TEXT NOT NULL,
+                app TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT,
+                ts TEXT NOT NULL,
+                received_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_notification_history_received_at ON notification_history(received_at);
+
+            INSERT INTO schema_version (version, applied_at) VALUES (2, datetime('now'));
+            """, ct);
+
+        _logger.LogInformation("Migration V2 complete");
     }
 }

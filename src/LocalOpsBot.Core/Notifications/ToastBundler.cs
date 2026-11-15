@@ -3,9 +3,12 @@ namespace LocalOpsBot.Core.Notifications;
 /// <summary>
 /// Where a notification came from when it is not this PC's own Windows toast (DECISIONS M-28):
 /// a paired device (<c>FromHub=false</c>) or a hub PC this PC is linked to (<c>FromHub=true</c>, not
-/// relayed again). <c>SkipPushHashes</c> are phones that already got it from elsewhere.
+/// relayed again). <c>SkipPushHashes</c> are phones that already got it from elsewhere. <c>Kind</c> is
+/// <c>phone</c> or <c>pc</c> (<see cref="LocalOpsBot.Core.Mobile.DeviceKind"/>), shown in the notification center (M-32).
 /// </summary>
-public sealed record ToastOrigin(string DeviceId, string Name, bool FromHub, IReadOnlyCollection<string> SkipPushHashes);
+public sealed record ToastOrigin(
+    string DeviceId, string Name, bool FromHub, IReadOnlyCollection<string> SkipPushHashes,
+    string Kind = LocalOpsBot.Core.Mobile.DeviceKind.Phone);
 
 /// <summary>
 /// One forwarded notification after filtering and masking. <c>Origin</c> is null for this PC's own toasts.

@@ -27,6 +27,8 @@ public static class MobileBridge
     public const string OpDevicesOverview = "devices.overview"; // request → DeviceOverview (M-27, M-29)
     public const string OpHubsLink = "hubs.link";             // request {link} → HubLinkResult (M-29)
     public const string OpHubsUnlink = "hubs.unlink";         // request {pcId} → bool (M-29)
+    public const string OpHistoryList = "history.list";       // request {after?, limit?} → HistoryPage (M-32)
+    public const string OpHistoryClear = "history.clear";     // request → int (relayed notifications removed; M-32)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on} — collect only while a phone watches
@@ -36,7 +38,7 @@ public static class MobileBridge
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
-        OpDevicesOverview, OpHubsLink, OpHubsUnlink,
+        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
@@ -148,6 +150,9 @@ public sealed record LinkedHubView(
 public sealed record DeviceOverview(
     DevicesResponse Here,
     IReadOnlyList<LinkedHubView> Hubs);
+
+/// <summary><c>history.list</c> request: entries after <c>After</c> (or from the newest), at most <c>Limit</c> (M-32).</summary>
+public sealed record HistoryListRequest(LocalOpsBot.Core.Notifications.HistoryCursor? After, int? Limit);
 
 /// <summary><c>hubs.link</c> result. <c>Error</c> codes: <c>invalid_link</c>, <c>unreachable</c>, <c>rejected</c>, <c>self</c>, <c>off</c>.</summary>
 public sealed record HubLinkResult(bool Linked, string? PcName, string? Error, string? Message);
