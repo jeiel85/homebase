@@ -86,7 +86,7 @@ public partial class NotificationCenterWindow : ThemedWindow
         MoreButton.IsEnabled = false;
         try
         {
-            var (page, _) = await NotificationCenter.ListAsync(_entries[^1].At, PageSize);
+            var (page, _) = await NotificationCenter.ListAsync(HistoryCursor.After(_entries[^1]), PageSize);
             if (page is null) return;
             _entries.AddRange(page.Entries);
             _more = page.More;

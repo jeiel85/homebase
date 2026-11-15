@@ -47,7 +47,7 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
         finally { _gate.Release(); }
     }
 
-    public async Task<HistoryPage> ListAsync(DateTimeOffset? before, int limit, CancellationToken ct)
+    public async Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct)
     {
         limit = NotificationHistoryRules.ClampLimit(limit);
         await _gate.WaitAsync(ct);
@@ -60,16 +60,19 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
                     SELECT 'device' AS kind, id, received_at AS at, origin_name AS source, origin_kind AS source_kind,
                            origin_id, app, title, substr(body, 1, @max_body) AS body, NULL AS severity, NULL AS status
                     FROM notification_history
-                    WHERE @before IS NULL OR received_at < @before
+                    WHERE @at IS NULL OR received_at <= @at
                     UNION ALL
                     SELECT 'alert', id, created_at, NULL, NULL, NULL, kind, title, substr(body, 1, @max_body), severity, status
                     FROM alert_log
-                    WHERE @before IS NULL OR created_at < @before
+                    WHERE @at IS NULL OR created_at <= @at
                 )
-                ORDER BY at DESC, id DESC
+                WHERE @at IS NULL OR at < @at OR (at = @at AND (kind < @kind OR (kind = @kind AND id < @id)))
+                ORDER BY at DESC, kind DESC, id DESC
                 LIMIT @take
                 """;
-            cmd.Parameters.Add(new SqliteParameter("@before", before is { } b ? Stamp(b) : DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@at", after is { } a ? Stamp(a.At) : DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@kind", (object?)after?.Kind ?? DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@id", (object?)after?.Id ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@take", limit + 1));
             cmd.Parameters.Add(new SqliteParameter("@max_body", NotificationHistoryRules.MaxListedBody));
             var entries = new List<HistoryEntry>();

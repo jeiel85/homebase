@@ -220,8 +220,9 @@ public sealed class MobileBridgeServer : BackgroundService
                 return MobileBridge.Response(id, true, removed);
             }
             var request = payload?.Deserialize<HistoryListRequest>(MobileProtocol.Json);
-            var page = await _history.ListAsync(request?.Before, NotificationHistoryRules.ClampLimit(request?.Limit), ct);
-            return MobileBridge.Response(id, true, page);
+            var page = await _history.ListAsync(request?.After, NotificationHistoryRules.ClampLimit(request?.Limit), ct);
+            return MobileBridge.Response(id, true,
+                NotificationHistoryRules.FitToBytes(page, NotificationHistoryRules.MaxResponseBytes, MobileProtocol.Json));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

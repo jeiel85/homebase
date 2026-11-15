@@ -105,9 +105,60 @@ public sealed class NotificationHistoryRepositoryTests : IAsyncLifetime
         Assert.True(first.More);
         Assert.Equal(new[] { "r4", "r3", "a" }, first.Entries.Select(e => e.Title));
 
-        var second = await _t.History.ListAsync(first.Entries[^1].At, 3, CancellationToken.None);
+        var second = await _t.History.ListAsync(HistoryCursor.After(first.Entries[^1]), 3, CancellationToken.None);
         Assert.False(second.More);
         Assert.Equal(new[] { "r2", "r1", "r0" }, second.Entries.Select(e => e.Title));
+    }
+
+    [Fact]
+    public async Task Entries_sharing_a_timestamp_across_a_page_boundary_are_not_lost()
+    {
+        // Two relays and two alerts at the very same instant, read two at a time.
+        await Relay("r1", T0);
+        await Relay("r2", T0);
+        await Alert("a1", T0);
+        await Alert("a2", T0);
+
+        var seen = new List<string>();
+        HistoryCursor? cursor = null;
+        for (var guard = 0; guard < 10; guard++)
+        {
+            var page = await _t.History.ListAsync(cursor, 2, CancellationToken.None);
+            seen.AddRange(page.Entries.Select(e => e.Title));
+            if (!page.More) break;
+            cursor = HistoryCursor.After(page.Entries[^1]);
+        }
+
+        Assert.Equal(new[] { "r2", "r1", "a2", "a1" }, seen);
+    }
+
+    [Fact]
+    public void A_page_of_long_korean_entries_is_trimmed_to_the_byte_budget()
+    {
+        // Korean is escaped as \uXXXX on the bridge: 2,000 characters are ~12 KB each.
+        var body = new string('가', NotificationHistoryRules.MaxListedBody);
+        var entries = Enumerable.Range(0, NotificationHistoryRules.MaxPage)
+            .Select(i => new HistoryEntry(HistoryKind.Alert, i, T0.AddMinutes(-i), null, null, null, "event_log", $"경고 {i}", body, "Warning", "Sent"))
+            .ToList();
+        var json = LocalOpsBot.Core.Mobile.MobileProtocol.Json;
+        Assert.True(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new HistoryPage(entries, false), json).Length
+            > NotificationHistoryRules.MaxResponseBytes);
+
+        var fitted = NotificationHistoryRules.FitToBytes(new HistoryPage(entries, false), NotificationHistoryRules.MaxResponseBytes, json);
+
+        Assert.True(fitted.More);
+        Assert.InRange(fitted.Entries.Count, 1, entries.Count - 1);
+        Assert.Equal(entries.Take(fitted.Entries.Count).Select(e => e.Id), fitted.Entries.Select(e => e.Id)); // newest kept
+        Assert.True(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(fitted, json).Length <= NotificationHistoryRules.MaxResponseBytes);
+    }
+
+    [Fact]
+    public void A_page_within_the_budget_is_left_alone()
+    {
+        var page = new HistoryPage(new[] { new HistoryEntry(HistoryKind.Alert, 1, T0, null, null, null, "event_log", "짧음", null) }, false);
+
+        Assert.Same(page, NotificationHistoryRules.FitToBytes(page, NotificationHistoryRules.MaxResponseBytes,
+            LocalOpsBot.Core.Mobile.MobileProtocol.Json));
     }
 
     [Fact]

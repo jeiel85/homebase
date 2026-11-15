@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace LocalOpsBot.Core.Notifications;
 
 /// <summary>
@@ -21,6 +23,30 @@ public static class NotificationHistoryRules
 
     /// <summary>Largest page the Tray may ask for.</summary>
     public const int MaxPage = 100;
+
+    /// <summary>
+    /// A <c>history.list</c> answer is trimmed to this many serialized bytes. The bridge's JSON escapes
+    /// non-ASCII text (six bytes per Korean character), so the character cut alone cannot keep a page
+    /// of long Korean alerts inside the 1 MB frame; half of it leaves room for the envelope.
+    /// </summary>
+    public const int MaxResponseBytes = 512 * 1024;
+
+    /// <summary>
+    /// Drops the oldest entries of <paramref name="page"/> until it serializes to at most
+    /// <paramref name="maxBytes"/>; a trimmed page says <c>More</c>, so the rest comes with the next one.
+    /// One entry is always kept (a single entry is far below the limit).
+    /// </summary>
+    public static HistoryPage FitToBytes(HistoryPage page, int maxBytes, JsonSerializerOptions json)
+    {
+        var entries = page.Entries.ToList();
+        var trimmed = false;
+        while (entries.Count > 1 && JsonSerializer.SerializeToUtf8Bytes(new HistoryPage(entries, page.More), json).Length > maxBytes)
+        {
+            entries.RemoveRange(entries.Count - Math.Max(1, entries.Count / 10), Math.Max(1, entries.Count / 10));
+            trimmed = true;
+        }
+        return trimmed ? new HistoryPage(entries, More: true) : page;
+    }
 
     /// <summary>Clamps a requested page size to 1…<see cref="MaxPage"/>.</summary>
     public static int ClampLimit(int? limit) => Math.Clamp(limit ?? 50, 1, MaxPage);
@@ -70,12 +96,21 @@ public sealed record HistoryEntry(
 /// <summary><c>history.list</c> answer, newest first. <c>More</c> says older entries exist.</summary>
 public sealed record HistoryPage(IReadOnlyList<HistoryEntry> Entries, bool More);
 
+/// <summary>
+/// Where the next page starts: just after this entry in the list's order (time, then kind, then id,
+/// all descending), so entries sharing a timestamp across a page boundary are neither lost nor repeated.
+/// </summary>
+public sealed record HistoryCursor(DateTimeOffset At, string Kind, long Id)
+{
+    public static HistoryCursor After(HistoryEntry e) => new(e.At, e.Kind, e.Id);
+}
+
 public interface INotificationHistoryStore
 {
     Task AddAsync(DeviceNotificationRecord record, CancellationToken ct);
 
-    /// <summary>Entries received strictly before <paramref name="before"/> (or the newest), newest first.</summary>
-    Task<HistoryPage> ListAsync(DateTimeOffset? before, int limit, CancellationToken ct);
+    /// <summary>Entries after <paramref name="after"/> in list order (or from the newest), newest first.</summary>
+    Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct);
 
     /// <summary>Deletes every relayed notification. The alert log stays (it is also diagnostics).</summary>
     Task<int> ClearDevicesAsync(CancellationToken ct);

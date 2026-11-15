@@ -64,7 +64,7 @@ public sealed class NotificationHistoryRelayTests : IAsyncLifetime
     private sealed class BrokenStore : INotificationHistoryStore
     {
         public Task AddAsync(DeviceNotificationRecord record, CancellationToken ct) => throw new IOException("disk full");
-        public Task<HistoryPage> ListAsync(DateTimeOffset? before, int limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct) => throw new NotSupportedException();
         public Task<int> ClearDevicesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct) => throw new NotSupportedException();
     }

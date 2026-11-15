@@ -80,13 +80,13 @@ internal static class NotificationCenter
     public enum Failure { None, FeatureOff, NoAgent, Failed }
 
     /// <summary>One page of history, newest first, or why there is none.</summary>
-    public static async Task<(HistoryPage? Page, Failure Failure)> ListAsync(DateTimeOffset? before, int limit)
+    public static async Task<(HistoryPage? Page, Failure Failure)> ListAsync(HistoryCursor? after, int limit)
     {
         if (MobileHost.Client is not { } client) return (null, Failure.FeatureOff);
         if (!client.IsConnected) return (null, Failure.NoAgent);
         try
         {
-            var r = await client.RequestAsync(MobileBridge.OpHistoryList, new HistoryListRequest(before, limit));
+            var r = await client.RequestAsync(MobileBridge.OpHistoryList, new HistoryListRequest(after, limit));
             if ((bool?)r["ok"] != true) return (null, Failure.Failed);
             var page = r["payload"]?.Deserialize<HistoryPage>(MobileProtocol.Json);
             return page is null ? (null, Failure.Failed) : (page, Failure.None);
@@ -118,7 +118,10 @@ internal static class NotificationCenter
         var seen = LastSeen();
         var (page, failure) = await ListAsync(null, CountWindow);
         if (failure != Failure.None || page is null) return; // keep the last count
-        SetUnread(page.Entries.Count(e => e.At > seen));
+        var unread = page.Entries.Count(e => e.At > seen);
+        // The Agent may shorten a page of long entries; if all of it is unread there are more ("99+").
+        if (page.More && unread == page.Entries.Count) unread = Math.Max(unread, CountWindow);
+        SetUnread(unread);
     }
 
     private static void SetUnread(int n)

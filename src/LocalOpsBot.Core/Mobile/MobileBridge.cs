@@ -27,7 +27,7 @@ public static class MobileBridge
     public const string OpDevicesOverview = "devices.overview"; // request → DeviceOverview (M-27, M-29)
     public const string OpHubsLink = "hubs.link";             // request {link} → HubLinkResult (M-29)
     public const string OpHubsUnlink = "hubs.unlink";         // request {pcId} → bool (M-29)
-    public const string OpHistoryList = "history.list";       // request {before?, limit?} → HistoryPage (M-32)
+    public const string OpHistoryList = "history.list";       // request {after?, limit?} → HistoryPage (M-32)
     public const string OpHistoryClear = "history.clear";     // request → int (relayed notifications removed; M-32)
 
     // Agent → Tray
@@ -151,8 +151,8 @@ public sealed record DeviceOverview(
     DevicesResponse Here,
     IReadOnlyList<LinkedHubView> Hubs);
 
-/// <summary><c>history.list</c> request: entries before <c>Before</c> (or the newest), at most <c>Limit</c> (M-32).</summary>
-public sealed record HistoryListRequest(DateTimeOffset? Before, int? Limit);
+/// <summary><c>history.list</c> request: entries after <c>After</c> (or from the newest), at most <c>Limit</c> (M-32).</summary>
+public sealed record HistoryListRequest(LocalOpsBot.Core.Notifications.HistoryCursor? After, int? Limit);
 
 /// <summary><c>hubs.link</c> result. <c>Error</c> codes: <c>invalid_link</c>, <c>unreachable</c>, <c>rejected</c>, <c>self</c>, <c>off</c>.</summary>
 public sealed record HubLinkResult(bool Linked, string? PcName, string? Error, string? Message);
