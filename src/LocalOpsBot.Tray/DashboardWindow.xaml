@@ -157,6 +157,7 @@
     </ScrollViewer>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button x:Name="NotificationsButton" Style="{StaticResource Button.Carbon}" Margin="0,0,8,0" Click="OpenNotifications_Click"/>
       <Button Style="{StaticResource Button.Amber}" Content="{x:Static local:L.DashOpenSettings}" Click="OpenSettings_Click"/>
       <Button Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.Close}" Margin="8,0,0,0" Click="Close_Click"/>
     </StackPanel>

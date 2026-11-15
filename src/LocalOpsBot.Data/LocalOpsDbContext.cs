@@ -8,6 +8,16 @@ public sealed class LocalOpsDbContext : IDisposable
 
     public SqliteConnection Connection => _connection;
 
+    /// <summary>The database file, or null for an in-memory database.</summary>
+    public string? FilePath
+    {
+        get
+        {
+            var source = new SqliteConnectionStringBuilder(_connection.ConnectionString).DataSource;
+            return string.IsNullOrEmpty(source) || source == ":memory:" ? null : Path.GetFullPath(source);
+        }
+    }
+
     public LocalOpsDbContext(string connectionString)
     {
         _connection = new SqliteConnection(connectionString);

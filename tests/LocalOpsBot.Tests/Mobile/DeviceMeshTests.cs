@@ -298,7 +298,8 @@ public class HubLinkEndToEndTests : IDisposable
         var routerA = new RecordingRouter();
         var toastsA = new RecordingToaster();
         var inboxA = new NotificationInbox(TimeProvider.System);
-        var forwardingA = Forwarding(routerA, inboxA, toastsA);
+        using var historyA = await LocalOpsBot.Tests.Data.Repositories.HistoryTestDb.CreateAsync();
+        var forwardingA = Forwarding(routerA, inboxA, toastsA, historyA.History);
         var boardA = new DeviceStatusBoard(TimeProvider.System);
         var deviceHubA = new DeviceHub(storeA, boardA, inboxA, () => new DeviceStatus("0.22.0", CpuPct: 5),
             (o, n) => forwardingA.AcceptFromDeviceAsync(o, n.App, n.Title, n.Body, n.Ts, n.Id), "HUB-A", "0.22.0", NullLogger.Instance);
@@ -312,7 +313,8 @@ public class HubLinkEndToEndTests : IDisposable
         var storeB = new InMemoryDeviceStore("pc-b");
         var routerB = new RecordingRouter();
         var toastsB = new RecordingToaster();
-        var forwardingB = Forwarding(routerB, new NotificationInbox(TimeProvider.System), toastsB);
+        using var historyB = await LocalOpsBot.Tests.Data.Repositories.HistoryTestDb.CreateAsync();
+        var forwardingB = Forwarding(routerB, new NotificationInbox(TimeProvider.System), toastsB, historyB.History);
         var links = new HubLinkService(new HubStore(_dir, NullLogger.Instance, protect: false), storeB,
             new SystemStatusProbeAdapter(h => new PresenceReport(1, DeviceKind.Pc, "0.22.0", CpuPct: 42, UptimeSec: 3600, PushHashes: h)),
             TimeProvider.System, NullLogger<HubLinkService>.Instance, forwardingB, allowLoopback: true);
@@ -339,6 +341,10 @@ public class HubLinkEndToEndTests : IDisposable
             var atA = await Until(() => routerA.Snapshot().FirstOrDefault(n => n.Category == NotificationForwardingService.DeviceCategory), cts.Token);
             Assert.EndsWith("· Slack: deploy done", atA.Title);
             Assert.Contains(toastsA.Snapshot(), t => t.Title.EndsWith("· Slack"));
+            // …and kept in A's notification center as coming from a PC (M-32).
+            var keptAtA = Assert.Single((await historyA.History.ListAsync(null, 10, cts.Token)).Entries);
+            Assert.Equal(("Slack", "deploy done", DeviceKind.Pc), (keptAtA.App, keptAtA.Title, keptAtA.SourceKind));
+            Assert.Equal(Assert.Single(storeA.List()).Name, keptAtA.Source);
 
             // A's own notification reaches B through the inbox, labelled with A's name.
             await forwardingA.AcceptAsync(new ToastNotificationEvent("e2", "Outlook", "회의 10분 전", null,
@@ -346,10 +352,13 @@ public class HubLinkEndToEndTests : IDisposable
             var atB = await Until(() => routerB.Snapshot().FirstOrDefault(n => n.Title.StartsWith("HUB-A · Outlook")), cts.Token);
             Assert.Equal(NotificationForwardingService.DeviceCategory, atB.Category);
             Assert.Contains(toastsB.Snapshot(), t => t.Title == "HUB-A · Outlook");
+            var keptAtB = Assert.Single((await historyB.History.ListAsync(null, 10, cts.Token)).Entries);
+            Assert.Equal(("HUB-A", DeviceKind.Pc, "Outlook"), (keptAtB.Source, keptAtB.SourceKind, keptAtB.App));
 
             // Nothing comes back around: A never receives its own Outlook notification from B.
             await Task.Delay(1500);
             Assert.DoesNotContain(routerA.Snapshot(), n => n.Category == NotificationForwardingService.DeviceCategory && n.Title.Contains("Outlook"));
+            Assert.Single((await historyA.History.ListAsync(null, 10, cts.Token)).Entries); // still only B's Slack
 
             // Unlinking removes B from A.
             Assert.True(await links.UnlinkAsync(view.PcId));
@@ -377,9 +386,10 @@ public class HubLinkEndToEndTests : IDisposable
         Assert.Equal("self", (await links.LinkAsync(PairingLink.Build(own), default)).Error);
     }
 
-    private static NotificationForwardingService Forwarding(IOutboundRouter router, NotificationInbox inbox, ITrayToaster toaster) => new(
+    private static NotificationForwardingService Forwarding(IOutboundRouter router, NotificationInbox inbox, ITrayToaster toaster,
+        INotificationHistoryStore? history = null) => new(
         new NullBridge(), router, new PassThroughMasker(), new ToastForwardingOptions(60, 150, false),
-        NullLogger<NotificationForwardingService>.Instance, TimeProvider.System, inbox, toaster);
+        NullLogger<NotificationForwardingService>.Instance, TimeProvider.System, inbox, toaster, history);
 
     private static async Task<T> Until<T>(Func<T?> probe, CancellationToken ct) where T : class
     {

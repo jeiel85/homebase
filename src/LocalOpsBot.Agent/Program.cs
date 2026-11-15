@@ -94,6 +94,7 @@ builder.Services.AddLocalOpsWindowsCollectors();
 builder.Services.AddLocalOpsData(builder.Configuration);
 builder.Services.AddSingleton<IAlertDispatcher, AlertDispatcher>();
 builder.Services.AddHostedService<DatabaseMigrationService>();
+builder.Services.AddHostedService<NotificationHistoryMaintenance>();
 builder.Services.AddHostedService<TelegramPollingService>();
 builder.Services.AddHostedService<BootNotificationService>();
 builder.Services.AddHostedService<WatchdogBackgroundService>();

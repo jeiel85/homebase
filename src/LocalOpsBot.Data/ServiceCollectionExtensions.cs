@@ -1,4 +1,5 @@
 using LocalOpsBot.Core.Alerts;
+using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Data.Adapters;
 using LocalOpsBot.Data.Migration;
 using LocalOpsBot.Data.Repositories;
@@ -29,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMetricRepository, MetricRepository>();
         services.AddSingleton<INotificationEventRepository, NotificationEventRepository>();
         services.AddSingleton<IWatchStatusRepository, WatchStatusRepository>();
+        services.AddSingleton<INotificationHistoryStore, NotificationHistoryRepository>();
 
         services.AddSingleton<IStateStore, StateStoreAdapter>();
         services.AddSingleton<IAlertStore, AlertStoreAdapter>();

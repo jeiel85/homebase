@@ -117,3 +117,11 @@ Cloudflare 방식(이름 있는 터널 우선 + Quick Tunnel, Agent 하위 프�
 | # | 결정 | 내용 | 기각한 대안 · 대가 |
 |---|---|---|---|
 | M-31 | **알림 이력은 휴대폰에만, 받은 푸시를 기록** | 앱이 받아들인 푸시(복호화·페어링·끈 범주·중계 중복 필터를 통과한 것)를 `PushReceiver`에서 기록한다. Android 알림을 띄우지 못한 경우(권한 꺼짐)도 `shown=false`로 남긴다. 저장은 앱 전용 파일 `files/push_history.enc` 하나: JSON(`{v:1, entries[]}`)을 Keystore AES-GCM 키(`homebase.push.history`, PC 토큰과 같은 방식)로 암호화하고 `AtomicFile`로 쓴다(백업은 매니페스트에서 꺼져 있음). 최근 **30일·최대 500건**만 남긴다. 읽음 표시는 `lastSeenAt` 하나(알림 센터를 열면 그때까지 받은 것 모두 읽음). 앱에서 PC를 지우면 그 PC의 이력도 지운다(알림 채널과 같음). 경로 푸시(M-23)는 알림이 아니라 기록하지 않는다. 프로토콜·PC 변경 없음. | **PC가 보낸 알림을 PC에서 조회(`GET /api/v1/...`)**: 여러 PC의 이력을 휴대폰이 모아야 하고, 휴대폰이 받지 못한 알림까지 보여 "받은 푸시"와 어긋나며, PC마다 본문(메신저 내용)을 더 오래 보관하게 된다 → 휴대폰 기록. **Room/SQLite**: 수백 건 목록 하나에 의존성·마이그레이션이 과하다 → 파일 하나. **평문 SharedPreferences**: 전달된 Windows 알림 본문이 들어가므로 암호화한다. 대가: 휴대폰을 바꾸거나 앱 데이터를 지우면 이력은 사라진다(Keystore 키가 없으면 읽지 못해 빈 이력으로 다시 시작). 끈 범주의 알림은 PC가 보내지 않으므로 이력에도 없다. |
+
+## M (계속) — PC 알림 센터, 2026-11-15
+
+요구(사용자): 휴대폰처럼 PC에서도 연결된 기기에서 온 알림 이력을 보고 싶다. 설계안 [`docs/PC_NOTIFICATION_HISTORY.md`](docs/PC_NOTIFICATION_HISTORY.md)를 승인받아 구현.
+
+| # | 결정 | 내용 | 기각한 대안 · 대가 |
+|---|---|---|---|
+| M-32 | **PC도 받은 알림을 Agent DB에 30일 보관하고 트레이 '알림 센터'로 보여 준다 (M-31 일부 번복)** | 다른 기기에서 중계된 알림(휴대폰 알림 전달, 연결한 PC의 Windows 알림)을 `NotificationForwardingService.AcceptFromDeviceAsync`에서 중복 제거·마스킹 직후, 풍선을 띄우기 전에 SQLite V2 표 `notification_history`에 기록한다(보낸 기기 이름·종류 phone/pc 포함). 이 PC의 경보는 기존 `alert_log`를 그대로 읽어 함께 보여 준다. 보관은 30일·중계 알림 최대 500건, `alert_log`도 30일(하루 한 번 `NotificationHistoryMaintenance`). 트레이는 브리지 연산 `history.list {before?, limit≤100}`(본문은 2,000자까지)·`history.clear`(중계 알림만, 경보는 진단용으로 남김)로 읽고, 메뉴 "알림 센터 (N)"·대시보드 버튼·풍선 클릭으로 창을 연다. 읽음은 Windows 사용자별 `%LOCALAPPDATA%\Homebase\notification-center-seen.txt` 하나(처음엔 '지금'). 본문을 저장하므로 서비스(LocalSystem)가 시작할 때 `ProgramData\Homebase\data` 폴더를 SYSTEM·Administrators 전용으로 바꾼다(전에는 Users 읽기 가능). | **이 PC 자신의 Windows 알림도 기록**: Windows 알림 센터가 이미 보여 주고 메신저 본문이 한 벌 더 남는다 → 제외. **트레이(사용자별 파일)에 저장**: 아무도 로그인하지 않았을 때 온 알림이 빠진다 → Agent. **본문 별도 암호화(DPAPI LocalMachine)**: 같은 PC의 다른 프로세스를 막지 못해 파일 ACL과 실익이 같다 → ACL. **대가**: 중계 알림 본문(마스킹 후)이 PC에 30일 남는다. 같은 PC의 다른 Windows 사용자도 창을 열 수 있다(풍선이 이미 그 사용자에게 뜨므로 노출 범위는 같다). 휴대폰·기기 연결이 꺼져 있으면 브리지가 없어 경보도 볼 수 없다. 설계 번들의 V2(GOAL-05)는 이제 V3가 된다. |
