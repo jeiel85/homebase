@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -25,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -367,27 +368,33 @@ private fun EmptyCenter(pushOn: Boolean, onSettings: () -> Unit) {
 @Composable
 fun NotificationCenterButton(unread: Int, onClick: () -> Unit) {
     val hb = Hb.colors
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.semantics {
-            contentDescription = if (unread > 0) "알림 센터 — 새 알림 ${unread}건" else "알림 센터"
-        },
-    ) {
-        Box {
+    // IconButton clips its content to a 40dp circle, so a badge drawn inside it and pushed past the
+    // bell loses its top-right corner to the arc. Draw it as a sibling over the 48dp touch target
+    // instead; it has no pointer input, so taps on it still reach the button underneath.
+    Box {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.semantics {
+                contentDescription = if (unread > 0) "알림 센터 — 새 알림 ${unread}건" else "알림 센터"
+            },
+        ) {
             Icon(Icons.Filled.Notifications, contentDescription = null, tint = hb.onSlab)
-            if (unread > 0) {
+        }
+        if (unread > 0) {
+            // Badge keeps a 16dp minimum on both axes and centres its text: a circle for one digit,
+            // a pill for "99+". Anchored by its start so longer counts grow away from the bell.
+            Badge(
+                containerColor = hb.accent,
+                contentColor = Brand.Carbon,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = 24.dp, y = 6.dp)
+                    .clearAndSetSemantics {},
+            ) {
                 Text(
                     if (unread > 99) "99+" else unread.toString(),
-                    style = HbType.readout.copy(fontSize = 9.sp),
-                    color = Brand.Carbon,
+                    style = HbType.readout.copy(fontSize = 10.sp),
                     maxLines = 1,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 10.dp, y = (-6).dp)
-                        .heightIn(min = 14.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(hb.accent)
-                        .padding(horizontal = 4.dp),
                 )
             }
         }
