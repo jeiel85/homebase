@@ -39,6 +39,13 @@ public sealed class MobileOptions
     public string? PingHost { get; set; } = "1.1.1.1";
 
     /// <summary>
+    /// Run <c>nvidia-smi</c> while a phone is watching, for an NVIDIA card's power, clocks and fan
+    /// (DECISIONS M-34). Off keeps a laptop's discrete GPU free to power down; the card then shows
+    /// what Windows reports only.
+    /// </summary>
+    public bool NvidiaSmi { get; set; } = true;
+
+    /// <summary>
     /// SID of the Windows user whose Tray may use the mobile bridge pipe (written by the Tray when it
     /// enables the feature). Empty → the INTERACTIVE group.
     /// </summary>

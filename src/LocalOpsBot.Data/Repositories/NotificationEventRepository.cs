@@ -11,6 +11,7 @@ public sealed class NotificationEventRepository : INotificationEventRepository
 
     public async Task InsertAsync(NotificationEventEntry entry, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO notification_event (event_id, source_app, title, body, body_hash, sensitivity, forwarded, dropped_reason, created_at, processed_at)
@@ -32,6 +33,7 @@ public sealed class NotificationEventRepository : INotificationEventRepository
     public async Task<IReadOnlyList<NotificationEventEntry>> GetRecentAsync(int count, CancellationToken ct)
     {
         var results = new List<NotificationEventEntry>();
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "SELECT id, event_id, source_app, title, body, body_hash, sensitivity, forwarded, dropped_reason, created_at, processed_at FROM notification_event ORDER BY created_at DESC LIMIT @count";
         cmd.Parameters.Add(new SqliteParameter("@count", count));
@@ -53,6 +55,7 @@ public sealed class NotificationEventRepository : INotificationEventRepository
 
     public async Task<int> DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "DELETE FROM notification_event WHERE processed_at < @cutoff";
         cmd.Parameters.Add(new SqliteParameter("@cutoff", cutoff.ToString("O")));

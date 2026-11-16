@@ -8,7 +8,10 @@ namespace LocalOpsBot.Core.Mobile;
 /// <summary>
 /// Tray ↔ Agent duplex pipe for the mobile feature (<c>\\.\pipe\Homebase.MobileBridge</c>).
 /// A narrow precursor of the planned SessionBridge (Device Hub TRAIN-B): only the operations in
-/// <see cref="AllowedTrayOps"/> are accepted from the Tray; everything else closes the connection.
+/// <see cref="AllowedTrayOps"/> are carried out for the Tray. A request with any other op gets a
+/// failed response with <see cref="ErrorUnsupported"/> (see <see cref="UnsupportedResponse"/>) and the
+/// connection stays open, so a newer Tray keeps working against an older Agent. Agents up to
+/// v0.30.0 closed the connection instead.
 /// </summary>
 public static class MobileBridge
 {
@@ -85,6 +88,20 @@ public static class MobileBridge
         if (error is not null) msg["error"] = error;
         return msg;
     }
+
+    /// <summary><c>error</c> of a response whose request op (or feature) this Agent does not support.</summary>
+    public const string ErrorUnsupported = "unsupported";
+
+    /// <summary>A string property of a frame, or <c>null</c> when it is missing or not a JSON string.</summary>
+    public static string? StringOf(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    /// <summary>
+    /// The answer to a frame whose op is not supported: <c>{op:"response", id, ok:false, error:"unsupported"}</c>
+    /// when the frame is a request (it carries a string <c>id</c>), else <c>null</c> — a push nobody waits on.
+    /// </summary>
+    public static JsonObject? UnsupportedResponse(JsonObject frame) =>
+        StringOf(frame["id"]) is { } id ? Response(id, false, error: ErrorUnsupported) : null;
 }
 
 /// <summary>

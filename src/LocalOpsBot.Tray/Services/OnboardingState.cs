@@ -26,8 +26,9 @@ internal static class OnboardingState
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
             System.IO.File.WriteAllText(path, DateTimeOffset.Now.ToString("o"));
         }
-        catch
+        catch (Exception ex)
         {
+            TrayLog.Warn("Onboarding", $"Couldn't save onboarding.done: {ex.Message}");
             // Best-effort: if the flag can't be persisted, onboarding just shows again next
             // launch — mildly annoying but harmless, and the tray menu still reopens it.
         }

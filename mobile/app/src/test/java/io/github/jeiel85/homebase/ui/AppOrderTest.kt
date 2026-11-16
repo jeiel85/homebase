@@ -1,9 +1,12 @@
 package io.github.jeiel85.homebase.ui
 
 import io.github.jeiel85.homebase.net.AppEntry
+import io.github.jeiel85.homebase.net.ProcessEntry
 import io.github.jeiel85.homebase.net.Usage
 import io.github.jeiel85.homebase.net.WindowTitle
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class AppOrderTest {
@@ -117,6 +120,35 @@ class AppOrderTest {
         val order = AppOrder(reRankMillis = 10_000)
         order.arrange(listOf(app(1, "z", 50.0), app(2, "a", 1.0)), AppSort.Cpu, 0)
         assertEquals(listOf(2, 1), order.arrange(listOf(app(1, "z", 50.0), app(2, "a", 1.0)), AppSort.Name, 500).pids())
+    }
+
+    private fun proc(pid: Int, cpu: Double) = ProcessEntry(pid, "p$pid", Usage(cpu, 10 * MB, 0, null, null))
+
+    @Test
+    fun processes_keepTheirPlacesUntilReRank_withTodaysValues() {
+        val order = AppOrder(reRankMillis = 10_000)
+        assertEquals(listOf(1, 2, 3), order.arrangeProcesses(listOf(proc(1, 30.0), proc(2, 10.0), proc(3, 2.0)), 0).map { it.pid })
+        // The PC sends its top 30 in a new order every second; the tab keeps its own.
+        val later = order.arrangeProcesses(listOf(proc(3, 40.0), proc(2, 12.0), proc(1, 5.0)), 1_000)
+        assertEquals(listOf(1, 2, 3), later.map { it.pid })
+        assertEquals(40.0, later.single { it.pid == 3 }.usage.cpuPct, 0.0)
+    }
+
+    @Test
+    fun aShortGapKeepsTheOrder_aLongOneStartsOver() {
+        val order = AppOrder(reRankMillis = 10_000, alpha = 0.2, staleMillis = 120_000)
+        repeat(30) { order.arrange(listOf(app(1, "a", 30.0), app(2, "b", 0.0)), AppSort.Cpu, 1_000L * it) }
+        // Screen left for 30 s and opened again: one second of b at 50 % does not put it on top.
+        assertEquals(listOf(1, 2), order.arrange(listOf(app(1, "a", 30.0), app(2, "b", 50.0)), AppSort.Cpu, 59_000).pids())
+        // Away for 5 minutes: the old averages are dropped and the order starts from now, as on a first visit.
+        assertEquals(listOf(2, 1), order.arrange(listOf(app(1, "a", 30.0), app(2, "b", 50.0)), AppSort.Cpu, 359_000).pids())
+    }
+
+    @Test
+    fun eachPcKeepsOneOrderPerList() {
+        assertSame(AppOrders.apps("pc-1"), AppOrders.apps("pc-1"))
+        assertNotSame(AppOrders.apps("pc-1"), AppOrders.processes("pc-1"))
+        assertNotSame(AppOrders.apps("pc-1"), AppOrders.apps("pc-2"))
     }
 
     @Test

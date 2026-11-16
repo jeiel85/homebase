@@ -16,6 +16,11 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /** One push this phone received and accepted (after the muted / duplicate filters). */
 data class HistoryEntry(
@@ -181,6 +186,10 @@ object PushHistoryRules {
  *
  * One process-wide copy: the push receiver and the screens share it, so a push arriving while the
  * notification center is open shows up at once through [state].
+ *
+ * Changes apply to [state] at once; the file is written behind them on one background thread
+ * ([saveLater]), so neither the receiver nor a delete button does the encryption and disk write on the
+ * main thread. One writer keeps the writes in the order of the changes.
  */
 object PushHistory {
     data class State(val entries: List<HistoryEntry>, val lastSeenAt: Long) {
@@ -193,11 +202,21 @@ object PushHistory {
     @Volatile
     private var loaded = false
 
-    /** Reads the file once per process. Cheap after the first call; the first does disk and Keystore work. */
+    /** The single thread that writes the file. */
+    private val writer: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "hb-push-history") }
+
+    /** The newest list not yet written; a write already queued picks it up, so a burst of changes writes once. */
+    private val unsaved = AtomicReference<List<HistoryEntry>?>(null)
+
+    /**
+     * Reads the file once per process. Cheap after the first call; the first does disk and Keystore work,
+     * so callers on the main thread switch to IO first.
+     */
     @Synchronized
     fun ensureLoaded(context: Context) {
         if (loaded) return
         val app = context.applicationContext
+        var unreadable = false
         val entries = try {
             val file = file(app)
             if (!file.baseFile.exists()) {
@@ -207,6 +226,7 @@ object PushHistory {
                 if (plain == null) {
                     // Keystore key gone (restored data) or a damaged file: start over rather than fail every push.
                     Log.w(TAG, "notification history unreadable; starting empty")
+                    unreadable = true
                     emptyList()
                 } else {
                     PushHistoryRules.fromJson(plain.toString(Charsets.UTF_8))
@@ -214,19 +234,54 @@ object PushHistory {
             }
         } catch (e: Exception) {
             Log.w(TAG, "notification history unreadable (${e.javaClass.simpleName}); starting empty")
+            unreadable = true
             emptyList()
         }
         val lastSeen = prefs(app).getLong(KEY_LAST_SEEN, 0L)
         _state.value = State(PushHistoryRules.prune(entries, System.currentTimeMillis()), lastSeen)
         loaded = true
+        if (unreadable) {
+            // Say so once in the notification center ([takeRestartNotice]), and replace the file now so the
+            // next start doesn't find it unreadable again (the next push would overwrite it anyway).
+            prefs(app).edit().putBoolean(KEY_RESTARTED, true).apply()
+            saveLater(app, emptyList())
+        }
+    }
+
+    /**
+     * True once after the history could not be read and started over empty (Keystore key gone after a
+     * restore, or a damaged file) — the notification center tells the user instead of only showing
+     * "no notifications". Reading it clears it.
+     */
+    @Synchronized
+    fun takeRestartNotice(context: Context): Boolean {
+        ensureLoaded(context)
+        val prefs = prefs(context)
+        if (!prefs.getBoolean(KEY_RESTARTED, false)) return false
+        prefs.edit().remove(KEY_RESTARTED).apply()
+        return true
     }
 
     @Synchronized
     fun record(context: Context, entry: HistoryEntry) {
         ensureLoaded(context)
         val next = PushHistoryRules.add(_state.value.entries, entry, System.currentTimeMillis())
-        save(context, next)
+        saveLater(context, next)
         _state.value = _state.value.copy(entries = next)
+    }
+
+    /**
+     * Waits (at most [timeoutMs]) until the writes queued so far are on disk. The push receiver calls it
+     * on its worker thread before it lets the broadcast finish, so the process isn't let go mid-write.
+     * Never call it on the main thread.
+     */
+    fun awaitWrites(timeoutMs: Long) {
+        try {
+            // One writer thread: this empty task runs only after every write queued before it.
+            writer.submit(Runnable {}).get(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            Log.w(TAG, "notification history write still pending: ${e.javaClass.simpleName}")
+        }
     }
 
     /** Everything received so far counts as read. */
@@ -243,14 +298,14 @@ object PushHistory {
     fun remove(context: Context, entry: HistoryEntry) {
         ensureLoaded(context)
         val next = _state.value.entries.filterNot { it.key == entry.key }
-        save(context, next)
+        saveLater(context, next)
         _state.value = _state.value.copy(entries = next)
     }
 
     @Synchronized
     fun clear(context: Context) {
         ensureLoaded(context)
-        save(context, emptyList())
+        saveLater(context, emptyList())
         _state.value = _state.value.copy(entries = emptyList())
     }
 
@@ -260,13 +315,37 @@ object PushHistory {
         ensureLoaded(context)
         val next = _state.value.entries.filterNot { it.pcId == pcId }
         if (next.size == _state.value.entries.size) return
-        save(context, next)
+        saveLater(context, next)
         _state.value = _state.value.copy(entries = next)
     }
 
+    /**
+     * Queues writing [entries] on the writer thread. Callers hold this object's lock, so the lists are
+     * handed over in the order of the changes; only the newest one is written.
+     */
+    private fun saveLater(context: Context, entries: List<HistoryEntry>) {
+        val app = context.applicationContext
+        if (unsaved.getAndSet(entries) != null) return // the write already queued takes this list
+        try {
+            writer.execute {
+                // An exception escaping a pool thread would crash the app: save() catches its own.
+                unsaved.getAndSet(null)?.let { save(app, it) }
+            }
+        } catch (e: RejectedExecutionException) {
+            unsaved.set(null)
+            Log.w(TAG, "could not queue a notification history write")
+        }
+    }
+
+    /** Runs on the writer thread only. Catches everything it can: nothing may escape the pool thread. */
     private fun save(context: Context, entries: List<HistoryEntry>) {
-        val file = file(context.applicationContext)
-        val out = file.startWrite()
+        val file = file(context)
+        val out = try {
+            file.startWrite()
+        } catch (e: Exception) {
+            Log.w(TAG, "could not save notification history: ${e.javaClass.simpleName}")
+            return
+        }
         try {
             out.write(cipher.encrypt(PushHistoryRules.toJson(entries).toByteArray(Charsets.UTF_8)).toByteArray(Charsets.UTF_8))
             file.finishWrite(out)
@@ -285,5 +364,6 @@ object PushHistory {
     private const val FILE_NAME = "push_history.enc"
     private const val PREFS = "homebase.push.history"
     private const val KEY_LAST_SEEN = "last_seen_at"
+    private const val KEY_RESTARTED = "restarted_empty"
     private const val TAG = "HomebasePush"
 }

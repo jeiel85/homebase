@@ -1,5 +1,13 @@
 namespace LocalOpsBot.Core.Commands;
 
+/// <summary>
+/// Adapts transport-neutral <see cref="RemoteCommand"/>s to the Telegram-era <see cref="ICommandRouter"/>.
+/// <para><b>Not wired yet (intentional):</b> it is registered as <see cref="IRemoteCommandRouter"/>, but
+/// nothing resolves it — Telegram commands still go straight to <see cref="ICommandRouter"/> from
+/// <c>TelegramPollingService</c>. It is kept for the Device Hub's KDE Connect ingress (TRAIN-C,
+/// <c>docs/DEVICE_HUB_IMPLEMENTATION_PLAN.md</c>), which will route commands through it. Do not remove
+/// it as dead code, and do not assume a command reaching it today.</para>
+/// </summary>
 public sealed class LegacyRemoteCommandRouter : IRemoteCommandRouter
 {
     private readonly ICommandRouter _legacyRouter;

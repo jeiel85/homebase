@@ -6,10 +6,24 @@ public sealed class OutboundRouter : IOutboundRouter
 
     public OutboundRouter(IEnumerable<IOutboundChannel> channels)
     {
-        _channels = channels.ToDictionary(
-            x => x.ChannelId,
-            StringComparer.OrdinalIgnoreCase);
+        // A channel registered twice must not stop the Agent from starting (ToDictionary threw):
+        // the first registration wins and the others are reported in DuplicateChannelIds.
+        var map = new Dictionary<string, IOutboundChannel>(StringComparer.OrdinalIgnoreCase);
+        var duplicates = new List<string>();
+        foreach (var channel in channels)
+        {
+            if (!map.TryAdd(channel.ChannelId, channel))
+                duplicates.Add(channel.ChannelId);
+        }
+        _channels = map;
+        DuplicateChannelIds = duplicates;
     }
+
+    /// <summary>
+    /// Channel ids registered more than once; only the first registration of each is used. Core has
+    /// no logger, so the Agent logs these at start (<c>AlertDispatcher</c>).
+    /// </summary>
+    public IReadOnlyList<string> DuplicateChannelIds { get; }
 
     public async Task<OutboundDeliveryResult> DeliverAsync(
         OutboundNotification notification,

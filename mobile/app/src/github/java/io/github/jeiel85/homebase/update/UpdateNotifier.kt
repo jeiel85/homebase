@@ -32,10 +32,7 @@ internal object UpdateNotifier {
      * 조용히 버리므로, 성공으로 치면 그 버전을 "알렸다"고 기억해 채널을 다시 켜도 영영 알리지 않는다.
      */
     fun show(context: Context, manifest: UpdateManifest): Boolean {
-        if (!PushNotifier.canNotify(context)) return false
-        ensureChannel(context)
-        val channel = context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL_ID)
-        if (channel == null || channel.importance == NotificationManager.IMPORTANCE_NONE) return false
+        if (!canShow(context)) return false
         val open = PendingIntent.getActivity(
             context,
             NOTIFICATION_ID,
@@ -66,6 +63,17 @@ internal object UpdateNotifier {
             // 확인과 게시 사이에 권한이 회수됐다.
             false
         }
+    }
+
+    /**
+     * 지금 게시하면 사용자에게 보이는가: 알림 권한·앱 알림이 켜져 있고, 이 채널이 있으며
+     * IMPORTANCE_NONE(사용자가 끔)이 아니다. 채널이 없으면 여기서 만든다.
+     */
+    fun canShow(context: Context): Boolean {
+        if (!PushNotifier.canNotify(context)) return false
+        ensureChannel(context)
+        val channel = context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL_ID)
+        return channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE
     }
 
     /** 설치했거나 건너뛰었거나 확인을 껐을 때, 남아 있는 알림을 치운다. */

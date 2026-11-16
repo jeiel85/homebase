@@ -143,31 +143,63 @@ private fun Chip(text: String, color: Color) {
     )
 }
 
-/** Internet latency: the last ping, then the window's average and loss, over a line of recent pings. */
+/** Pings in a full window on the PC (PingWindow: the last 30, one every 2 s — a minute). */
+internal const val PING_FULL_WINDOW = 30
+
+/**
+ * True when not one ping of a full window (a minute) came back. The PC is still sending this screen
+ * its snapshots, so a network that drops ICMP (offices, hotels) is the likelier cause than an outage.
+ */
+internal fun pingLooksBlocked(p: Hardware.Ping): Boolean =
+    p.lastMs == null && p.lossPct >= 100.0 && p.samples >= PING_FULL_WINDOW
+
+/**
+ * Internet latency: the last ping, then the window's average and loss, over a line of recent pings.
+ * A minute without one answer reads as a hint, not a red outage ([pingLooksBlocked]).
+ */
 @Composable
 internal fun PingCell(p: Hardware.Ping, trace: List<Float>, capacity: Int, modifier: Modifier = Modifier) {
     val hb = Hb.colors
+    val blocked = pingLooksBlocked(p)
     val value = p.lastMs?.let { String.format(Locale.ROOT, "%.0f ms", it) } ?: "응답 없음"
-    val detail = buildString {
-        p.avgMs?.let { append(String.format(Locale.ROOT, "평균 %.0f", it)) }
-        if (isNotEmpty()) append(" · ")
-        append(String.format(Locale.ROOT, "손실 %.0f%%", p.lossPct))
+    val detail = if (blocked) {
+        "ICMP 차단 가능"
+    } else {
+        buildString {
+            p.avgMs?.let { append(String.format(Locale.ROOT, "평균 %.0f", it)) }
+            if (isNotEmpty()) append(" · ")
+            append(String.format(Locale.ROOT, "손실 %.0f%%", p.lossPct))
+        }
+    }
+    val spoken = if (blocked) {
+        "인터넷 핑 ${p.host} 1분 넘게 응답 없음. 이 네트워크가 핑(ICMP)을 막고 있을 수 있습니다"
+    } else {
+        "인터넷 핑 ${p.host} $value, $detail"
     }
     Column(
         modifier
             .clip(RoundedCornerShape(6.dp))
             .background(hb.slabRaised)
             .padding(horizontal = 10.dp, vertical = 8.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "인터넷 핑 ${p.host} $value, $detail" },
+            .semantics(mergeDescendants = true) { contentDescription = spoken },
     ) {
         Text("핑 · ${p.host}", style = HbType.label.copy(fontSize = 10.sp), color = hb.onSlabSoft, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, style = HbType.readout.copy(fontSize = 13.sp), color = if (p.lastMs == null) hb.ledOff else hb.onSlab, maxLines = 1)
+            Text(
+                value,
+                style = HbType.readout.copy(fontSize = 13.sp),
+                color = when {
+                    blocked -> hb.onSlabSoft
+                    p.lastMs == null -> hb.ledOff
+                    else -> hb.onSlab
+                },
+                maxLines = 1,
+            )
             Spacer(Modifier.width(6.dp))
             Text(
                 detail,
                 style = HbType.readout.copy(fontSize = 10.sp, fontWeight = FontWeight.Normal),
-                color = if (p.lossPct > 0) hb.accent else hb.onSlabSoft,
+                color = if (p.lossPct > 0 && !blocked) hb.accent else hb.onSlabSoft,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

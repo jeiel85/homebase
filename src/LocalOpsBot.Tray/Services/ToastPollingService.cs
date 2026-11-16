@@ -10,6 +10,9 @@ namespace LocalOpsBot.Tray.Services;
 [SupportedOSPlatform("windows10.0.17763.0")]
 public sealed class ToastPollingService : BackgroundService
 {
+    // Polls run every 3 s; an "alive" line every 20 polls was ~2,000 mostly empty lines a day (issue #4).
+    private static readonly TimeSpan AliveLogInterval = TimeSpan.FromHours(1);
+
     private readonly WindowsToastNotificationListener _listener;
     private readonly INotificationFilter _filter;
     private readonly ITextMasker _masker;
@@ -66,6 +69,7 @@ public sealed class ToastPollingService : BackgroundService
         }
 
         var pollCount = 0;
+        var lastLogged = DateTime.UtcNow;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -75,9 +79,16 @@ public sealed class ToastPollingService : BackgroundService
 
                 pollCount++;
                 if (notifications.Count > 0)
+                {
                     _logger.LogInformation("Poll #{N} returned {Count} new notification(s)", pollCount, notifications.Count);
-                else if (pollCount % 20 == 0)
-                    _logger.LogInformation("Poll #{N}: alive, no new notifications", pollCount);
+                    lastLogged = DateTime.UtcNow;
+                }
+                else if (DateTime.UtcNow - lastLogged >= AliveLogInterval)
+                {
+                    // A quiet hour still leaves one line, so the log shows the poller was alive.
+                    _logger.LogInformation("Poll #{N}: alive, no new notifications in the last hour", pollCount);
+                    lastLogged = DateTime.UtcNow;
+                }
 
                 foreach (var notification in notifications)
                 {

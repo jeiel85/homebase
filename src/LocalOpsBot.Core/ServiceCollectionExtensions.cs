@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddLocalOpsCore(this IServiceCollection services, IConfiguration config)
     {
         services.AddSingleton<ICommandRouter, CommandRouter>();
+        // No caller yet: reserved for the KDE Connect ingress (TRAIN-C); see LegacyRemoteCommandRouter.
         services.AddSingleton<IRemoteCommandRouter, LegacyRemoteCommandRouter>();
         services.AddSingleton<IOutboundRouter, OutboundRouter>();
         services.AddSingleton<ITelegramPollStatus, TelegramPollStatus>();

@@ -1,5 +1,92 @@
 # Changelog
 
+## v0.31.0 — Hardening
+
+Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #5 (DECISIONS M-38–M-42).
+
+### Security
+- **The tray's notification pipe is no longer open to every local account.** `Homebase.NotificationPipe`
+  admitted all Authenticated Users, so another account on the PC could inject notifications that the
+  service forwarded to your phone. It now admits only SYSTEM, Administrators and the tray's user (#5).
+- **`/api/v1/info` through the Cloudflare Tunnel no longer tells anonymous callers the PC name and OS
+  version.** Paired phones still get the full answer (M-38).
+- The installer locks the data folder to SYSTEM and Administrators before the service first starts.
+- A copied pairing code or link is kept out of Windows clipboard history and cloud sync, and is cleared
+  from the clipboard when it expires (only if the clipboard still holds it).
+
+### Fixed
+- **Alerts raised during a short network outage are sent once the network is back** (retried for up to
+  30 minutes) instead of being dropped (#2, M-40).
+- **A repeated alert is no longer held back until UTC midnight.** Duplicate suppression compared dates as
+  text, so after one alert the same alert (for example a process that went down again) stayed silent for
+  the rest of the UTC day instead of for its 10-minute window.
+- Windows notifications still being bundled when the service stops (restart or update) are sent, not lost.
+- The boot notice is retried when the network changes, for up to 6 hours, when the network comes up
+  after the first 16 minutes of retries.
+- The service's database access is serialized; several services used one SQLite connection at once.
+- A PC address list too long for one push is cut to fit and sent, instead of failing every 5 minutes.
+- A corrupt `hubs.json` is moved aside as `hubs.json.corrupt-*` instead of being overwritten.
+- A duplicate outbound channel no longer stops the service from starting.
+- Tray: `tray-forwarding.log` no longer grows without limit (tray logs roll at 5 MB and keep 3 files),
+  and the forwarding "alive" line is written once per quiet hour (was about 2,000 lines a day).
+- Tray: Settings and other windows fit short screens (such as 1366×768 at 125%), and dialogs that grow
+  stay inside the screen.
+- Tray: "업데이트 확인" while an update window is open brings that window forward instead of doing nothing,
+  and an update found while the first-run checklist is open is offered when it closes.
+- Tray: the Phone tab stops polling the service while Settings is minimized.
+- Tray: a reply the service doesn't understand, or an error reply, no longer drops the tray's connection
+  or blanks the device list; the service answers unknown requests with "unsupported".
+- App: choosing 어둡게 or 밝게 no longer flashes the other background at start (the system splash follows
+  it on Android 13+).
+- App: a PC whose clock went backwards is heard again: its address pushes are accepted again once 10
+  minutes have passed on the phone (M-39).
+- App: if Android restarts the app after "install unknown apps" is granted, the update download resumes.
+- App: the manual update check says when a new version needs a newer Android, instead of "최신 버전입니다".
+- App: the notification permission is not asked again after Android closes the app in the background.
+- App: the notification center says once when earlier history could not be read and was reset.
+- App: Back from a PC opened with "PC 열기" in the notification center returns to the notification center.
+- App: a PC renamed in Windows shows its new name on its card, its screen and its Android notification
+  group (aliases are kept).
+- App: push handling and notification history writes no longer run on the main thread.
+
+### Added
+- `mobile.nvidiaSmi` (default `true`): set it to `false` so a laptop's NVIDIA GPU can power down while a
+  phone watches; the GPU card then shows the values Windows reports.
+- Tray: checks for updates once a day while it runs (the menu item changes; no popup mid-work).
+- Tray: the dashboard and Settings › 알림 warn when Homebase is turned off in Task Manager › Startup apps,
+  which silently stops notification forwarding after the next sign-in.
+- Tray: the update window says how the last unattended (countdown) install of that version ended: stopped
+  at the administrator prompt, failed, or did not take.
+- Tray: `C:\ProgramData\Homebase\logs\tray.log` records update checks and choices and onboarding state.
+- App: Settings › 업데이트 shows when the app last checked, with a hint when it hasn't for days.
+- App: an install not signed with the release key (such as a debug build) explains how to switch to the
+  release APK instead of failing at install time.
+- App: expanded app cards say "창 N개 더" when an app has more than 8 windows.
+
+### Changed
+- An ntfy 507 answer is reported as "phone not subscribed": that phone is paused for 5 minutes and the
+  cause is logged once. Telegram errors are classified so only passing failures are retried.
+- Transient Telegram polling errors, repeated forwarding failures and `nvidia-smi` failures are logged
+  once as a one-line warning instead of a stack trace or a line every few seconds.
+- PC-to-PC inbox long polls are capped at 16 at a time, so phones always get a connection (M-41).
+- Linking with a connection code stops searching as soon as the PC is found on the tailnet.
+- The PC's 40-app list is chosen by foreground, busy (5 % CPU or more) and memory instead of the last
+  second's CPU, so apps no longer drop in and out every second.
+- Network totals also leave out adapters Windows marks as software, not only known virtual adapter names.
+- App: the Processes tab keeps a steady order (recent CPU average, re-ranked every 10 seconds), and app
+  and process order is kept when a PC's screen is reopened within 2 minutes.
+- App: pull to refresh stops spinning after 4 seconds (slow PCs still update when they answer), and
+  pulling again within a minute reuses the last update check instead of asking GitHub again.
+- App: the phone reports its state to each PC when it changes or once a minute (was every 15 seconds).
+- App: after a minute with no ping reply, the ping cell shows a muted "ICMP 차단 가능" hint instead of a
+  red 100 % loss.
+- App: the "받을 알림" description says that kinds turned off on every phone don't go to Telegram either.
+- App: the Play build no longer carries the GitHub update address, and Play bundles include native debug
+  symbols.
+- Release: the Windows tests run in CI on every pull request and before each release, the release checks
+  that the pairing-link file on jeiel85.github.io lists the release certificate, and pull requests must add
+  a CHANGELOG entry under an unreleased version.
+
 ## v0.30.0 — Bundled notifications and notification priorities
 
 ### Added

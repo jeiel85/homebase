@@ -14,6 +14,12 @@ public static class AppAggregator
     public const int MaxChildrenPerApp = 20;
     public const int MaxTopProcesses = 30;
 
+    /// <summary>
+    /// An app at or above this CPU makes the <see cref="MaxApps"/> cut whatever its memory, so a small
+    /// app that is busy right now is not left out.
+    /// </summary>
+    public const double BusyCpuPct = 5;
+
     // The shell parents almost everything the user launches; summing its subtree would attribute
     // unrelated background apps to the "File Explorer" window.
     private static readonly HashSet<string> NoSubtree = new(StringComparer.OrdinalIgnoreCase) { "explorer" };
@@ -62,11 +68,19 @@ public static class AppAggregator
                     .ToList()));
         }
 
+        // Which apps make the cut goes by steadier signals than the last second's CPU, which made apps
+        // near the cut drop in and out every second (the phone can re-order what it gets, but cannot
+        // show an app it never got): the foreground app, apps clearly busy, then memory. The list sent
+        // keeps its order: foreground first, then CPU, then memory.
         return apps
+            .OrderByDescending(a => a.Foreground)
+            .ThenByDescending(a => a.Usage.CpuPct >= BusyCpuPct)
+            .ThenByDescending(a => a.Usage.MemBytes)
+            .ThenBy(a => a.Pid)
+            .Take(MaxApps)
             .OrderByDescending(a => a.Foreground)
             .ThenByDescending(a => a.Usage.CpuPct)
             .ThenByDescending(a => a.Usage.MemBytes)
-            .Take(MaxApps)
             .ToList();
     }
 

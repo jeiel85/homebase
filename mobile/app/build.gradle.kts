@@ -1,3 +1,4 @@
+import com.android.build.api.variant.BuildConfigField
 import java.util.Properties
 
 plugins {
@@ -18,6 +19,11 @@ val homebaseVersionCode = homebaseVersion.split('.', '-').take(3).map { it.toInt
 // for local end-to-end verification of the update flow.
 val defaultManifestUrl = "https://github.com/jeiel85/homebase/releases/latest/download/update.json"
 val debugManifestUrl = providers.gradleProperty("homebase.updateManifestUrl").orElse(defaultManifestUrl).get()
+val debugAllowHttp = providers.gradleProperty("homebase.updateAllowHttp").orElse("false").get()
+// Certificate SHA-256 of the key that signs the published APKs (DECISIONS M-12). The app compares
+// its own signer with it so a debug-signed install explains why the update can't go on top of it.
+// Empty (no check) when a debug build reads another manifest: local verification signs with any key.
+val releaseCertSha256 = "4d9cbd4d68cd2ee792fd1f506cbfae9c2313186b668a5ca34d9020f5d23ef865"
 
 // --- Release signing: one key per distribution channel (DECISIONS M-33) -----------------------
 // github: the key phones already trust for in-app updates (M-4) — HOMEBASE_RELEASE_*.
@@ -55,8 +61,7 @@ android {
         targetSdk = 36
         versionCode = homebaseVersionCode
         versionName = homebaseVersion
-        buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$defaultManifestUrl\"")
-        buildConfigField("boolean", "UPDATE_ALLOW_HTTP", "false")
+        // The updater's BuildConfig fields exist in the GitHub build only — see androidComponents below.
     }
 
     signingConfigs {
@@ -95,16 +100,14 @@ android {
     }
 
     buildTypes {
-        debug {
-            buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$debugManifestUrl\"")
-            buildConfigField("boolean", "UPDATE_ALLOW_HTTP",
-                providers.gradleProperty("homebase.updateAllowHttp").orElse("false").get())
-        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Signing comes from the channel flavor above; a build type's signingConfig would override it.
+            // The AAB carries the symbol tables of the bundled native libraries (from dependencies), so
+            // Play Console can symbolicate native crashes and ANRs (docs/PLAY_RELEASE.md).
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
     }
 
@@ -123,6 +126,34 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// The in-app updater's BuildConfig fields, only in the GitHub build (DECISIONS M-33): the Play build,
+// which Play updates, carries no GitHub update URL. A build type can't set a field for one flavor only,
+// hence the variant API. Release builds always read the published manifest.
+androidComponents {
+    onVariants { variant ->
+        if (variant.flavorName == "github") {
+            val debug = variant.buildType == "debug"
+            val manifestUrl = if (debug) debugManifestUrl else defaultManifestUrl
+            variant.buildConfigFields?.put(
+                "UPDATE_MANIFEST_URL",
+                BuildConfigField("String", "\"$manifestUrl\"", "update.json the updater reads"),
+            )
+            variant.buildConfigFields?.put(
+                "UPDATE_ALLOW_HTTP",
+                BuildConfigField("boolean", if (debug) debugAllowHttp else "false", "plain http for local verification only"),
+            )
+            variant.buildConfigFields?.put(
+                "UPDATE_SIGNER_SHA256",
+                BuildConfigField(
+                    "String",
+                    "\"${if (manifestUrl == defaultManifestUrl) releaseCertSha256 else ""}\"",
+                    "certificate SHA-256 of the published APKs; empty = not checked",
+                ),
+            )
+        }
     }
 }
 

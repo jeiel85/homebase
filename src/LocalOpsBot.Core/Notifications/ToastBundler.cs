@@ -122,6 +122,24 @@ public sealed class ToastBundler
         return (IReadOnlyList<ToastBatch>?)due ?? Array.Empty<ToastBatch>();
     }
 
+    /// <summary>
+    /// Every held bundle now, window ended or not, and forgets all windows: the service is stopping
+    /// (a restart or an update), and what is held in memory would otherwise vanish. Budget still applies.
+    /// </summary>
+    public IReadOnlyList<ToastBatch> Drain()
+    {
+        var now = _time.GetUtcNow();
+        var held = new List<ToastBatch>();
+        foreach (var w in _windows.Values)
+        {
+            if (w.PendingCount == 0) continue;
+            if (TryTakeBudget(now, w.PendingCount))
+                held.Add(new ToastBatch(w.SourceApp, w.Pending.ToList(), w.PendingCount));
+        }
+        _windows.Clear();
+        return held;
+    }
+
     /// <summary>Bundles per app and, for relayed notifications, per origin device too.</summary>
     private static string Key(ToastItem item) =>
         item.Origin is null ? item.SourceApp : string.Concat("dev:", item.Origin.DeviceId, ":", item.SourceApp);

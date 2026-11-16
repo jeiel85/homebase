@@ -55,6 +55,14 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
+# Data folder: SYSTEM and Administrators only, the ACL the Agent applies at service start (the
+# database holds relayed notification text). Well-known SIDs so it works on any Windows language;
+# SYSTEM keeps full control, so the service is never locked out. A failure only warns.
+& icacls.exe $DataDir /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /C /Q | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Could not limit access to $DataDir (icacls exit code $LASTEXITCODE); the service retries at start."
+}
+
 # --- Copy binaries ---
 Write-Host "Copying Agent binaries to $AgentDir..."
 Copy-Item "$AgentSource\*" $AgentDir -Recurse -Force

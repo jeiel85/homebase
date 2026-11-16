@@ -40,7 +40,9 @@ internal sealed class NotificationForwardingHost : IDisposable
 
             var config = TrayConfig.Load();
             var enabled = NotificationForwardingConfig.IsEnabled(config);
-            logger.LogInformation("Forwarding host start: enabled={Enabled}", enabled);
+            // The sign-in autostart state explains a forwarding gap after a reboot (issue #4).
+            logger.LogInformation("Forwarding host start: enabled={Enabled}, sign-in autostart={Autostart}",
+                enabled, TrayAutostart.Read());
             if (!enabled) return;
 
             // Reuse the Agent's masker construction (default mask patterns) from config.

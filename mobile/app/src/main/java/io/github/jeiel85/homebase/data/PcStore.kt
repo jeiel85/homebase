@@ -20,14 +20,16 @@ data class PcEntry(
     val pushedEndpointsAt: Long? = null,
     /** The user's own name for this PC, kept on this phone only (DECISIONS M-36); null = the PC's name. */
     val alias: String? = null,
+    /** This phone's time (epoch ms) when that path list was applied; lets a PC whose clock went back be heard. */
+    val pushedEndpointsReceivedAt: Long? = null,
 ) {
     /** What the app shows for this PC: the alias when set, else the name the PC reported. */
     val displayName: String get() = alias ?: name
 
     /**
      * The name for something the PC sent now under [reported] (a push, a history entry, the hub's
-     * own name): the alias when set, else what the PC reports — [name] is from pairing and is not
-     * refreshed, so a PC renamed in Windows would otherwise keep its old name.
+     * own name): the alias when set, else what the PC reports — [name] is refreshed only when the app
+     * reaches the PC ([PcStore.updateName]), so it can still be an older name.
      */
     fun shownName(reported: String): String = alias ?: reported.ifBlank { name }
 
@@ -71,6 +73,18 @@ class PcStore(context: Context) {
         return true
     }
 
+    /**
+     * The name the PC reports now (`/info`, a live snapshot) in place of the stored one, which is from
+     * pairing — a PC renamed in Windows would otherwise keep its old name wherever no alias covers it.
+     * The alias is left as it is. True when the stored name changed.
+     */
+    @Synchronized
+    fun updateName(pcId: String, reported: String): Boolean {
+        val next = renamed(all(), pcId, reported) ?: return false
+        save(next)
+        return true
+    }
+
     @Synchronized
     fun remove(pcId: String) = save(all().filterNot { it.pcId == pcId })
 
@@ -92,14 +106,28 @@ class PcStore(context: Context) {
 
     /**
      * Paths the PC pushed (DECISIONS M-23). Returns false when the PC isn't paired or the push is not
-     * newer than the last one applied (a relayed copy arriving late must not bring back old paths).
+     * newer than the last one applied (a relayed copy arriving late must not bring back old paths) —
+     * see [acceptsPush] for a PC whose clock went backwards.
      */
     @Synchronized
-    fun applyPushedEndpoints(pcId: String, endpoints: List<Endpoint>, pcTimeMillis: Long): Boolean {
+    fun applyPushedEndpoints(
+        pcId: String,
+        endpoints: List<Endpoint>,
+        pcTimeMillis: Long,
+        receivedAtMillis: Long = System.currentTimeMillis(),
+    ): Boolean {
         val list = all()
         val pc = list.firstOrNull { it.pcId == pcId } ?: return false
-        if (!acceptsPush(pc, endpoints, pcTimeMillis)) return false
-        save(list.map { if (it.pcId == pcId) it.copy(endpoints = endpoints, pushedEndpointsAt = pcTimeMillis) else it })
+        if (!acceptsPush(pc, endpoints, pcTimeMillis, receivedAtMillis)) return false
+        save(
+            list.map {
+                if (it.pcId == pcId) {
+                    it.copy(endpoints = endpoints, pushedEndpointsAt = pcTimeMillis, pushedEndpointsReceivedAt = receivedAtMillis)
+                } else {
+                    it
+                }
+            },
+        )
         return true
     }
 
@@ -117,6 +145,7 @@ class PcStore(context: Context) {
         .put("token", encrypt(pc.token))
         .put("lastGood", pc.lastGood)
         .apply { pc.pushedEndpointsAt?.let { put("pushedEndpointsAt", it) } }
+        .apply { pc.pushedEndpointsReceivedAt?.let { put("pushedEndpointsReceivedAt", it) } }
         .apply { pc.alias?.let { put("alias", it) } }
 
     private fun fromJson(o: JSONObject): PcEntry? {
@@ -131,6 +160,7 @@ class PcStore(context: Context) {
             lastGood = lastGood,
             pushedEndpointsAt = if (o.has("pushedEndpointsAt")) o.optLong("pushedEndpointsAt") else null,
             alias = normalizeAlias(o.optString("alias"), o.optString("name")),
+            pushedEndpointsReceivedAt = if (o.has("pushedEndpointsReceivedAt")) o.optLong("pushedEndpointsReceivedAt") else null,
         )
     }
 
@@ -165,9 +195,35 @@ class PcStore(context: Context) {
             return list.filterNot { it.pcId == pc.pcId } + pc.copy(alias = kept)
         }
 
-        /** Whether a pushed path list should replace [pc]'s: non-empty and newer than the last push applied. */
-        fun acceptsPush(pc: PcEntry, endpoints: List<Endpoint>, pcTimeMillis: Long): Boolean =
-            endpoints.isNotEmpty() && (pc.pushedEndpointsAt == null || pcTimeMillis > pc.pushedEndpointsAt)
+        /** [list] with [pcId] renamed to [reported] (trimmed); null when it is blank, unchanged, or the PC isn't listed. */
+        fun renamed(list: List<PcEntry>, pcId: String, reported: String): List<PcEntry>? {
+            val name = reported.trim()
+            if (name.isEmpty() || list.none { it.pcId == pcId && it.name != name }) return null
+            return list.map { if (it.pcId == pcId) it.copy(name = name) else it }
+        }
+
+        /**
+         * A PC whose push is not newer by its own clock is still heard when this phone receives it at
+         * least this long after the last one applied. Queued copies a distributor delivers on reconnect
+         * arrive within seconds, so a late duplicate inside the margin still can't bring back old paths.
+         */
+        const val PUSH_RECEIVE_MARGIN_MS = 10L * 60 * 1000
+
+        /**
+         * Whether a pushed path list should replace [pc]'s: non-empty, and newer than the last push
+         * applied by the PC's clock — or, when that clock went backwards (a bad RTC after a reboot, then
+         * NTP), received [PUSH_RECEIVE_MARGIN_MS] or more after the last one by this phone's clock.
+         * Without the second rule every later push of such a PC looks old and is ignored. The MAC is
+         * checked before this ([io.github.jeiel85.homebase.push.PushEndpointsUpdate.verify]).
+         */
+        fun acceptsPush(pc: PcEntry, endpoints: List<Endpoint>, pcTimeMillis: Long, receivedAtMillis: Long): Boolean {
+            if (endpoints.isEmpty()) return false
+            val lastPcTime = pc.pushedEndpointsAt ?: return true
+            if (pcTimeMillis > lastPcTime) return true
+            // Applied before the receive time was kept: nothing to compare with, so the newer arrival wins once.
+            val lastReceived = pc.pushedEndpointsReceivedAt ?: return true
+            return receivedAtMillis - lastReceived >= PUSH_RECEIVE_MARGIN_MS
+        }
 
         /**
          * Endpoints and last-good key from a stored entry. Entries saved before multi-path support

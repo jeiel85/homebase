@@ -1,5 +1,6 @@
 package io.github.jeiel85.homebase.ui
 
+import android.content.Context
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,6 +73,7 @@ import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.push.PushState
 import io.github.jeiel85.homebase.update.UpdateSurface
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -78,6 +81,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private sealed interface PcStatus {
     data object Checking : PcStatus
@@ -100,6 +104,7 @@ fun PcListScreen(
     var confirmRemove by remember { mutableStateOf<PcEntry?>(null) }
     var renaming by remember { mutableStateOf<PcEntry?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    var refreshWork by remember { mutableStateOf<Job?>(null) }
     var pollRounds by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
@@ -111,29 +116,38 @@ fun PcListScreen(
         onPauseOrDispose { }
     }
 
-    // One /info round over every listed PC.
-    suspend fun pollAll(listedPcs: List<PcEntry>) = coroutineScope {
-        listedPcs.map { listed ->
-            async {
-                // Paths may have been refreshed by the live screen since this list was built.
-                val pc = store.get(listed.pcId) ?: listed
-                if (status[pc.pcId] == null) status[pc.pcId] = PcStatus.Checking
-                status[pc.pcId] = try {
-                    val (info, endpoint) = api.info(pc)
-                    store.rememberGood(pc.pcId, endpoint)
-                    PushRegistrar.ensureAsync(context, api, pc)
-                    // This phone's state to the PC, and the PC's device list back (DECISIONS M-27).
-                    launch { MeshSync.reportTo(context, api, pc) }
-                    PcStatus.Online(info.agentVersion, endpoint)
-                } catch (_: Exception) {
-                    PcStatus.Offline
+    // One /info round over every listed PC. [forcePresence]: report this phone's state even if unchanged.
+    suspend fun pollAll(listedPcs: List<PcEntry>, forcePresence: Boolean = false) {
+        var renamed = false
+        coroutineScope {
+            listedPcs.map { listed ->
+                async {
+                    // Paths may have been refreshed by the live screen since this list was built.
+                    val pc = store.get(listed.pcId) ?: listed
+                    if (status[pc.pcId] == null) status[pc.pcId] = PcStatus.Checking
+                    status[pc.pcId] = try {
+                        val (info, endpoint) = api.info(pc)
+                        store.rememberGood(pc.pcId, endpoint)
+                        if (syncReportedName(context, store, pc, info.pcName)) renamed = true
+                        PushRegistrar.ensureAsync(context, api, pc)
+                        // This phone's state to the PC, and the PC's device list back (DECISIONS M-27);
+                        // unchanged state goes at most once a minute, not on every 15 s round.
+                        launch { MeshSync.reportIfDue(context, api, pc, force = forcePresence) }
+                        PcStatus.Online(info.agentVersion, endpoint)
+                    } catch (_: Exception) {
+                        PcStatus.Offline
+                    }
                 }
-            }
-        }.awaitAll()
+            }.awaitAll()
+        }
+        // A PC renamed in Windows: its card and the alias dialog show the new name.
+        if (renamed) pcs = store.all()
     }
 
-    // Poll /info for each PC while the list is visible (every 15 s; nothing in the background).
-    LaunchedEffect(pcs) {
+    // Poll /info for each PC while the list is visible (every 15 s; nothing in the background). Keyed on
+    // which PCs are listed, not on their names, so a rename the poll itself found doesn't restart it.
+    val pcIds = pcs.map { it.pcId }
+    LaunchedEffect(pcIds) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 pollAll(pcs)
@@ -144,18 +158,23 @@ fun PcListScreen(
     }
 
     // Pull down: re-read the list, poll every PC now and check for an app update now (skipping the
-    // once-a-day rule). The indicator stays until both are done; the update result is one toast.
+    // once-a-day rule); the update result is one toast. The indicator stays until both are done or
+    // for REFRESH_INDICATOR_MS, whichever is first: a PC that is off takes up to 3 s per path to give
+    // up, and its status still lands when it does. A pull while that work still runs doesn't start it twice.
     fun refresh() {
         if (refreshing) return
         refreshing = true
+        val work = refreshWork?.takeIf { it.isActive } ?: scope.launch {
+            pcs = store.all()
+            val updateMessage = coroutineScope {
+                launch { pollAll(pcs, forcePresence = true) }
+                UpdateSurface.checkNow(context)
+            }
+            updateMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+        }.also { refreshWork = it }
         scope.launch {
             try {
-                pcs = store.all()
-                val updateMessage = coroutineScope {
-                    launch { pollAll(pcs) }
-                    UpdateSurface.checkNow(context)
-                }
-                updateMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                withTimeoutOrNull(REFRESH_INDICATOR_MS) { work.join() }
             } finally {
                 refreshing = false
             }
@@ -282,23 +301,50 @@ fun PcListScreen(
     }
 }
 
-/** Gear on the console bar; an amber dot when push is on but Android blocks its notifications. */
+/**
+ * Gear on the console bar; an amber dot when push is on but Android blocks its notifications.
+ * Same pattern as [NotificationCenterButton]: IconButton clips its content to a 40dp circle, so the
+ * dot is drawn as a sibling over the 48dp touch target (where the icon's top-right corner is), not
+ * inside the button where a dot moved past the icon would lose its edge to the arc.
+ */
 @Composable
 private fun SettingsButton(attention: Boolean, onClick: () -> Unit) {
     val hb = Hb.colors
-    IconButton(onClick = onClick) {
-        Box {
-            Icon(
-                Icons.Filled.Settings,
-                contentDescription = if (attention) "설정 — 알림 권한 확인 필요" else "설정",
-                tint = hb.onSlab,
+    Box {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.semantics { contentDescription = if (attention) "설정 — 알림 권한 확인 필요" else "설정" },
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = null, tint = hb.onSlab)
+        }
+        if (attention) {
+            // The 24dp icon sits at 12..36dp of the 48dp target; the dot covers its top-right corner.
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = 28.dp, y = 12.dp)
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(hb.accent),
             )
-            if (attention) {
-                Box(Modifier.align(Alignment.TopEnd).size(8.dp).clip(RoundedCornerShape(4.dp)).background(hb.accent))
-            }
         }
     }
 }
+
+/**
+ * Stores the name [pc] reports now ([PcStore.updateName]) and, when no alias covers it, renames the
+ * PC's group in Android's notification settings to match. True when the stored name changed.
+ */
+internal fun syncReportedName(context: Context, store: PcStore, pc: PcEntry, reported: String): Boolean {
+    // Almost every round reports the name already known; then the store (which decrypts every entry) isn't read.
+    if (reported.trim().let { it.isEmpty() || it == pc.name }) return false
+    if (!store.updateName(pc.pcId, reported)) return false
+    store.get(pc.pcId)?.takeIf { it.alias == null }?.let { PushNotifier.renamePc(context, it.pcId, it.name) }
+    return true
+}
+
+/** Longest the pull-to-refresh indicator stays; slower PCs' results still land when they arrive. */
+private const val REFRESH_INDICATOR_MS = 4_000L
 
 /** First run: what the app is for and the one thing to do next. */
 @Composable

@@ -145,6 +145,21 @@ public sealed class OutboundRouterTests
         Assert.Equal(2, telegram.SendCount);
     }
 
+    [Fact]
+    public async Task A_channel_registered_twice_does_not_throw_and_the_first_one_is_used()
+    {
+        var first = Ok(ChannelIds.Telegram);
+        var second = Ok("TELEGRAM"); // ids compare case-insensitively
+
+        var router = new OutboundRouter([first, second]);
+        var result = await router.DeliverAsync(CreateNotification(DeliveryPolicy.TelegramOnly), default);
+
+        Assert.True(result.Delivered);
+        Assert.Equal(1, first.SendCount);
+        Assert.Equal(0, second.SendCount);
+        Assert.Equal(new[] { "TELEGRAM" }, router.DuplicateChannelIds);
+    }
+
     private static OutboundNotification CreateNotification(
         DeliveryPolicy policy)
         => new(

@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.mesh.PresenceScheduler
@@ -45,11 +46,15 @@ class MainActivity : ComponentActivity() {
     private var tappedRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The saved light/dark choice sets the window background before anything draws — first, since
+        // enableEdgeToEdge creates the window's views and with them the background.
+        ThemeSetting.applyToWindow(this)
         // Every screen starts with the carbon console bar, so the status bar always gets light
         // icons; the navigation bar follows the system theme.
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
-        ThemeSetting.load(this)
+        // The launch splash follows the choice from the next start on (Android 13+).
+        ThemeSetting.syncSplash(this)
         // A pending (unconfirmed) link survives rotation and other recreation; the first launch reads the intent.
         pairingLink = if (savedInstanceState == null) intent.pairingLink() else savedInstanceState.getString(KEY_PAIRING_LINK)
         if (savedInstanceState == null && UpdateSurface.isUpdateTap(intent)) UpdateSurface.requestOpen()
@@ -76,12 +81,31 @@ class MainActivity : ComponentActivity() {
                     // [ROUTE_NOTIFICATIONS] = notification center, otherwise a pcId.
                     // A tapped push notification opens its PC; a tapped bundle summary, the notification center.
                     var route by rememberSaveable { mutableStateOf(intent.pushRoute() ?: "") }
+                    // Where back leads from a PC's screen: the notification center when its "PC 열기" opened it, else the list.
+                    var pcBack by rememberSaveable { mutableStateOf("") }
                     val pc = remember(route) { route.takeIf { it.length > 1 }?.let(store::get) }
-                    // The priorities screen is opened from settings, so back returns there.
-                    BackHandler(enabled = route.isNotEmpty()) { route = if (route == ROUTE_PRIORITY) ROUTE_SETTINGS else ""; pairingLink = null }
+                    // The notification center keeps its filters, opened entry and scroll while a PC opened from it is shown.
+                    val kept = rememberSaveableStateHolder()
+                    fun openPc(pcId: String, backTo: String = "") {
+                        pcBack = backTo
+                        route = pcId
+                    }
+                    fun back() {
+                        route = when {
+                            // The priorities screen is opened from settings, so back returns there.
+                            route == ROUTE_PRIORITY -> ROUTE_SETTINGS
+                            pc != null -> pcBack
+                            else -> ""
+                        }
+                        pcBack = ""
+                        pairingLink = null
+                    }
+                    BackHandler(enabled = route.isNotEmpty()) { back() }
                     LaunchedEffect(pairingLink) { if (pairingLink != null) route = "+" }
                     LaunchedEffect(updateTapped) { if (updateTapped > 0) route = "" }
-                    LaunchedEffect(tappedRoute) { tappedRoute?.let { route = it; tappedRoute = null } }
+                    LaunchedEffect(tappedRoute) { tappedRoute?.let { pcBack = ""; route = it; tappedRoute = null } }
+                    // Back on the list: the next visit to the notification center starts fresh.
+                    LaunchedEffect(route) { if (route.isEmpty()) kept.removeState(ROUTE_NOTIFICATIONS) }
                     // Turns push on after the first pairing, and asks for the notification permission — on any screen but pairing.
                     if (route != "+") PushAutoSetup(store)
                     when {
@@ -91,25 +115,27 @@ class MainActivity : ComponentActivity() {
                             onOpenPriority = { route = ROUTE_PRIORITY },
                         )
                         route == ROUTE_PRIORITY -> NotificationPriorityScreen(onBack = { route = ROUTE_SETTINGS })
-                        route == ROUTE_NOTIFICATIONS -> NotificationCenterScreen(
-                            store,
-                            onBack = { route = "" },
-                            onOpenPc = { route = it },
-                            onSettings = { route = ROUTE_SETTINGS },
-                        )
+                        route == ROUTE_NOTIFICATIONS -> kept.SaveableStateProvider(ROUTE_NOTIFICATIONS) {
+                            NotificationCenterScreen(
+                                store,
+                                onBack = { route = "" },
+                                onOpenPc = { openPc(it, backTo = ROUTE_NOTIFICATIONS) },
+                                onSettings = { route = ROUTE_SETTINGS },
+                            )
+                        }
                         route == "+" -> PairScreen(
                             store, api,
                             onDone = {
                                 pairingLink = null
-                                route = it.pcId
+                                openPc(it.pcId)
                                 // The first pairing is when the background state report becomes needed (M-27).
                                 PresenceScheduler.sync(this@MainActivity)
                             },
                             onBack = { pairingLink = null; route = "" },
                             link = pairingLink,
                         )
-                        pc != null -> PcDetailScreen(pc, store, api, onBack = { route = "" })
-                        else -> PcListScreen(store, api, onOpen = { route = it.pcId }, onAdd = { route = "+" }, onSettings = { route = ROUTE_SETTINGS }, onNotifications = { route = ROUTE_NOTIFICATIONS })
+                        pc != null -> PcDetailScreen(pc, store, api, onBack = { back() })
+                        else -> PcListScreen(store, api, onOpen = { openPc(it.pcId) }, onAdd = { route = "+" }, onSettings = { route = ROUTE_SETTINGS }, onNotifications = { route = ROUTE_NOTIFICATIONS })
                     }
                 }
             }

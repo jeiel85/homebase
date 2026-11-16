@@ -117,6 +117,21 @@ function Write-ErrorExit($Msg) {
     exit 1
 }
 
+function Set-DataDirAcl($Path) {
+    # Same ACL the Agent applies at service start (DatabaseMigrationService): the database holds
+    # relayed notification text, so only SYSTEM and Administrators may open the folder. Applied here
+    # too so the folder is closed before the service first starts. Well-known SIDs, not names, so it
+    # works on any Windows language. Inheritance from ProgramData (which lets Users read) is cut; the
+    # files already inside inherit the new entries. SYSTEM keeps full control, so the service can't
+    # be locked out. A failure only warns: the Agent applies the same ACL when it starts.
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /C /Q | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "Data folder limited to SYSTEM and Administrators"
+    } else {
+        Write-Warn "Could not limit access to $Path (icacls exit code $LASTEXITCODE); the service retries at start."
+    }
+}
+
 function Test-BotToken($t) {
     return $t -match '^\d{6,10}:[A-Za-z0-9_-]{30,}$'
 }
@@ -274,6 +289,7 @@ Write-Step "Step 2/7: Creating directories"
     New-Item -ItemType Directory -Force -Path $_ | Out-Null
 }
 Write-Ok "Directories created"
+Set-DataDirAcl $DataDir
 
 # --- Step 3: Copy binaries ---
 Write-Step "Step 3/7: Copying binaries"

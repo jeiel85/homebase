@@ -83,6 +83,22 @@ public sealed class AlertLogRepositoryTests : IDisposable
         Assert.True(exists);
     }
 
+    [Theory]
+    // An alert older than the window no longer suppresses the next one, whatever offset it was stored with.
+    [InlineData(-20, 0, false)]
+    [InlineData(-20, 9, false)]
+    [InlineData(-5, 0, true)]
+    [InlineData(-5, 9, true)]
+    public async Task ExistsRecentDedupKey_honours_the_window(int minutesAgo, int offsetHours, bool expected)
+    {
+        var repo = new AlertLogRepository(_db);
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(minutesAgo).ToOffset(TimeSpan.FromHours(offsetHours));
+        await repo.InsertAsync(SampleEntry(1) with { CreatedAt = createdAt }, default);
+
+        var exists = await repo.ExistsRecentDedupKeyAsync("dedup-1", TimeSpan.FromMinutes(10), default);
+        Assert.Equal(expected, exists);
+    }
+
     [Fact]
     public async Task ExistsRecentDedupKey_returns_false_when_not_exists()
     {
@@ -106,5 +122,44 @@ public sealed class AlertLogRepositoryTests : IDisposable
         var recent = await repo.GetRecentAsync(1, default);
         Assert.Single(recent);
         Assert.Equal("alert-null", recent[0].AlertId);
+    }
+
+    [Fact]
+    public async Task MarkSent_turns_a_failed_row_into_sent_and_keeps_the_first_error()
+    {
+        var repo = new AlertLogRepository(_db);
+        await repo.InsertAsync(SampleEntry(1) with { Status = "Failed", Error = "telegram: host unknown", SentAt = null }, default);
+        var sentAt = DateTimeOffset.UtcNow;
+
+        await repo.MarkSentAsync("alert-1", sentAt, default);
+
+        var row = Assert.Single(await repo.GetRecentAsync(10, default));
+        Assert.Equal("Sent", row.Status);
+        Assert.Equal("telegram: host unknown", row.Error);
+        Assert.Equal(sentAt, row.SentAt!.Value);
+    }
+
+    [Fact]
+    public async Task Concurrent_calls_on_the_shared_connection_are_serialized()
+    {
+        // Several Agent services write alerts, state and history on the one connection at once (#45).
+        var repo = new AlertLogRepository(_db);
+        var state = new RuntimeStateRepository(_db);
+        using (var create = _db.Connection.CreateCommand())
+        {
+            create.CommandText = "CREATE TABLE IF NOT EXISTS runtime_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)";
+            create.ExecuteNonQuery();
+        }
+
+        var tasks = Enumerable.Range(1, 40).Select(i => Task.Run(async () =>
+        {
+            await repo.InsertAsync(SampleEntry(i), default);
+            await state.SetAsync($"k{i % 5}", i.ToString(), default);
+            await repo.ExistsRecentDedupKeyAsync($"dedup-{i}", TimeSpan.FromDays(1), default);
+            await repo.GetRecentAsync(5, default);
+        }));
+        await Task.WhenAll(tasks);
+
+        Assert.Equal(40, (await repo.GetRecentAsync(100, default)).Count);
     }
 }

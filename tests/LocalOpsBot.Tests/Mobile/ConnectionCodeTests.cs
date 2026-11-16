@@ -199,6 +199,56 @@ public class ConnectionCodeEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task A_tailnet_match_ends_the_search_without_waiting_for_slow_lan_hosts()
+    {
+        // The PC answers on its tailnet address; a LAN host takes the connection but never replies.
+        var hub = new TcpListener(IPAddress.Loopback, 0);
+        hub.Start();
+        var silent = new TcpListener(IPAddress.Loopback, 0);
+        silent.Start(); // never accepted: the probe would wait its full ProbeTimeout
+        var hubPort = ((IPEndPoint)hub.LocalEndpoint).Port;
+        var silentPort = ((IPEndPoint)silent.LocalEndpoint).Port;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var info = "{\"schema\":1,\"protocol\":1,\"pcId\":\"pc-z\",\"pcName\":\"Z\",\"agentVersion\":\"0.30.0\",\"os\":\"Windows\"}"u8.ToArray();
+        _ = Task.Run(async () =>
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                using var c = await hub.AcceptTcpClientAsync(cts.Token);
+                var s = c.GetStream();
+                await s.ReadAsync(new byte[4096], cts.Token);
+                await s.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
+                    $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {info.Length}\r\nConnection: close\r\n\r\n"), cts.Token);
+                await s.WriteAsync(info, cts.Token);
+            }
+        });
+        try
+        {
+            var code = ConnectionCode.TryDecode(ConnectionCode.Encode(new PairingOffer(1, "pc-z", "Z", Array.Empty<string>(), 1,
+                PairingService.Base64Url(new byte[16]), DateTimeOffset.UtcNow.AddMinutes(5),
+                new[] { new MobileEndpoint(MobileTransport.Tailscale, "100.1.2.3", hubPort, false) })))!;
+            var finder = new HubFinder(_ => new[]
+            {
+                new MobileEndpoint(MobileTransport.Lan, "127.0.0.1", silentPort, false),
+                new MobileEndpoint(MobileTransport.Tailscale, "127.0.0.1", hubPort, false),
+            }, NullLogger.Instance);
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var found = await finder.FindAsync(code, cts.Token);
+
+            Assert.NotNull(found);
+            Assert.Equal(MobileTransport.Tailscale, found.Endpoint.Transport);
+            Assert.True(watch.Elapsed < HubFinder.ProbeTimeout - TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+        }
+        finally
+        {
+            cts.Cancel();
+            hub.Stop();
+            silent.Stop();
+        }
+    }
+
+    [Fact]
     public async Task Own_code_and_mistyped_words_get_clear_answers()
     {
         var store = new InMemoryDeviceStore("pc-a");

@@ -88,6 +88,7 @@ public sealed class HubStore
             var list = new List<LinkedHub>();
             foreach (var r in rows)
             {
+                if (r is null) continue;
                 try
                 {
                     list.Add(new LinkedHub(r.PcId, r.PcName, r.DeviceId, Unprotect(r.TokenProtected), r.Endpoints, r.LinkedAt));
@@ -101,7 +102,19 @@ public sealed class HubStore
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            _logger.LogError(ex, "hubs.json is unreadable; starting with no linked PCs.");
+            // Starting empty keeps the Agent up, but the next save would overwrite the original: move it
+            // aside first, as the device store does with state.json, so the links can still be recovered.
+            var aside = $"{_path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmss}";
+            try
+            {
+                File.Move(_path, aside);
+                _logger.LogError(ex, "hubs.json is unreadable; kept it as {Aside} and started with no linked PCs.", aside);
+            }
+            catch (Exception moveEx) when (moveEx is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogError(ex, "hubs.json is unreadable and could not be moved aside ({Error}); starting with no linked PCs.",
+                    moveEx.Message);
+            }
             return new();
         }
     }

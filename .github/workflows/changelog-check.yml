@@ -1,0 +1,65 @@
+name: Changelog
+
+# Release notes are cut from CHANGELOG.md's "## v<VER>" section (release.yml), so an entry that is
+# missing, or written into a version that already shipped, silently drops out of the published
+# notes. This happened with parallel PRs (#9 wrote into the released v0.14.0 section, #8/#12 had no
+# entry). Every PR that changes the apps must add lines to CHANGELOG.md, under a version heading
+# that has no tag yet. Label a PR `no-changelog` for changes users can't see (tests, refactors).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'src/**'
+      - 'mobile/app/src/**'
+      - 'installer/**'
+      - 'CHANGELOG.md'
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: CHANGELOG.md has an entry for an unreleased version
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git diff -U0 "$BASE_SHA"...HEAD -- CHANGELOG.md > changelog.diff
+          git tag --list 'v*' > tags.txt
+          python3 - <<'PY'
+          import re, sys
+
+          tags = {t.strip() for t in open("tags.txt") if t.strip()}
+          lines = open("CHANGELOG.md", encoding="utf-8").read().splitlines()
+
+          # New-file line numbers that the PR added ("@@ -a,b +c,d @@" hunks).
+          added = []
+          for hunk in re.finditer(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", open("changelog.diff", encoding="utf-8").read(), re.M):
+              start, count = int(hunk.group(1)), int(hunk.group(2) or "1")
+              added.extend(range(start, start + count))
+          added = [n for n in added if 1 <= n <= len(lines) and lines[n - 1].strip()]
+          if not added:
+              sys.exit("CHANGELOG.md has no new lines in this PR. Add an entry under the version this PR "
+                       "ships in, or label the PR `no-changelog` if users can't see the change.")
+
+          def section(n):
+              for i in range(n - 1, -1, -1):
+                  m = re.match(r"^##\s+(v\d+\.\d+\.\d+)\b", lines[i])
+                  if m:
+                      return m.group(1)
+              return None
+
+          released = sorted({section(n) for n in added} & tags)
+          if released:
+              sys.exit(f"CHANGELOG.md lines were added under already released version(s) {', '.join(released)}. "
+                       "Released notes don't change: add a new '## vX.Y.Z' section for this PR's version.")
+          print("CHANGELOG entry found under:", ", ".join(sorted({section(n) or '(no version heading)' for n in added})))
+          PY

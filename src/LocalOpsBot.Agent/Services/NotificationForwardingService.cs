@@ -30,6 +30,12 @@ public sealed class NotificationForwardingService : BackgroundService
     private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan BudgetWarningInterval = TimeSpan.FromHours(1);
 
+    /// <summary>
+    /// Most a stop spends sending the bundles still held. The SCM allows a service about 20 s to stop
+    /// and the other hosted services stop after this one.
+    /// </summary>
+    internal static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
+
     private readonly INotificationBridgeServer _bridgeServer;
     private readonly IOutboundRouter _outbound;
     private readonly ITextMasker _masker;
@@ -43,6 +49,7 @@ public sealed class NotificationForwardingService : BackgroundService
     private readonly object _gate = new();
     private int _droppedReported;
     private DateTimeOffset _lastBudgetWarning = DateTimeOffset.MinValue;
+    private string? _lastFailure;
 
     public NotificationForwardingService(
         INotificationBridgeServer bridgeServer,
@@ -76,10 +83,35 @@ public sealed class NotificationForwardingService : BackgroundService
         return base.StartAsync(ct);
     }
 
-    public override Task StopAsync(CancellationToken ct)
+    public override async Task StopAsync(CancellationToken ct)
     {
         _bridgeServer.NotificationReceived -= OnNotificationReceived;
-        return base.StopAsync(ct);
+        await base.StopAsync(ct);
+        await DrainAsync(ct);
+    }
+
+    /// <summary>
+    /// Sends the bundles the bundler still holds (#18): up to one bundle window of toasts per app
+    /// would otherwise vanish on a service restart, including the one an update triggers. Bounded by
+    /// <see cref="DrainTimeout"/> and the host's stop token, so a dead network cannot hold up the stop.
+    /// Visible for tests.
+    /// </summary>
+    internal async Task DrainAsync(CancellationToken ct)
+    {
+        IReadOnlyList<ToastBatch> held;
+        lock (_gate) held = _bundler.Drain();
+        if (held.Count == 0) return;
+
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(DrainTimeout);
+        var tried = 0;
+        foreach (var batch in held)
+        {
+            if (limit.IsCancellationRequested) break;
+            await SendAsync(batch, limit.Token);
+            tried++;
+        }
+        _logger.LogInformation("Stopping: sent {Tried} of {Held} held notification bundle(s)", tried, held.Count);
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -216,23 +248,44 @@ public sealed class NotificationForwardingService : BackgroundService
         _lastBudgetWarning = now;
     }
 
-    private async Task SendAsync(ToastBatch batch)
+    private async Task SendAsync(ToastBatch batch, CancellationToken ct = default)
     {
         try
         {
             var outbound = ToOutbound(batch, _options.TelegramFallback, _time.GetUtcNow());
-            var result = await _outbound.DeliverAsync(outbound, CancellationToken.None);
+            var result = await _outbound.DeliverAsync(outbound, ct);
             if (result.Delivered)
+            {
+                Interlocked.Exchange(ref _lastFailure, null);
                 _logger.LogInformation("Forwarded {Count} notification(s) from {App}", batch.Count, batch.SourceApp);
+                return;
+            }
+
+            // E.g. no phone registered for push and no Telegram fallback (#1): every toast would repeat
+            // the same warning. Warn when the failure changes; repeats go to Debug until one gets through.
+            var failure = FailureKey(result);
+            if (Interlocked.Exchange(ref _lastFailure, failure) != failure)
+                _logger.LogWarning("No channel delivered notification(s) from {App}: {Error}. Repeats of this failure " +
+                    "are logged at Debug until a notification gets through.", batch.SourceApp, result.CombinedError);
             else
-                _logger.LogWarning("No channel delivered notification(s) from {App}: {Error}",
+                _logger.LogDebug("No channel delivered notification(s) from {App}: {Error}",
                     batch.SourceApp, result.CombinedError);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Stopped before notification(s) from {App} could be forwarded", batch.SourceApp);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to forward notification");
         }
     }
+
+    /// <summary>What failed, without the details that change on every try (seconds left, device names).</summary>
+    private static string FailureKey(OutboundDeliveryResult result) =>
+        result.Attempts.Count == 0
+            ? "none"
+            : string.Join(",", result.Attempts.Where(a => !a.Success).Select(a => $"{a.ChannelId}:{a.FailureKind}"));
 
     /**
      * The push id of a relayed batch, the same on every PC that relays it: derived from the ids the

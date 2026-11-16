@@ -21,14 +21,17 @@ public sealed class BootNotificationServiceTests
         IRuntimeStateRepository? stateRepo = null,
         IOptions<TelegramOptions>? opts = null,
         List<TimeSpan>? delays = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        Func<TimeSpan, CancellationToken, Task<bool>>? networkChanged = null)
         => new(
             // The real router + Telegram channel, so these tests also pin the Telegram fallback path.
             new OutboundRouter([new TelegramOutboundChannel(telegram, opts ?? Opts(42L), new TelegramNotificationRenderer())]),
             new FakeHostInfoProvider(),
             stateRepo ?? new FakeRuntimeStateRepository(),
             NullLogger<BootNotificationService>.Instance,
-            delay ?? ((wait, _) => { delays?.Add(wait); return Task.CompletedTask; }));
+            delay ?? ((wait, _) => { delays?.Add(wait); return Task.CompletedTask; }),
+            // Default: no network change ever arrives, so a failed first round gives up at once.
+            networkChanged ?? ((_, _) => Task.FromResult(false)));
 
     /// <summary>Starts the service and waits for the background send to finish.</summary>
     private static async Task RunAsync(BootNotificationService service)
@@ -98,6 +101,53 @@ public sealed class BootNotificationServiceTests
         Assert.Equal(BootNotificationService.MaxAttempts - 1, delays.Count);
         Assert.Empty(telegram.Sent);
         Assert.Null(await stateRepo.GetAsync("boot.last_notification_at", default));
+    }
+
+    [Fact]
+    public async Task Network_change_after_the_first_round_still_sends()
+    {
+        // The laptop booted with no network; Wi-Fi connects long after the first round gave up.
+        var telegram = new FlakyTelegramClient(failuresBeforeSuccess: BootNotificationService.MaxAttempts + 2);
+        var stateRepo = new FakeRuntimeStateRepository();
+        var networkWaits = 0;
+
+        await RunAsync(Create(telegram, stateRepo,
+            networkChanged: (_, _) => { networkWaits++; return Task.FromResult(true); }));
+
+        Assert.Equal(1, networkWaits);
+        Assert.Equal(BootNotificationService.MaxAttempts + 3, telegram.Attempts);
+        Assert.Single(telegram.Sent);
+        Assert.NotNull(await stateRepo.GetAsync("boot.last_notification_at", default));
+    }
+
+    [Fact]
+    public async Task Network_change_rounds_are_bounded()
+    {
+        var telegram = new FlakyTelegramClient(failuresBeforeSuccess: int.MaxValue);
+        var networkWaits = 0;
+
+        await RunAsync(Create(telegram,
+            networkChanged: (_, _) => { networkWaits++; return Task.FromResult(true); }));
+
+        Assert.Equal(BootNotificationService.MaxNetworkRounds, networkWaits);
+        Assert.Equal(
+            BootNotificationService.MaxAttempts
+                + BootNotificationService.MaxNetworkRounds * BootNotificationService.NetworkRoundAttempts,
+            telegram.Attempts);
+        Assert.Empty(telegram.Sent);
+    }
+
+    [Fact]
+    public async Task Network_change_wait_times_out_and_stops_cleanly()
+    {
+        // The real NetworkChange-backed wait returns once its timeout passes (true only if the
+        // runner's network happened to change meanwhile) and ends at once on a stopping Agent.
+        await BootNotificationService.WaitForNetworkChangeAsync(TimeSpan.FromMilliseconds(50), default);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => BootNotificationService.WaitForNetworkChangeAsync(TimeSpan.FromMinutes(5), cts.Token));
     }
 
     [Fact]

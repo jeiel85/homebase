@@ -15,6 +15,8 @@ public sealed class SqliteMigrator : IDatabaseMigrator
 
     public async Task MigrateAsync(CancellationToken ct)
     {
+        // Held for the whole migration; only this class's own commands run inside it.
+        using var hold = await _db.LockAsync(ct);
         await _db.OpenAsync(ct);
         _logger.LogInformation("SQLite database opened, running migrations");
 

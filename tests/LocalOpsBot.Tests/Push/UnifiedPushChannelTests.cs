@@ -264,6 +264,29 @@ public class UnifiedPushChannelTests
     }
 
     [Fact]
+    public async Task Ntfy_507_means_the_phone_is_not_subscribed_and_pauses_the_endpoint()
+    {
+        Subscribe();
+        _http.Next = () => new HttpResponseMessage((HttpStatusCode)507);
+
+        var first = await _channel.SendAsync(Alert(), default);
+        Assert.Equal(OutboundFailureKind.EndpointOffline, first.FailureKind);
+        Assert.Contains("not subscribed", first.Error);
+
+        // Not hammered while paused, and the subscription is kept: the phone may come back.
+        _time.Advance(UnifiedPushOutboundChannel.NotSubscribedPause - TimeSpan.FromSeconds(1));
+        var during = await _channel.SendAsync(Alert(), default);
+        Assert.Equal(OutboundFailureKind.EndpointOffline, during.FailureKind);
+        Assert.Single(_http.Requests);
+        Assert.Single(_store.PushTargets());
+
+        _time.Advance(TimeSpan.FromSeconds(2));
+        _http.Next = () => new HttpResponseMessage(HttpStatusCode.Created);
+        Assert.True((await _channel.SendAsync(Alert(), default)).Success);
+        Assert.Equal(2, _http.Requests.Count);
+    }
+
+    [Fact]
     public async Task One_phone_failing_does_not_fail_the_delivery()
     {
         Subscribe("https://ntfy.sh/upGone");

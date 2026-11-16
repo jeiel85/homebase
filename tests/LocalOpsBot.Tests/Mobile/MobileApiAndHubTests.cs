@@ -47,6 +47,47 @@ public class MobileApiAndHubTests
     }
 
     [Fact]
+    public async Task Info_through_the_tunnel_hides_pc_name_and_os_unless_a_paired_device_asks()
+    {
+        var (_, lanJson) = await _api.HandleRestAsync(Req("GET", "/api/v1/info"), null, CancellationToken.None);
+        var lan = JsonSerializer.Deserialize<PcInfo>(lanJson, MobileProtocol.Json)!;
+        Assert.Equal(Environment.MachineName, lan.PcName);
+        Assert.NotEmpty(lan.Os);
+
+        var (status, json) = await _api.HandleRestAsync(Req("GET", "/api/v1/info"), null, CancellationToken.None, viaTunnel: true);
+        Assert.Equal(200, status);
+        var info = JsonSerializer.Deserialize<PcInfo>(json, MobileProtocol.Json)!;
+        Assert.Equal("", info.PcName);
+        Assert.Equal("", info.Os);
+        // The app's parser needs pcId and pcName present; the version is what its PC list shows.
+        Assert.Contains("\"pcName\":\"\"", json);
+        Assert.Equal("pc-test", info.PcId);
+        Assert.Equal(MobileApiServer.AgentVersion, info.AgentVersion);
+
+        var (code, _) = _pairing.Begin();
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new PairRequest(code, "Phone", null), MobileProtocol.Json));
+        var paired = JsonSerializer.Deserialize<PairResponse>(
+            (await _api.HandleRestAsync(Req("POST", "/api/v1/pair"), body, CancellationToken.None)).Json, MobileProtocol.Json)!;
+        var (_, authedJson) = await _api.HandleRestAsync(Req("GET", "/api/v1/info", paired.Token), null, CancellationToken.None, viaTunnel: true);
+        Assert.Equal(Environment.MachineName, JsonSerializer.Deserialize<PcInfo>(authedJson, MobileProtocol.Json)!.PcName);
+
+        var (_, wrongJson) = await _api.HandleRestAsync(Req("GET", "/api/v1/info", "nope"), null, CancellationToken.None, viaTunnel: true);
+        Assert.Equal("", JsonSerializer.Deserialize<PcInfo>(wrongJson, MobileProtocol.Json)!.PcName);
+    }
+
+    [Fact]
+    public void Cloudflare_edge_headers_mark_a_tunnel_request()
+    {
+        HttpRequestHead With(string name, string value) =>
+            new("GET", "/api/v1/info", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [name] = value });
+
+        Assert.True(MobileApiServer.CameThroughCloudflare(With("CF-Ray", "8a1b2c3d4e5f-ICN")));
+        Assert.True(MobileApiServer.CameThroughCloudflare(With("Cf-Connecting-IP", "203.0.113.7")));
+        Assert.True(MobileApiServer.CameThroughCloudflare(With("CDN-Loop", "cloudflare; loops=1")));
+        Assert.False(MobileApiServer.CameThroughCloudflare(Req("GET", "/api/v1/info")));
+    }
+
+    [Fact]
     public async Task Pair_then_snapshot_with_token_succeeds_and_without_token_is_401()
     {
         var (code, _) = _pairing.Begin();

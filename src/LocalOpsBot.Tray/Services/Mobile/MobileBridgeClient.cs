@@ -18,6 +18,7 @@ internal sealed class MobileBridgeClient : IDisposable
     private static readonly TimeSpan ReportInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan ClaudeInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan[] Backoff = { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30) };
+    private static readonly TimeSpan HealthyConnection = TimeSpan.FromSeconds(30);
 
     private readonly bool _claudeSessions;
     private readonly CancellationTokenSource _cts = new();
@@ -84,18 +85,24 @@ internal sealed class MobileBridgeClient : IDisposable
         var attempt = 0;
         while (!ct.IsCancellationRequested)
         {
+            DateTime? connectedAt = null;
             try
             {
                 var pipe = new NamedPipeClientStream(".", MobileBridge.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 await pipe.ConnectAsync(3000, ct);
                 _pipe = pipe;
-                attempt = 0;
+                connectedAt = DateTime.UtcNow;
                 await ReadLoopAsync(pipe, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException or InvalidDataException or JsonException)
             {
                 // Agent not running / restarting, or the feature is off. Retry quietly with backoff.
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // Anything unforeseen: drop this connection and reconnect with backoff rather than let
+                // the bridge loop end for the rest of the session.
             }
             finally
             {
@@ -107,6 +114,11 @@ internal sealed class MobileBridgeClient : IDisposable
                 foreach (var p in _pending.Values) p.TrySetException(new IOException("Mobile bridge disconnected."));
             }
 
+            // A connection that held for a while was healthy: start the backoff over. One that drops
+            // right away (an Agent that rejects us, a frame we can't read) keeps backing off instead of
+            // reconnecting every second.
+            if (connectedAt is { } at && DateTime.UtcNow - at >= HealthyConnection) attempt = 0;
+
             try { await Task.Delay(Backoff[Math.Min(attempt++, Backoff.Length - 1)], ct); }
             catch (OperationCanceledException) { break; }
         }
@@ -116,29 +128,55 @@ internal sealed class MobileBridgeClient : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            var msg = await MobileBridge.ReadFrameAsync(pipe, ct);
-            if (msg is null) return;
-            switch ((string?)msg["op"])
+            JsonObject? msg;
+            try
             {
-                case MobileBridge.OpWatch:
-                    if ((bool?)msg["payload"]?["on"] == true)
-                    {
-                        StartReporting(pipe);
-                        SetWatching(true);
-                    }
-                    else
-                    {
-                        StopReporting();
-                        SetWatching(false);
-                    }
-                    break;
-                case MobileBridge.OpToast:
-                    if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);
-                    break;
-                case MobileBridge.OpResponse when msg["id"] is JsonValue idNode && _pending.TryRemove((string)idNode!, out var tcs):
-                    tcs.TrySetResult(msg);
-                    break;
+                msg = await MobileBridge.ReadFrameAsync(pipe, ct);
             }
+            catch (JsonException)
+            {
+                // The whole frame was read but isn't JSON: the stream is still in step, so skip it.
+                continue;
+            }
+            if (msg is null) return;
+            try
+            {
+                Dispatch(pipe, msg);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or JsonException or FormatException)
+            {
+                // A message of an unexpected shape (a newer or older Agent): ignore it, keep the bridge.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Handles one Agent message. A response — including an error reply such as <c>ok:false,
+    /// error:"unsupported"</c> for an op the Agent doesn't know — completes its request as is; the
+    /// caller checks <c>ok</c>. Unknown ops are ignored.
+    /// </summary>
+    private void Dispatch(NamedPipeClientStream pipe, JsonObject msg)
+    {
+        switch ((string?)msg["op"])
+        {
+            case MobileBridge.OpWatch:
+                if ((bool?)msg["payload"]?["on"] == true)
+                {
+                    StartReporting(pipe);
+                    SetWatching(true);
+                }
+                else
+                {
+                    StopReporting();
+                    SetWatching(false);
+                }
+                break;
+            case MobileBridge.OpToast:
+                if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);
+                break;
+            case MobileBridge.OpResponse when msg["id"] is JsonValue idNode && _pending.TryRemove((string)idNode!, out var tcs):
+                tcs.TrySetResult(msg);
+                break;
         }
     }
 

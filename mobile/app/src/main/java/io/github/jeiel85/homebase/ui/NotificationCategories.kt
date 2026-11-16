@@ -47,7 +47,8 @@ fun NotificationCategories(store: PcStore, api: HomebaseApi) {
     Column(Modifier.padding(vertical = 6.dp)) {
         Text("받을 알림", style = MaterialTheme.typography.titleSmall, color = hb.ink, modifier = Modifier.padding(top = 6.dp))
         Text(
-            "끈 종류는 PC가 이 휴대폰으로 보내지 않습니다. 앱 하나나 PC 하나만 끄려면 Android 알림 설정에서 끕니다. " +
+            "끈 종류는 PC가 이 휴대폰으로 보내지 않습니다. 연결한 모든 휴대폰에서 끈 종류는 PC에 연결한 Telegram으로도 보내지 않습니다. " +
+                "앱 하나나 PC 하나만 끄려면 Android 알림 설정에서 끕니다. " +
                 "팝업·소리·진동·묶음은 아래 '알림 우선순위'에서 정합니다.",
             style = MaterialTheme.typography.bodySmall,
             color = hb.inkSoft,

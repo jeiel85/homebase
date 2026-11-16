@@ -76,6 +76,9 @@ private const val HISTORY = 60
 /** GPUs shown on the panel; a third one (rare) is left out. */
 private const val MAX_GPUS = 2
 
+/** Window titles an expanded app card lists; the rest are counted in a "창 N개 더" line. */
+private const val MAX_WINDOWS = 8
+
 /**
  * One PC, live. The WebSocket is open only while this screen is at least STARTED
  * (`collectAsStateWithLifecycle`), so leaving the screen or turning the display off closes it
@@ -106,7 +109,8 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val history = remember(pc.pcId) { History() }
     var appSort by remember { mutableStateOf(AppSortSetting.load(context)) }
-    val appOrder = remember(pc.pcId) { AppOrder() }
+    val appOrder = remember(pc.pcId) { AppOrders.apps(pc.pcId) }
+    val processOrder = remember(pc.pcId) { AppOrders.processes(pc.pcId) }
 
     LaunchedEffect(last?.ts) {
         last?.let {
@@ -114,13 +118,17 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
             LastSeen.record(pc.pcId, it)
         }
     }
+    // A PC renamed in Windows says so in every snapshot; keep that name for the list, the alias dialog
+    // and Android's notification settings (the one from pairing is otherwise kept for good).
+    LaunchedEffect(last?.pcName) { last?.pcName?.let { syncReportedName(context, store, pc, it) } }
+    val pcName = last?.pcName?.takeIf { it.isNotBlank() } ?: pc.name
 
     val hb = Hb.colors
     Column(Modifier.fillMaxSize().background(hb.background)) {
         ConsoleBar(
-            title = pc.displayName,
+            title = pc.alias ?: pcName,
             onBack = onBack,
-            eyebrow = pc.alias?.let { pc.name },
+            eyebrow = pc.alias?.let { pcName },
             status = { LiveStatus(state) },
         )
         when (val s = state) {
@@ -133,8 +141,11 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
             if (state is LiveState.Connecting || state is LiveState.Retrying) Waiting(state, pc.endpoints.any { it.isQuickTunnel })
             return@Column
         }
-        // Keyed on the snapshot, so each second's list is ordered once, and a sort change re-ranks at once.
-        val apps = remember(snapshot, appSort) { appOrder.arrange(snapshot.apps, appSort, SystemClock.elapsedRealtime()) }
+        // Keyed on the snapshot's time (not the whole snapshot, compared field by field on every
+        // recomposition), so each second's list is ordered once, and a sort change re-ranks at once.
+        val apps = remember(snapshot.ts, appSort) { appOrder.arrange(snapshot.apps, appSort, SystemClock.elapsedRealtime()) }
+        // Ordered every second whichever tab is open, so the averages behind it stay current.
+        val processes = remember(snapshot.ts) { processOrder.arrangeProcesses(snapshot.processes, SystemClock.elapsedRealtime()) }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
@@ -155,7 +166,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
                     appSort = it
                     AppSortSetting.save(context, it)
                 }
-                1 -> processItems(snapshot)
+                1 -> processItems(snapshot, processes)
                 else -> sessionItems(snapshot)
             }
             item(key = "pad") { Spacer(Modifier.navigationBarsPadding()) }
@@ -508,11 +519,20 @@ private fun AppCard(app: AppEntry, memTotal: Long) {
                 Text(Fmt.pctShort(app.usage.cpuPct), style = HbType.readout.copy(fontSize = 15.sp), color = hb.ink)
             }
             // Collapsed: exactly one title line — the window in use, else the first.
-            val titles = if (expanded) app.windows.take(8) else listOfNotNull(app.windows.firstOrNull { it.foreground } ?: app.windows.firstOrNull())
+            val titles = if (expanded) app.windows.take(MAX_WINDOWS) else listOfNotNull(app.windows.firstOrNull { it.foreground } ?: app.windows.firstOrNull())
             if (titles.isEmpty()) {
                 WindowLine(WindowTitle("", false), expanded)
             } else {
                 titles.forEach { WindowLine(it, expanded) }
+            }
+            // Say what the cut left out, so a browser with many windows doesn't look like it has eight.
+            if (expanded && app.windows.size > MAX_WINDOWS) {
+                Text(
+                    "창 ${app.windows.size - MAX_WINDOWS}개 더",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = hb.inkSoft,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
             Spacer(Modifier.height(10.dp))
             UsageBars(app.usage.cpuPct, app.usage.memBytes, memTotal)
@@ -595,19 +615,26 @@ private fun UsageBars(cpuPct: Double, memBytes: Long, memTotal: Long) {
     }
 }
 
-private fun LazyListScope.processItems(s: LiveSnapshot) {
+/** [processes] is [s].processes already in display order ([AppOrder.arrangeProcesses]). */
+private fun LazyListScope.processItems(s: LiveSnapshot, processes: List<ProcessEntry>) {
     item(key = "phead") {
-        Text(
-            "CPU 사용량 상위 ${s.processes.size}개 · 창이 없는 백그라운드 프로세스 포함",
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            color = Hb.colors.inkSoft,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Text(
+                "CPU 사용량 상위 ${processes.size}개 · 창이 없는 백그라운드 프로세스 포함",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = Hb.colors.inkSoft,
+            )
+            Text(
+                "최근 CPU 평균이 높은 순 · 비슷하면 자리 유지 · 10초마다 다시 정렬",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = Hb.colors.inkSoft,
+            )
+        }
     }
     item(key = "plist") {
         Plate(Modifier.padding(horizontal = 12.dp, vertical = 5.dp)) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
-                s.processes.forEachIndexed { i, p ->
+                processes.forEachIndexed { i, p ->
                     if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Hb.colors.hairline))
                     ProcessRow(p, s.system.memTotalBytes, compact = false)
                 }

@@ -8,13 +8,13 @@ namespace LocalOpsBot.Data.Repositories;
 /// The notification center's store (DECISIONS M-32): relayed notifications in
 /// <c>notification_history</c>, merged with this PC's <c>alert_log</c> when listed.
 /// Times are stored as UTC round-trip strings, so string order is time order (the alert log is
-/// written the same way). Calls are serialized here because the relay, the Tray's requests and the
-/// daily prune can arrive together on the one shared connection.
+/// written the same way). Calls hold <see cref="LocalOpsDbContext.LockAsync"/> like every other
+/// repository, because the relay, the Tray's requests and the daily prune can arrive together on the
+/// one shared connection.
 /// </summary>
 public sealed class NotificationHistoryRepository : INotificationHistoryStore
 {
     private readonly LocalOpsDbContext _db;
-    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public NotificationHistoryRepository(LocalOpsDbContext db) => _db = db;
 
@@ -25,7 +25,7 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
 
     public async Task AddAsync(DeviceNotificationRecord r, CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        var hold = await _db.LockAsync(ct);
         try
         {
             using var cmd = _db.Connection.CreateCommand();
@@ -44,13 +44,13 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
             cmd.Parameters.Add(new SqliteParameter("@received_at", Stamp(r.ReceivedAt)));
             await cmd.ExecuteNonQueryAsync(ct);
         }
-        finally { _gate.Release(); }
+        finally { hold.Dispose(); }
     }
 
     public async Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct)
     {
         limit = NotificationHistoryRules.ClampLimit(limit);
-        await _gate.WaitAsync(ct);
+        var hold = await _db.LockAsync(ct);
         try
         {
             using var cmd = _db.Connection.CreateCommand();
@@ -88,24 +88,24 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
             if (more) entries.RemoveAt(entries.Count - 1);
             return new HistoryPage(entries, more);
         }
-        finally { _gate.Release(); }
+        finally { hold.Dispose(); }
     }
 
     public async Task<int> ClearDevicesAsync(CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        var hold = await _db.LockAsync(ct);
         try
         {
             using var cmd = _db.Connection.CreateCommand();
             cmd.CommandText = "DELETE FROM notification_history";
             return await cmd.ExecuteNonQueryAsync(ct);
         }
-        finally { _gate.Release(); }
+        finally { hold.Dispose(); }
     }
 
     public async Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        var hold = await _db.LockAsync(ct);
         try
         {
             using var cmd = _db.Connection.CreateCommand();
@@ -119,6 +119,6 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
             cmd.Parameters.Add(new SqliteParameter("@max", Math.Max(0, maxDeviceEntries)));
             return await cmd.ExecuteNonQueryAsync(ct);
         }
-        finally { _gate.Release(); }
+        finally { hold.Dispose(); }
     }
 }

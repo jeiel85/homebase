@@ -76,6 +76,46 @@ public class AppAggregatorTests
     }
 
     [Fact]
+    public void Which_apps_make_the_cap_does_not_follow_one_seconds_cpu()
+    {
+        // More windowed apps than the cap, all idle-ish: CPU noise must not swap apps in and out.
+        const int count = AppAggregator.MaxApps + 10;
+        IReadOnlyList<AppEntry> Tick(int seed)
+        {
+            var rng = new Random(seed);
+            var procs = Enumerable.Range(1, count)
+                .Select(i => P(i, 0, $"app{i}", cpu: Math.Round(rng.NextDouble() * 2, 1), mem: i * 1_000_000L))
+                .ToArray();
+            var windows = procs.Select(p => new SessionWindow(p.Pid, p.Pid, p.Name, false)).ToArray();
+            return AppAggregator.BuildApps(procs, windows);
+        }
+
+        var first = Tick(1);
+        var second = Tick(2);
+
+        Assert.Equal(AppAggregator.MaxApps, first.Count);
+        Assert.Equal(first.Select(a => a.Pid).Order(), second.Select(a => a.Pid).Order());
+        Assert.DoesNotContain(first, a => a.Pid <= 10); // the smallest by memory are the ones left out
+        // The list sent is still ordered by CPU.
+        Assert.Equal(first.Select(a => a.Usage.CpuPct).OrderDescending(), first.Select(a => a.Usage.CpuPct));
+    }
+
+    [Fact]
+    public void A_busy_small_app_and_the_foreground_app_still_make_the_cap()
+    {
+        var procs = Enumerable.Range(1, AppAggregator.MaxApps + 10)
+            .Select(i => P(i, 0, $"app{i}", cpu: i == 1 ? 50 : 0.1, mem: i * 1_000_000L))
+            .ToArray();
+        var windows = procs.Select(p => new SessionWindow(p.Pid, p.Pid, p.Name, Foreground: p.Pid == 2)).ToArray();
+
+        var apps = AppAggregator.BuildApps(procs, windows);
+
+        Assert.Equal(2, apps[0].Pid); // foreground first
+        Assert.Equal(1, apps[1].Pid); // then the busiest
+        Assert.Equal(AppAggregator.MaxApps, apps.Count);
+    }
+
+    [Fact]
     public void Windows_of_exited_processes_are_dropped_and_top_processes_skip_idle()
     {
         var procs = new[] { P(0, 0, "[System Process]", cpu: 90), P(10, 1, "a", cpu: 1) };

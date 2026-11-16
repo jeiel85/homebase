@@ -6,6 +6,7 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.SystemClock
 import android.util.Log
 import io.github.jeiel85.homebase.BuildConfig
 import io.github.jeiel85.homebase.data.PcEntry
@@ -21,6 +22,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Tells every paired PC this phone's state and keeps what they answer: the devices paired with
@@ -65,11 +67,41 @@ object MeshSync {
         }
     }
 
+    /**
+     * How often the PC list's poll (every 15 s) re-sends an unchanged state to a PC. Inside the PC's
+     * online window (2 min) and this phone's [FRESH_MS], so neither side sees the other go stale.
+     */
+    const val RESEND_MS = 60_000L
+
+    /** What was last reported to a PC, and when (elapsedRealtime). */
+    private class Sent(val report: PresenceReport, val atElapsed: Long)
+
+    private val lastSent = ConcurrentHashMap<String, Sent>()
+
     /** Reports to one PC; failures are quiet (the PC list already shows reachability). */
-    suspend fun reportTo(context: Context, api: HomebaseApi, pc: PcEntry) {
+    suspend fun reportTo(context: Context, api: HomebaseApi, pc: PcEntry) = send(api, pc, report(context))
+
+    /**
+     * For the PC list's poll: reports to [pc] only when this phone's state changed since the last report
+     * to it, [RESEND_MS] has passed, or [force] (pull to refresh) — the same battery and network every
+     * 15 s tells the PC nothing new.
+     */
+    suspend fun reportIfDue(context: Context, api: HomebaseApi, pc: PcEntry, force: Boolean = false) {
+        val report = report(context)
+        val last = lastSent[pc.pcId]
+        if (force || presenceDue(last?.report, last?.atElapsed, report, SystemClock.elapsedRealtime())) send(api, pc, report)
+    }
+
+    /** Whether [report] should go to a PC that last got [last] at [lastAt]: new, changed, or [RESEND_MS] old. */
+    fun presenceDue(last: PresenceReport?, lastAt: Long?, report: PresenceReport, now: Long): Boolean =
+        last == null || lastAt == null || report != last || now - lastAt >= RESEND_MS || now < lastAt
+
+    private suspend fun send(api: HomebaseApi, pc: PcEntry, report: PresenceReport) {
         try {
-            val devices = api.presence(pc, report(context)) ?: return
-            _hubs.update { it + (pc.pcId to HubView(devices, System.currentTimeMillis())) }
+            val devices = api.presence(pc, report)
+            // Also a PC too old for presence (null): asking it again every 15 s would not change that.
+            lastSent[pc.pcId] = Sent(report, SystemClock.elapsedRealtime())
+            if (devices != null) _hubs.update { it + (pc.pcId to HubView(devices, System.currentTimeMillis())) }
         } catch (e: Exception) {
             Log.i(TAG, "presence to ${pc.name} skipped: ${e.message}")
         }
@@ -79,7 +111,10 @@ object MeshSync {
         store.all().map { async { reportTo(context, api, it) } }.awaitAll()
     }
 
-    fun forget(pcId: String) = _hubs.update { it - pcId }
+    fun forget(pcId: String) {
+        _hubs.update { it - pcId }
+        lastSent.remove(pcId)
+    }
 
     /** A device seen through one or more PCs. [via] names the PC(s) that listed it. */
     data class OtherDevice(val entry: DeviceEntry, val via: List<String>)

@@ -19,7 +19,7 @@ public sealed class TelegramOutboundChannel : IOutboundChannel
         _renderer = renderer;
     }
 
-    public string ChannelId => "telegram";
+    public string ChannelId => ChannelIds.Telegram;
 
     public bool IsAvailable =>
         _telegram.IsConfigured &&
@@ -57,8 +57,32 @@ public sealed class TelegramOutboundChannel : IOutboundChannel
                 OutboundFailureKind.Unauthorized,
                 ex.Message);
         }
+        catch (TelegramApiException ex)
+        {
+            // The alert re-send (#2) retries only what can pass: 429 and 5xx; a rejected message stays rejected.
+            return new OutboundAttemptResult(
+                ChannelId,
+                false,
+                ex.HttpStatusCode switch
+                {
+                    429 => OutboundFailureKind.RateLimited,
+                    >= 500 => OutboundFailureKind.Transient,
+                    >= 400 => OutboundFailureKind.Permanent,
+                    _ => OutboundFailureKind.Unknown
+                },
+                ex.Message);
+        }
         catch (HttpRequestException ex)
         {
+            return new OutboundAttemptResult(
+                ChannelId,
+                false,
+                OutboundFailureKind.Transient,
+                ex.Message);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // HttpClient timeout, not shutdown.
             return new OutboundAttemptResult(
                 ChannelId,
                 false,

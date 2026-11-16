@@ -11,6 +11,7 @@ public sealed class WatchStatusRepository : IWatchStatusRepository
 
     public async Task InsertAsync(WatchStatusEntry entry, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO watch_status (watch_name, watch_type, status, status_json, changed_at)
@@ -26,6 +27,7 @@ public sealed class WatchStatusRepository : IWatchStatusRepository
 
     public async Task<WatchStatusEntry?> GetLatestAsync(string watchName, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "SELECT id, watch_name, watch_type, status, status_json, changed_at FROM watch_status WHERE watch_name = @watch_name ORDER BY changed_at DESC LIMIT 1";
         cmd.Parameters.Add(new SqliteParameter("@watch_name", watchName));
@@ -44,6 +46,7 @@ public sealed class WatchStatusRepository : IWatchStatusRepository
     public async Task<IReadOnlyList<WatchStatusEntry>> GetRecentAsync(int count, CancellationToken ct)
     {
         var results = new List<WatchStatusEntry>();
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "SELECT id, watch_name, watch_type, status, status_json, changed_at FROM watch_status ORDER BY changed_at DESC LIMIT @count";
         cmd.Parameters.Add(new SqliteParameter("@count", count));

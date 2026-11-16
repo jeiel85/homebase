@@ -13,6 +13,7 @@ public sealed class AlertLogRepository : IAlertLogRepository
 
     public async Task InsertAsync(Models.AlertLogEntry entry, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO alert_log (alert_id, kind, severity, title, body, dedup_key, source, status, error, created_at, sent_at)
@@ -35,6 +36,7 @@ public sealed class AlertLogRepository : IAlertLogRepository
     public async Task<IReadOnlyList<Models.AlertLogEntry>> GetRecentAsync(int count, CancellationToken ct)
     {
         var results = new List<Models.AlertLogEntry>();
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             SELECT id, alert_id, kind, severity, title, body, dedup_key, source, status, error, created_at, sent_at
@@ -57,12 +59,30 @@ public sealed class AlertLogRepository : IAlertLogRepository
         return results;
     }
 
-    public async Task<bool> ExistsRecentDedupKeyAsync(string dedupKey, TimeSpan window, CancellationToken ct)
+    public async Task MarkSentAsync(string alertId, DateTimeOffset sentAt, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
+            UPDATE alert_log SET status = 'Sent', sent_at = @sent_at
+            WHERE alert_id = @alert_id AND status = 'Failed'
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@alert_id", alertId));
+        cmd.Parameters.Add(new SqliteParameter("@sent_at", sentAt.ToString("O")));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<bool> ExistsRecentDedupKeyAsync(string dedupKey, TimeSpan window, CancellationToken ct)
+    {
+        using var hold = await _db.LockAsync(ct);
+        using var cmd = _db.Connection.CreateCommand();
+        // Compared as instants, not text: created_at is stored round-trip ("2026-11-16T05:00:00.0000000+00:00",
+        // any offset) while datetime('now') is "2026-11-16 05:00:00". As text, 'T' sorts after ' ', so every row
+        // of the same UTC day counted as recent and an alert was suppressed until UTC midnight instead of for
+        // the window. julianday() parses both forms (fractional seconds and the offset included).
+        cmd.CommandText = """
             SELECT COUNT(1) FROM alert_log
-            WHERE dedup_key = @dedup_key AND created_at >= datetime('now', @window)
+            WHERE dedup_key = @dedup_key AND julianday(created_at) >= julianday('now', @window)
             """;
         cmd.Parameters.Add(new SqliteParameter("@dedup_key", dedupKey));
         cmd.Parameters.Add(new SqliteParameter("@window", $"-{window.TotalSeconds:F0} seconds"));
