@@ -14,11 +14,12 @@ public sealed class AlertDispatcherRetryTests
     private readonly ManualTimeProvider _time = new();
     private readonly FakeAlertStore _store = new();
     private readonly ScriptedRouter _router = new();
+    private readonly AllowAll _policy = new();
     private readonly AlertDispatcher _dispatcher;
 
     public AlertDispatcherRetryTests()
     {
-        _dispatcher = new AlertDispatcher(new AllowAll(), _store, _router, NullLogger<AlertDispatcher>.Instance, _time);
+        _dispatcher = new AlertDispatcher(_policy, _store, _router, NullLogger<AlertDispatcher>.Instance, _time);
     }
 
     private static OutboundDeliveryResult Ok() =>
@@ -150,10 +151,29 @@ public sealed class AlertDispatcherRetryTests
         Assert.Equal(0, _dispatcher.PendingRetries);
     }
 
+    [Fact]
+    public async Task A_mute_set_after_the_failure_drops_the_re_send()
+    {
+        _router.Results.Enqueue(Fail(OutboundFailureKind.Transient));
+        await _dispatcher.DispatchAsync(Alert(), default);
+
+        _policy.Muted = true; // e.g. /mute while the network was down
+        _time.Advance(AlertDispatcher.RetryDelays[0]);
+        await _dispatcher.RetryDueAsync(default);
+
+        Assert.Single(_router.Sent);
+        Assert.Equal(0, _dispatcher.PendingRetries);
+    }
+
     private sealed class AllowAll : IAlertPolicy
     {
+        public bool Muted { get; set; }
+
         public Task<AlertDecision> ShouldSendAsync(AlertEvent alert, CancellationToken ct) =>
             Task.FromResult(new AlertDecision(true, null));
+
+        public Task<AlertDecision> ShouldResendAsync(AlertEvent alert, CancellationToken ct) =>
+            Task.FromResult(Muted ? new AlertDecision(false, "Muted") : new AlertDecision(true, null));
     }
 
     private sealed class ScriptedRouter : IOutboundRouter

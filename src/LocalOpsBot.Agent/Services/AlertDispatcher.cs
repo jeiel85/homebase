@@ -227,6 +227,24 @@ public sealed class AlertDispatcher : BackgroundService, IAlertDispatcher
                 if (!_retries.Contains(retry)) continue;
             }
 
+            // A mute set after the first failure covers the re-sends too.
+            AlertDecision decision;
+            try
+            {
+                decision = await _policy.ShouldResendAsync(retry.Alert, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Alert policy check failed before a re-send; trying anyway: {Title}", retry.Alert.Title);
+                decision = new AlertDecision(true, null);
+            }
+            if (!decision.Send)
+            {
+                lock (_retryGate) _retries.Remove(retry);
+                _logger.LogInformation("Re-send of alert dropped ({Reason}): {Title}", decision.DropReason, retry.Alert.Title);
+                continue;
+            }
+
             OutboundDeliveryResult result;
             try
             {

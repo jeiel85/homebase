@@ -22,12 +22,8 @@ public sealed class AlertPolicy : IAlertPolicy
 
     public async Task<AlertDecision> ShouldSendAsync(AlertEvent alert, CancellationToken ct)
     {
-        if (alert.Severity != AlertSeverity.Critical)
-        {
-            var mutedUntilStr = await _stateStore.GetAsync(MutedUntilKey, ct);
-            if (DateTime.TryParse(mutedUntilStr, out var mutedUntil) && DateTime.UtcNow < mutedUntil)
-                return new AlertDecision(false, $"Muted until {mutedUntil:HH:mm} UTC");
-        }
+        if (await MutedAsync(alert, ct) is { } muted)
+            return muted;
 
         if (!string.IsNullOrEmpty(alert.DedupKey))
         {
@@ -45,6 +41,19 @@ public sealed class AlertPolicy : IAlertPolicy
 
         _messageCount++;
         return new AlertDecision(true, null);
+    }
+
+    public async Task<AlertDecision> ShouldResendAsync(AlertEvent alert, CancellationToken ct) =>
+        await MutedAsync(alert, ct) ?? new AlertDecision(true, null);
+
+    /// <summary>The drop decision when alerts are muted now (Critical ones never are), else null.</summary>
+    private async Task<AlertDecision?> MutedAsync(AlertEvent alert, CancellationToken ct)
+    {
+        if (alert.Severity == AlertSeverity.Critical) return null;
+        var mutedUntilStr = await _stateStore.GetAsync(MutedUntilKey, ct);
+        if (DateTime.TryParse(mutedUntilStr, out var mutedUntil) && DateTime.UtcNow < mutedUntil)
+            return new AlertDecision(false, $"Muted until {mutedUntil:HH:mm} UTC");
+        return null;
     }
 
     private void ResetWindowIfNeeded()
