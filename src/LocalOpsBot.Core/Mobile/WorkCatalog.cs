@@ -18,7 +18,8 @@ public static class WorkKind
 
 /// <summary>
 /// One entry of the phone's work tab (DECISIONS M-26). <c>Detail</c> is the project folder for
-/// agents and editors. <c>LastActivity</c> is set for agents (transcript write time).
+/// agents and editors. <c>LastActivity</c> is set for agents (transcript write time), and so is
+/// <c>Agent</c> when this PC reads the session's live detail (DECISIONS M-44).
 /// </summary>
 public sealed record WorkItem(
     string Kind,
@@ -26,7 +27,8 @@ public sealed record WorkItem(
     string Title,
     string? Detail = null,
     DateTimeOffset? LastActivity = null,
-    bool Foreground = false);
+    bool Foreground = false,
+    AgentInfo? Agent = null);
 
 /// <summary>
 /// Turns the user's top-level windows into work items: which processes count as a browser,
@@ -131,7 +133,9 @@ public static class WorkCatalog
     {
         var list = new List<WorkItem>();
         if (agents is not null)
-            list.AddRange(agents.OrderByDescending(a => a.LastActivity ?? DateTimeOffset.MinValue));
+            list.AddRange(agents
+                .OrderByDescending(a => a.Agent?.Status == AgentStatus.Waiting)
+                .ThenByDescending(a => a.LastActivity ?? DateTimeOffset.MinValue));
 
         var seen = new HashSet<(string, string)>();
         var fromWindows = new List<WorkItem>();

@@ -96,10 +96,11 @@ object NotificationPriority {
     /**
      * The default of a group ([NotificationGroup.key]; null for a category no group knows). App
      * notifications — this PC's Windows ones and other devices' — arrive in bursts, so they ring
-     * without popping up; PC alerts pop up as they always did. Everything is bundled.
+     * without popping up; so does an AI session that finished. PC alerts, and an AI session waiting
+     * for the user, pop up. Everything is bundled.
      */
     fun defaultFor(groupKey: String?): AlertProfile = when (groupKey) {
-        "toast", "device" -> AlertLevel.NORMAL.applyTo(AlertProfile())
+        "toast", "device", "agent-done" -> AlertLevel.NORMAL.applyTo(AlertProfile())
         else -> AlertLevel.URGENT.applyTo(AlertProfile())
     }
 

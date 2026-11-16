@@ -35,8 +35,14 @@ public class ProtocolGoldenTests
         new[] { new ClaudeSession("Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero)) },
         new[]
         {
-            new WorkItem(WorkKind.Agent, "Claude Code", "Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero)),
-            new WorkItem(WorkKind.Agent, "Codex", "OpenCode에 모델 추가", @"C:\Users\me\Documents\Codex", new DateTimeOffset(2026, 11, 13, 9, 25, 0, TimeSpan.Zero)),
+            new WorkItem(WorkKind.Agent, "Claude Code", "Homebase 모바일 앱", @"D:\Project\homebase", new DateTimeOffset(2026, 11, 13, 9, 29, 0, TimeSpan.Zero),
+                Agent: new AgentInfo(AgentStatus.Waiting, "Bash 실행 승인", new DateTimeOffset(2026, 11, 13, 9, 28, 0, TimeSpan.Zero),
+                    Model: "claude-opus-5-5", ContextTokens: 184503, LastTool: "Bash", Mode: "plan", PrNumber: 56,
+                    RemoteUrl: "https://claude.ai/code/session_01KuE5FPMg4WPj9yciyPDgKg", SessionId: "a26bf009-27c0-456f-a353-6b48a3d785e2")),
+            new WorkItem(WorkKind.Agent, "Codex", "OpenCode에 모델 추가", @"C:\Users\me\Documents\Codex", new DateTimeOffset(2026, 11, 13, 9, 25, 0, TimeSpan.Zero),
+                Agent: new AgentInfo(AgentStatus.Busy, StatusSince: new DateTimeOffset(2026, 11, 13, 9, 20, 0, TimeSpan.Zero),
+                    Model: "gpt-5.5", Effort: "high", ContextTokens: 42000, ContextWindow: 258400, TotalTokens: 51000,
+                    LastTool: "apply_patch", SessionId: "01a1e375-84c9-7741-a7f3-120940bdace8")),
             new WorkItem(WorkKind.Document, "Word", "견적서.docx", Foreground: true),
             new WorkItem(WorkKind.Editor, "VS Code", "Program.cs", "homebase"),
             new WorkItem(WorkKind.Browser, "Chrome", "Release notes"),

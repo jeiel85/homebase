@@ -19,6 +19,10 @@ object NotificationGroups {
     /** Notifications another device sent through a PC (DECISIONS M-28). */
     const val DEVICE = "device-notification"
 
+    /** An AI coding session waits for the user / finished a long turn (DECISIONS M-45). */
+    const val AGENT_WAITING = "agent-waiting"
+    const val AGENT_DONE = "agent-done"
+
     /** The Tray's "send test" — never muted, so the path can always be checked. */
     const val TEST = "test"
 
@@ -32,6 +36,12 @@ object NotificationGroups {
         NotificationGroup("advisor", "PC 상태 조언", "디스크·메모리 같은 상태 점검 결과", listOf("advisor")),
         NotificationGroup("boot", "부팅", "PC가 켜졌다는 알림", listOf("boot")),
         NotificationGroup("device", "다른 기기 알림", "연결한 다른 휴대폰·PC에 온 알림을 PC가 전달", listOf(DEVICE)),
+        NotificationGroup(
+            "agent-waiting", "AI 세션 입력 대기", "Claude Code가 승인·답을 기다릴 때 (PC를 비운 동안)", listOf(AGENT_WAITING),
+        ),
+        NotificationGroup(
+            "agent-done", "AI 세션 작업 끝", "Claude Code·Codex가 1분 넘게 하던 작업을 마쳤을 때 (PC를 비운 동안)", listOf(AGENT_DONE),
+        ),
     )
 
     /** Every category but app notifications (this PC's and other devices') — the "앱 알림만" preset. */

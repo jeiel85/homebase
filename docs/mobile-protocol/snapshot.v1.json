@@ -92,7 +92,19 @@
       "title": "Homebase 모바일 앱",
       "detail": "D:\\Project\\homebase",
       "lastActivity": "2026-11-13T09:29:00+00:00",
-      "foreground": false
+      "foreground": false,
+      "agent": {
+        "status": "waiting",
+        "waitingFor": "Bash 실행 승인",
+        "statusSince": "2026-11-13T09:28:00+00:00",
+        "model": "claude-opus-5-5",
+        "contextTokens": 184503,
+        "lastTool": "Bash",
+        "mode": "plan",
+        "prNumber": 56,
+        "remoteUrl": "https://claude.ai/code/session_01KuE5FPMg4WPj9yciyPDgKg",
+        "sessionId": "a26bf009-27c0-456f-a353-6b48a3d785e2"
+      }
     },
     {
       "kind": "agent",
@@ -100,7 +112,18 @@
       "title": "OpenCode에 모델 추가",
       "detail": "C:\\Users\\me\\Documents\\Codex",
       "lastActivity": "2026-11-13T09:25:00+00:00",
-      "foreground": false
+      "foreground": false,
+      "agent": {
+        "status": "busy",
+        "statusSince": "2026-11-13T09:20:00+00:00",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "contextTokens": 42000,
+        "contextWindow": 258400,
+        "totalTokens": 51000,
+        "lastTool": "apply_patch",
+        "sessionId": "01a1e375-84c9-7741-a7f3-120940bdace8"
+      }
     },
     {
       "kind": "document",

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.33.0 — AI coding sessions in detail, and alerts when they need you
+
+### Added
+- **AI session detail on the work tab.** Each Claude Code and Codex session now shows what it is
+  doing — 작업 중 (working) / 입력 대기 (waiting for you, highlighted and listed first) / 쉬는 중 (idle)
+  and for how long — what it is waiting for, the model (and Codex's reasoning effort), how much
+  context is in use (a bar for Codex), its permission mode, the last tool it used, the pull request
+  it is on and Codex's total tokens. A session left waiting for approval stays listed even if its
+  transcript has been quiet for a long time. No prompt, reply or tool argument leaves the PC
+  (DECISIONS M-44).
+- **"Claude에서 열기" (Open in Claude).** A Claude Code session's card opens that very session on
+  claude.ai / the Claude app (Remote Control), where you can type to it from the phone.
+- **Alerts when an AI session needs you.** While you are away from the PC (no keyboard or mouse for
+  a minute), the phone is notified when a Claude Code session starts waiting for your approval or
+  answer, and when Claude Code or Codex finishes a turn that took more than a minute. Two new
+  notification kinds, "AI 세션 입력 대기" (pops up by default) and "AI 세션 작업 끝" (rings by default),
+  can be turned off or reprioritised like the others (DECISIONS M-45).
 ## v0.32.0 — Hardening
 
 Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #5 (DECISIONS M-39–M-43).
