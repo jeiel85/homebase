@@ -8,8 +8,8 @@ import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.UnauthorizedException
+import io.github.jeiel85.homebase.net.UnconfirmedException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 
 /**
@@ -32,18 +32,20 @@ class ApprovalActionReceiver : BroadcastReceiver() {
                 if (pc == null) {
                     "이 PC가 목록에 없어 답하지 못했습니다."
                 } else {
-                    // A broadcast may run ~10 s; past that the PC asks on its own screen anyway.
-                    val accepted = withTimeoutOrNull(8_000) {
-                        HomebaseApi(networks = NetworkProbe(app)::current).answerApproval(pc, approvalId, decision)
-                    }
-                    when (accepted) {
-                        true -> if (decision == ALLOW) "허용했습니다." else "거부했습니다."
-                        false -> "이미 답했거나 PC가 더는 기다리지 않습니다."
-                        null -> "PC에 닿지 않았습니다. PC에서 답해 주세요."
+                    // A broadcast may run ~10 s. The budget bounds the blocking call itself (a coroutine
+                    // timeout could not stop it, and a late success would then read as a failure).
+                    val accepted = HomebaseApi(networks = NetworkProbe(app)::current)
+                        .answerApproval(pc, approvalId, decision, budgetMillis = 8_000)
+                    when {
+                        accepted -> if (decision == ALLOW) "허용했습니다." else "거부했습니다."
+                        else -> "이미 답했거나 PC가 더는 기다리지 않습니다."
                     }
                 }
             } catch (e: UnauthorizedException) {
                 "이 PC와의 연결이 끊겼습니다. 다시 페어링해 주세요."
+            } catch (e: UnconfirmedException) {
+                // The answer may have reached the PC just as the time ran out.
+                "PC가 답을 받았는지 확인하지 못했습니다. PC에서 확인해 주세요."
             } catch (e: IOException) {
                 Log.w(TAG, "approval answer failed: ${e.message}")
                 "PC에 닿지 않았습니다. PC에서 답해 주세요."

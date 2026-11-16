@@ -244,6 +244,43 @@ public class ClaudeApprovalTests
         Assert.Null(await new ApprovalBroker(NullLogger<ApprovalBroker>.Instance).AskAsync(Request(DateTimeOffset.UtcNow), CancellationToken.None));
     }
 
+    private sealed class SlowRouter(TimeSpan delay) : IOutboundRouter
+    {
+        public async Task<OutboundDeliveryResult> DeliverAsync(OutboundNotification n, CancellationToken ct)
+        {
+            await Task.Delay(delay, ct);
+            return new OutboundDeliveryResult(true, [new OutboundAttemptResult("unifiedpush", true)]);
+        }
+    }
+
+    [Fact]
+    public async Task Slow_delivery_does_not_lengthen_the_window()
+    {
+        // The deadline counts from the ask, delivery included (Codex review on #63).
+        var broker = new ApprovalBroker(NullLogger<ApprovalBroker>.Instance, new SlowRouter(TimeSpan.FromSeconds(5)));
+        var r = Request(DateTimeOffset.UtcNow) with { ExpiresAt = DateTimeOffset.UtcNow.AddMilliseconds(300) };
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Null(await broker.AskAsync(r, CancellationToken.None));
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3), $"took {sw.Elapsed}");
+        Assert.Equal(0, broker.PendingCount);
+    }
+
+    [Fact]
+    public async Task An_answer_after_the_deadline_is_refused_even_before_the_timer_fires()
+    {
+        var time = new ManualTimeProvider { Now = DateTimeOffset.UtcNow };
+        var router = new FakeRouter(true);
+        var broker = new ApprovalBroker(NullLogger<ApprovalBroker>.Instance, router, time);
+        var r = Request(time.Now);
+        var ask = broker.AskAsync(r, CancellationToken.None);
+        await router.Delivered.Task;
+
+        time.Advance(ClaudeHook.WaitLimit + TimeSpan.FromSeconds(1));
+        Assert.Equal(ApprovalAnswerOutcome.Unknown, broker.Answer(r.Id, ApprovalDecision.Allow, "S24"));
+        broker.Cancel(r.Id);
+        Assert.Null(await ask);
+    }
+
     [Fact]
     public async Task Too_many_open_prompts_are_not_pushed()
     {

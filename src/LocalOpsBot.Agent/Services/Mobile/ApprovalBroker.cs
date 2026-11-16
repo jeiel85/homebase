@@ -54,10 +54,14 @@ public sealed class ApprovalBroker
 
         var pending = new Pending(request with { ExpiresAt = deadline }, new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously));
         if (!_pending.TryAdd(request.Id, pending)) return null;
+        // The deadline runs from now, delivery included: a slow push must not lengthen the window the
+        // phone was told about (ExpiresAt), and an answer after it is refused in Answer.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(deadline - now);
         try
         {
             _askedSessions[SessionKey(request.App, request.Session)] = now;
-            var result = await _router.DeliverAsync(ClaudeHook.ToNotification(pending.Request, now), ct);
+            var result = await _router.DeliverAsync(ClaudeHook.ToNotification(pending.Request, now), limit.Token);
             if (!result.Delivered)
             {
                 _logger.LogInformation("Claude approval could not reach a phone ({Error}); asking on the PC", result.CombinedError);
@@ -65,14 +69,17 @@ public sealed class ApprovalBroker
             }
             _logger.LogInformation("Claude approval pushed: {Tool} in {Session}", request.ToolTitle, request.Session);
 
-            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            limit.CancelAfter(deadline - now);
             await using (limit.Token.Register(() => pending.Answer.TrySetResult(null)))
             {
                 var decision = await pending.Answer.Task;
                 _logger.LogInformation("Claude approval {Id}: {Decision}", request.Id, decision ?? "no answer");
                 return decision;
             }
+        }
+        catch (OperationCanceledException) when (limit.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            _logger.LogInformation("Claude approval {Id} ran out of time while being delivered; asking on the PC", request.Id);
+            return null;
         }
         finally
         {
@@ -84,7 +91,10 @@ public sealed class ApprovalBroker
     public ApprovalAnswerOutcome Answer(string? id, string? decision, string deviceName)
     {
         if (string.IsNullOrEmpty(id) || !ApprovalDecision.IsKnown(decision)) return ApprovalAnswerOutcome.Invalid;
-        if (!_pending.TryRemove(id, out var p) || !p.Answer.TrySetResult(decision)) return ApprovalAnswerOutcome.Unknown;
+        if (!_pending.TryGetValue(id, out var p)) return ApprovalAnswerOutcome.Unknown;
+        // Past the advertised deadline the prompt is the PC's again, even if its timer has not fired yet.
+        if (_time.GetUtcNow() >= p.Request.ExpiresAt) return ApprovalAnswerOutcome.Unknown;
+        if (!_pending.TryRemove(id, out _) || !p.Answer.TrySetResult(decision)) return ApprovalAnswerOutcome.Unknown;
         _logger.LogInformation("Claude approval {Id} answered {Decision} from {Device}", id, decision, deviceName);
         return ApprovalAnswerOutcome.Accepted;
     }
