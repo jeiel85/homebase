@@ -84,7 +84,7 @@ class PushReceiver : BroadcastReceiver() {
             Log.w(TAG, "dropped an unreadable push: ${e.message}")
             return
         }
-        if (PcStore(context).get(message.pcId) == null) {
+        val pc = PcStore(context).get(message.pcId) ?: run {
             Log.i(TAG, "dropped a push from an unpaired PC")
             return
         }
@@ -99,7 +99,8 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a relayed notification already shown")
             return
         }
-        val shown = PushNotifier.show(context, message)
+        // Shown under the user's alias for the PC; the history keeps what the PC sent and maps it when drawn.
+        val shown = PushNotifier.show(context, message.copy(pcName = pc.displayName))
         // The notification center keeps it even when Android blocked the notification (DECISIONS M-31).
         try {
             PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown))

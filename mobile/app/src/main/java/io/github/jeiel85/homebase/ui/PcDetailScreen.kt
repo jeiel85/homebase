@@ -115,8 +115,9 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
     val hb = Hb.colors
     Column(Modifier.fillMaxSize().background(hb.background)) {
         ConsoleBar(
-            title = pc.name,
+            title = pc.displayName,
             onBack = onBack,
+            eyebrow = pc.alias?.let { pc.name },
             status = { LiveStatus(state) },
         )
         when (val s = state) {

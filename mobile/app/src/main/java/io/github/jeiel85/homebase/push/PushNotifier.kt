@@ -70,6 +70,17 @@ object PushNotifier {
         }
     }
 
+    /**
+     * Renames a PC's channel group in Android's notification settings after the user changed its alias.
+     * Nothing to do before the PC's first notification: the group is created, with the alias, then.
+     */
+    fun renamePc(context: Context, pcId: String, displayName: String) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (nm.notificationChannelGroups.any { it.id == groupId(pcId) }) {
+            nm.createNotificationChannelGroup(NotificationChannelGroup(groupId(pcId), displayName))
+        }
+    }
+
     /** Removes a PC's channels when it is deleted from the app. */
     fun forgetPc(context: Context, pcId: String) {
         if (Build.VERSION.SDK_INT < 26) return
