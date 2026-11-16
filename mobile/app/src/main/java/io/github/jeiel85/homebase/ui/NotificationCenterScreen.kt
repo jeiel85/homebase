@@ -22,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -53,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.push.HistoryEntry
+import io.github.jeiel85.homebase.push.NotificationPriority
+import io.github.jeiel85.homebase.push.NotificationRuleStore
 import io.github.jeiel85.homebase.push.PushHistory
 import io.github.jeiel85.homebase.push.PushHistoryRules
 import io.github.jeiel85.homebase.push.PushNotifier
@@ -87,6 +91,9 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     var groupFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var pcFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    // The one bundle opened to its entries (DECISIONS M-37); bundles follow the priority settings.
+    var openStack by rememberSaveable { mutableStateOf<String?>(null) }
+    val rules = remember { NotificationRuleStore(context).rules() }
     var confirmClear by remember { mutableStateOf(false) }
     val pushOn = remember { PushState(context).endpoint != null }
     // Paired PCs; an entry is drawn under the PC's alias (M-36), else the name it was sent with.
@@ -110,7 +117,11 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     }
     val zone = remember { ZoneId.systemDefault() }
     val now = remember(entries) { System.currentTimeMillis() }
-    val byDay = remember(shown, now) { shown.groupBy { PushHistoryRules.dayOf(it.receivedAt, zone) }.toList() }
+    val byDay = remember(shown, now) {
+        shown.groupBy { PushHistoryRules.dayOf(it.receivedAt, zone) }.toList().map { (day, dayEntries) ->
+            Triple(day, dayEntries, PushHistoryRules.stack(dayEntries) { rules.resolve(it.category, it.source).bundle })
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(hb.background)) {
         ConsoleBar(
@@ -160,29 +171,51 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                     )
                 }
             }
-            byDay.forEach { (day, dayEntries) ->
+            fun isUnread(e: HistoryEntry) = seenBefore.let { it != null && e.receivedAt > it }
+            byDay.forEach { (day, dayEntries, rows) ->
                 item(key = "day:$day") {
                     SectionLabel(
                         PushHistoryRules.dayLabel(dayEntries.first().receivedAt, now, zone),
                         trailing = "${dayEntries.size}건",
                     )
                 }
-                items(dayEntries, key = { it.key }) { e ->
-                    HistoryCard(
-                        entry = e,
-                        unread = seenBefore.let { it != null && e.receivedAt > it },
-                        expanded = expanded == e.key,
-                        pcName = nameOf(e.pcId, e.pcName),
-                        canOpenPc = e.pcId in paired,
-                        onToggle = { expanded = if (expanded == e.key) null else e.key },
-                        onOpenPc = { onOpenPc(e.pcId) },
-                        onDelete = {
-                            PushHistory.remove(context, e)
-                            if (expanded == e.key) expanded = null
-                        },
-                        zone = zone,
-                    )
-                    Spacer(Modifier.height(10.dp))
+                rows.forEach { row ->
+                    val stackKey = "stack:$day:${row.first().bundleKey}"
+                    val open = row.size == 1 || openStack == stackKey
+                    if (row.size > 1) {
+                        item(key = stackKey) {
+                            StackCard(
+                                entries = row,
+                                unread = row.any(::isUnread),
+                                open = open,
+                                pcName = nameOf(row.first().pcId, row.first().pcName),
+                                onToggle = { openStack = if (open) null else stackKey },
+                                zone = zone,
+                            )
+                            Spacer(Modifier.height(if (open) 6.dp else 10.dp))
+                        }
+                    }
+                    if (open) {
+                        items(row, key = { it.key }) { e ->
+                            HistoryCard(
+                                entry = e,
+                                unread = isUnread(e),
+                                expanded = expanded == e.key,
+                                pcName = nameOf(e.pcId, e.pcName),
+                                canOpenPc = e.pcId in paired,
+                                onToggle = { expanded = if (expanded == e.key) null else e.key },
+                                onOpenPc = { onOpenPc(e.pcId) },
+                                onDelete = {
+                                    PushHistory.remove(context, e)
+                                    if (expanded == e.key) expanded = null
+                                },
+                                zone = zone,
+                                // Entries of an opened bundle sit indented under it.
+                                modifier = if (row.size > 1) Modifier.padding(start = 14.dp) else Modifier,
+                            )
+                            Spacer(Modifier.height(if (row.size > 1 && e !== row.last()) 6.dp else 10.dp))
+                        }
+                    }
                 }
             }
             if (entries.isNotEmpty()) {
@@ -255,11 +288,15 @@ private fun HistoryCard(
     onOpenPc: () -> Unit,
     onDelete: () -> Unit,
     zone: ZoneId,
+    modifier: Modifier = Modifier,
 ) {
     val hb = Hb.colors
     val time = remember(entry.receivedAt) { TIME.format(Instant.ofEpochMilli(entry.receivedAt).atZone(zone)) }
-    val source = if (entry.category == "windows-toast") entry.source else PushNotifier.CATEGORY_LABELS[entry.source] ?: entry.source
+    val source = sourceLabel(entry)
+    // The header line already names the source; the PC sends titles as "카카오톡: 홍길동", so drop the repeat.
+    val title = if (expanded) entry.title else entry.title.removePrefix("${entry.source}: ").ifBlank { entry.title }
     Plate(
+        modifier = modifier,
         rail = unread,
         onClick = onToggle,
         onClickLabel = if (expanded) "접기" else "펼치기",
@@ -284,11 +321,12 @@ private fun HistoryCard(
                 Spacer(Modifier.width(8.dp))
                 Text(time, style = HbType.readout.copy(fontSize = 12.sp), color = hb.inkSoft)
             }
+            // Collapsed cards stay short (one title line, two body lines) so a busy day doesn't scroll forever.
             Text(
-                entry.title,
+                title,
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                 color = hb.ink,
-                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                maxLines = if (expanded) Int.MAX_VALUE else 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp),
             )
@@ -297,7 +335,7 @@ private fun HistoryCard(
                     it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = hb.inkSoft,
-                    maxLines = if (expanded) Int.MAX_VALUE else 3,
+                    maxLines = if (expanded) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -310,7 +348,14 @@ private fun HistoryCard(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            if (!entry.shown) {
+            if (entry.quiet) {
+                Text(
+                    "알림 우선순위가 '센터에만'이라 알림 창에는 띄우지 않았습니다",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = hb.inkSoft,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            } else if (!entry.shown) {
                 Text(
                     "Android 알림이 꺼져 있어 알림 창에는 뜨지 않았습니다",
                     style = MaterialTheme.typography.bodySmall,
@@ -329,6 +374,93 @@ private fun HistoryCard(
                     if (canOpenPc) TextButton(onClick = onOpenPc) { Text("PC 열기") }
                     TextButton(onClick = onDelete) { Text("삭제") }
                 }
+            }
+        }
+    }
+}
+
+/** An app for forwarded notifications, a Korean label for alert kinds. */
+private fun sourceLabel(entry: HistoryEntry): String =
+    if (NotificationPriority.hasApps(entry.category)) entry.source else PushNotifier.CATEGORY_LABELS[entry.source] ?: entry.source
+
+/** Entries a closed bundle previews, one line each. */
+private const val STACK_PREVIEW = 3
+
+/**
+ * Same-source entries of one day folded into one card (DECISIONS M-37): the newest few as one line
+ * each and how many there are. Tapping it lists them all, indented, below it.
+ */
+@Composable
+private fun StackCard(
+    entries: List<HistoryEntry>,
+    unread: Boolean,
+    open: Boolean,
+    pcName: String,
+    onToggle: () -> Unit,
+    zone: ZoneId,
+) {
+    val hb = Hb.colors
+    val newest = entries.first()
+    val time = remember(newest.receivedAt) { TIME.format(Instant.ofEpochMilli(newest.receivedAt).atZone(zone)) }
+    val source = sourceLabel(newest)
+    val kind = PushHistoryRules.categoryLabel(newest.category)
+    Plate(
+        rail = unread,
+        onClick = onToggle,
+        onClickLabel = if (open) "묶음 접기" else "묶음 펼치기",
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Tag(
+                    kind,
+                    background = if (unread) hb.accent else hb.slabRaised,
+                    foreground = if (unread) Brand.Carbon else hb.onSlab,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (source == kind) pcName else "$pcName · $source",
+                    style = HbType.label,
+                    color = hb.inkSoft,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(time, style = HbType.readout.copy(fontSize = 12.sp), color = hb.inkSoft)
+            }
+            if (!open) {
+                entries.take(STACK_PREVIEW).forEachIndexed { i, e ->
+                    Text(
+                        NotificationPriority.shortLine(e.title, e.body, e.source),
+                        style = if (i == 0) {
+                            MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        } else {
+                            MaterialTheme.typography.bodyMedium
+                        },
+                        color = if (i == 0) hb.ink else hb.inkSoft,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = if (i == 0) 6.dp else 2.dp),
+                    )
+                }
+            }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when {
+                        open -> "${entries.size}건 · 접기"
+                        entries.size > STACK_PREVIEW -> "외 ${entries.size - STACK_PREVIEW}건 · 모두 ${entries.size}건 보기"
+                        else -> "${entries.size}건 모두 보기"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = hb.ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = hb.inkSoft,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

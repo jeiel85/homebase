@@ -24,6 +24,7 @@ import io.github.jeiel85.homebase.net.PairingLink
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.NotificationCenterScreen
+import io.github.jeiel85.homebase.ui.NotificationPriorityScreen
 import io.github.jeiel85.homebase.ui.PairScreen
 import io.github.jeiel85.homebase.ui.PcDetailScreen
 import io.github.jeiel85.homebase.ui.PcListScreen
@@ -39,6 +40,9 @@ class MainActivity : ComponentActivity() {
 
     /** Bumped when an update notification is tapped while the app is already open: back to the list, where the banner opens the dialog. */
     private var updateTapped by mutableIntStateOf(0)
+
+    /** Where a push notification tapped while the app is already open leads (a PC, or the notification center). */
+    private var tappedRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Every screen starts with the carbon console bar, so the status bar always gets light
@@ -68,17 +72,25 @@ class MainActivity : ComponentActivity() {
             }
             HomebaseTheme(dark = dark) {
                 Surface {
-                    // "" = list, "+" = pair, [ROUTE_SETTINGS] = settings, [ROUTE_NOTIFICATIONS] = notification center, otherwise a pcId.
-                    // A tapped push notification opens its PC.
-                    var route by rememberSaveable { mutableStateOf(intent?.getStringExtra(PushNotifier.EXTRA_PC_ID) ?: "") }
+                    // "" = list, "+" = pair, [ROUTE_SETTINGS] = settings, [ROUTE_PRIORITY] = notification priorities,
+                    // [ROUTE_NOTIFICATIONS] = notification center, otherwise a pcId.
+                    // A tapped push notification opens its PC; a tapped bundle summary, the notification center.
+                    var route by rememberSaveable { mutableStateOf(intent.pushRoute() ?: "") }
                     val pc = remember(route) { route.takeIf { it.length > 1 }?.let(store::get) }
-                    BackHandler(enabled = route.isNotEmpty()) { route = ""; pairingLink = null }
+                    // The priorities screen is opened from settings, so back returns there.
+                    BackHandler(enabled = route.isNotEmpty()) { route = if (route == ROUTE_PRIORITY) ROUTE_SETTINGS else ""; pairingLink = null }
                     LaunchedEffect(pairingLink) { if (pairingLink != null) route = "+" }
                     LaunchedEffect(updateTapped) { if (updateTapped > 0) route = "" }
+                    LaunchedEffect(tappedRoute) { tappedRoute?.let { route = it; tappedRoute = null } }
                     // Turns push on after the first pairing, and asks for the notification permission — on any screen but pairing.
                     if (route != "+") PushAutoSetup(store)
                     when {
-                        route == ROUTE_SETTINGS -> SettingsScreen(store, api, onBack = { route = "" })
+                        route == ROUTE_SETTINGS -> SettingsScreen(
+                            store, api,
+                            onBack = { route = "" },
+                            onOpenPriority = { route = ROUTE_PRIORITY },
+                        )
+                        route == ROUTE_PRIORITY -> NotificationPriorityScreen(onBack = { route = ROUTE_SETTINGS })
                         route == ROUTE_NOTIFICATIONS -> NotificationCenterScreen(
                             store,
                             onBack = { route = "" },
@@ -116,13 +128,24 @@ class MainActivity : ComponentActivity() {
             UpdateSurface.requestOpen()
             updateTapped++
         }
+        intent.pushRoute()?.let { tappedRoute = it }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // A bundle whose notifications were opened or cleared leaves its summary behind (DECISIONS M-37).
+        // Again a moment later: the notification tapped to get here is cancelled after the app opens.
+        PushNotifier.tidy(this)
+        window.decorView.postDelayed({ PushNotifier.tidy(this) }, TIDY_DELAY_MS)
     }
 
     private companion object {
         const val KEY_PAIRING_LINK = "pairingLink"
         /** Checked before the pcId branch, so it never reaches the PC store. */
         const val ROUTE_SETTINGS = "app:settings"
+        const val ROUTE_PRIORITY = "app:priority"
         const val ROUTE_NOTIFICATIONS = "app:notifications"
+        const val TIDY_DELAY_MS = 1_500L
         // androidx.activity's default navigation-bar scrims for gesture-less (3-button) navigation.
         val NAV_SCRIM_LIGHT = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
         val NAV_SCRIM_DARK = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
@@ -130,4 +153,10 @@ class MainActivity : ComponentActivity() {
 
     private fun Intent?.pairingLink(): String? =
         this?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString?.takeIf(PairingLink::isLink)
+
+    /** The screen a tapped push notification opens: the notification center for a bundle summary, else its PC. */
+    private fun Intent?.pushRoute(): String? {
+        val tapped = this ?: return null
+        return if (tapped.action == PushNotifier.ACTION_OPEN_CENTER) ROUTE_NOTIFICATIONS else tapped.getStringExtra(PushNotifier.EXTRA_PC_ID)
+    }
 }

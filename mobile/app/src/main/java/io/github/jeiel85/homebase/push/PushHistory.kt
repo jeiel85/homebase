@@ -33,12 +33,17 @@ data class HistoryEntry(
     val receivedAt: Long,
     /** Whether it was also posted as an Android notification (false when notifications were blocked). */
     val shown: Boolean,
+    /** Kept out of the shade on purpose: its priority was "센터에만" (DECISIONS M-37). */
+    val quiet: Boolean = false,
 ) {
     /** Unique enough for list keys: the same id can arrive twice (e.g. a PC re-sending after a restart). */
     val key: String get() = "$pcId/$id/$receivedAt"
 
+    /** What it is bundled with in the notification center, as in the shade (M-37). */
+    val bundleKey: String get() = NotificationPriority.bundleKey(category, pcId, source)
+
     companion object {
-        fun of(message: PushMessage, receivedAt: Long, shown: Boolean) = HistoryEntry(
+        fun of(message: PushMessage, receivedAt: Long, shown: Boolean, quiet: Boolean = false) = HistoryEntry(
             id = message.id,
             pcId = message.pcId,
             pcName = message.pcName,
@@ -50,6 +55,7 @@ data class HistoryEntry(
             sentAt = runCatching { OffsetDateTime.parse(message.ts).toInstant().toEpochMilli() }.getOrDefault(receivedAt),
             receivedAt = receivedAt,
             shown = shown,
+            quiet = quiet,
         )
     }
 }
@@ -100,6 +106,20 @@ object PushHistoryRules {
 
     fun dayOf(at: Long, zone: ZoneId): LocalDate = Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
 
+    /**
+     * The rows of one day (DECISIONS M-37): entries whose source is bundled ([bundles]) are stacked
+     * with the others of the same source, at the place of the newest; the rest stay one per row.
+     * [dayEntries] and the result are newest first.
+     */
+    fun stack(dayEntries: List<HistoryEntry>, bundles: (HistoryEntry) -> Boolean): List<List<HistoryEntry>> {
+        val rows = LinkedHashMap<String, MutableList<HistoryEntry>>()
+        dayEntries.forEachIndexed { i, e ->
+            val key = if (bundles(e)) "b:${e.bundleKey}" else "s:$i"
+            rows.getOrPut(key) { mutableListOf() } += e
+        }
+        return rows.values.toList()
+    }
+
     fun toJson(entries: List<HistoryEntry>): String {
         val array = JSONArray()
         entries.forEach { e ->
@@ -115,7 +135,8 @@ object PushHistoryRules {
                     .put("count", e.count)
                     .put("sentAt", e.sentAt)
                     .put("receivedAt", e.receivedAt)
-                    .put("shown", e.shown),
+                    .put("shown", e.shown)
+                    .put("quiet", e.quiet),
             )
         }
         return JSONObject().put("v", FORMAT).put("entries", array).toString()
@@ -141,6 +162,8 @@ object PushHistoryRules {
                     sentAt = o.getLong("sentAt"),
                     receivedAt = o.getLong("receivedAt"),
                     shown = o.optBoolean("shown", true),
+                    // Absent in entries from before M-37.
+                    quiet = o.optBoolean("quiet", false),
                 )
             } catch (_: Exception) {
                 null

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -56,6 +57,41 @@ class PushHistoryRulesTest {
         assertEquals(list, back)
         assertNull(back[1].body)
         assertFalse(back[0].shown)
+    }
+
+    @Test
+    fun quietRoundTripsAndOldEntriesReadAsNotQuiet() {
+        val list = listOf(entry("q", 2_000).copy(shown = false, quiet = true), entry("n", 1_000))
+        assertEquals(list, PushHistoryRules.fromJson(PushHistoryRules.toJson(list)))
+        // Entries written before M-37 have no "quiet".
+        val root = JSONObject(PushHistoryRules.toJson(listOf(entry("o", 1_000))))
+        root.getJSONArray("entries").getJSONObject(0).remove("quiet")
+        val old = root.toString()
+        assertFalse(old.contains("quiet"))
+        assertFalse(PushHistoryRules.fromJson(old).single().quiet)
+    }
+
+    @Test
+    fun stackFoldsSameSourceEntriesAtTheNewest() {
+        fun e(id: String, at: Long, source: String, pc: String = "pc1", category: String = "windows-toast") =
+            entry(id, at, category).copy(source = source, pcId = pc)
+        val day = listOf(
+            e("k3", 900, "KakaoTalk"),
+            e("o1", 800, "Outlook"),
+            e("k2", 700, "KakaoTalk"),
+            e("k-other-pc", 650, "KakaoTalk", pc = "pc2"),
+            e("k1", 600, "KakaoTalk"),
+        )
+        val rows = PushHistoryRules.stack(day) { true }
+        assertEquals(listOf(listOf("k3", "k2", "k1"), listOf("o1"), listOf("k-other-pc")), rows.map { r -> r.map { it.id } })
+        // Not bundled: one row per entry, in order.
+        assertEquals(day.map { listOf(it.id) }, PushHistoryRules.stack(day) { false }.map { r -> r.map { it.id } })
+        // Relayed notifications stack across the PCs that relayed them.
+        val relayed = listOf(
+            e("a", 3, "Galaxy · 카카오톡", "pc1", NotificationGroups.DEVICE),
+            e("b", 2, "Galaxy · 카카오톡", "pc2", NotificationGroups.DEVICE),
+        )
+        assertEquals(1, PushHistoryRules.stack(relayed) { true }.size)
     }
 
     @Test

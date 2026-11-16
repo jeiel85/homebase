@@ -64,7 +64,7 @@ internal object Links {
  * "check now" button here.
  */
 @Composable
-fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
+fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit, onOpenPriority: () -> Unit) {
     val hb = Hb.colors
     val context = LocalContext.current
     val pcCount = remember { store.all().size }
@@ -82,6 +82,8 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
                     PushSettings(store, api, pcCount)
                     Divider()
                     NotificationCategories(store, api)
+                    Divider()
+                    LinkRow("알림 우선순위", "팝업·소리·진동과 묶어 보기를 종류별·앱별로 정합니다", onOpenPriority)
                 }
             }
             item {
