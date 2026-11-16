@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.jeiel85.homebase.data.PcMark
 
 private val PlateShape = RoundedCornerShape(8.dp)
 
@@ -158,6 +160,26 @@ fun Tag(text: String, background: Color, foreground: Color, modifier: Modifier =
         maxLines = 1,
         modifier = modifier.clip(RoundedCornerShape(3.dp)).background(background).padding(horizontal = 6.dp, vertical = 2.dp),
     )
+}
+
+/**
+ * A PC's (or relayed device's) badge: its colour with the first letter of its name, the same one its
+ * Android notifications carry, so a notification can be matched to its PC at a glance (DECISIONS M-38).
+ * Decorative: the name always sits next to it, so screen readers skip it.
+ */
+@Composable
+fun PcBadge(mark: PcMark, modifier: Modifier = Modifier, size: Dp = 20.dp) {
+    Box(
+        modifier.size(size).clip(CircleShape).background(Color(mark.argb)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            mark.letter,
+            style = HbType.label.copy(fontSize = (size.value * 0.5f).sp, letterSpacing = 0.sp, fontWeight = FontWeight.Bold),
+            color = Color.White,
+            maxLines = 1,
+        )
+    }
 }
 
 /** True when the user turned animations off (Developer options / accessibility "Remove animations"). */

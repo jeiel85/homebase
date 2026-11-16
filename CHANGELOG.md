@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.31.0 — Tell PCs apart in notifications
+
+### Changed
+- **Each PC has a colour badge.** Every paired PC gets its own colour and the first letter of its
+  name (or alias), shown as a round badge on its Android notifications, before its name on the PC
+  list and on its notification center cards, so a notification can be matched to its PC at a glance.
+  Colours are picked so two PCs don't share one (up to 8 PCs) and stay put when PCs are added,
+  re-paired or removed. Notifications relayed from your other devices carry that device's badge
+  (DECISIONS M-38).
+- **Notifications read sender first.** The small header line now names the PC (or the device a
+  relayed notification came from) and then the app or alert kind — "작업실 · 카카오톡",
+  "작업실 · 프로세스 감시" — and the bold title is just what the notification says ("홍길동" rather than
+  "카카오톡: 홍길동"). Bundles name the PC in the header and the app in the title.
+- In the notification center, a relayed notification's header names the device first and the PC it
+  came through last ("Galaxy S24 · 카카오톡 · 작업실 경유").
+
+### Known limits
+- When Android itself folds four or more Homebase notifications into one collapsed entry, the
+  collapsed lines show only titles and text; expand it to see each one's badge. Bundles from one app
+  on one PC keep the PC in their header.
+
 ## v0.30.0 — Bundled notifications and notification priorities
 
 ### Added

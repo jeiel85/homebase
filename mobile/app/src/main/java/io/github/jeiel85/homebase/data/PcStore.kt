@@ -20,9 +20,14 @@ data class PcEntry(
     val pushedEndpointsAt: Long? = null,
     /** The user's own name for this PC, kept on this phone only (DECISIONS M-36); null = the PC's name. */
     val alias: String? = null,
+    /** Index into [PcMarks.PALETTE] of this PC's badge colour, fixed once given (DECISIONS M-38). */
+    val color: Int? = null,
 ) {
     /** What the app shows for this PC: the alias when set, else the name the PC reported. */
     val displayName: String get() = alias ?: name
+
+    /** The badge on this PC's notifications and card: its colour and the first letter of [displayName]. */
+    val mark: PcMark get() = PcMark(PcMarks.letter(displayName), color ?: PcMarks.slot(pcId))
 
     /**
      * The name for something the PC sent now under [reported] (a push, a history entry, the hub's
@@ -44,12 +49,16 @@ class PcStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
     private val cipher = KeystoreCipher(KEY_ALIAS)
 
+    /**
+     * Every PC has a badge colour here: entries stored before colours existed get theirs in list
+     * order, and keep it from the next save on (every change saves a list read through this).
+     */
     @Synchronized
     fun all(): List<PcEntry> {
         val raw = prefs.getString(KEY_PCS, null) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
-            (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(::fromJson) }
+            PcMarks.withColors((0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(::fromJson) })
         } catch (_: Exception) {
             emptyList()
         }
@@ -118,6 +127,7 @@ class PcStore(context: Context) {
         .put("lastGood", pc.lastGood)
         .apply { pc.pushedEndpointsAt?.let { put("pushedEndpointsAt", it) } }
         .apply { pc.alias?.let { put("alias", it) } }
+        .apply { pc.color?.let { put("color", it) } }
 
     private fun fromJson(o: JSONObject): PcEntry? {
         val token = decrypt(o.optString("token")) ?: return null
@@ -131,6 +141,7 @@ class PcStore(context: Context) {
             lastGood = lastGood,
             pushedEndpointsAt = if (o.has("pushedEndpointsAt")) o.optLong("pushedEndpointsAt") else null,
             alias = normalizeAlias(o.optString("alias"), o.optString("name")),
+            color = PcMarks.validColor(if (o.has("color")) o.optInt("color", -1) else null),
         )
     }
 
@@ -159,10 +170,14 @@ class PcStore(context: Context) {
             return s.substring(0, s.offsetByCodePoints(0, ALIAS_MAX)).trimEnd()
         }
 
-        /** [list] with [pc] added or replacing the same PC; a re-paired entry (no alias) keeps the old alias. */
+        /**
+         * [list] with [pc] added or replacing the same PC. A re-paired entry keeps the old alias and
+         * badge colour; a new PC gets a colour no other PC has (while there are free ones).
+         */
         fun upserted(list: List<PcEntry>, pc: PcEntry): List<PcEntry> {
-            val kept = pc.alias ?: list.firstOrNull { it.pcId == pc.pcId }?.alias
-            return list.filterNot { it.pcId == pc.pcId } + pc.copy(alias = kept)
+            val old = list.firstOrNull { it.pcId == pc.pcId }
+            val kept = pc.copy(alias = pc.alias ?: old?.alias, color = pc.color ?: old?.color)
+            return PcMarks.withColors(list.filterNot { it.pcId == pc.pcId } + kept)
         }
 
         /** Whether a pushed path list should replace [pc]'s: non-empty and newer than the last push applied. */
