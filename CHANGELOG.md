@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.36.0 — Answer Claude Code's permission prompts from your phone
+
+### Added
+- **Allow / Deny from the phone.** Turn on Settings › Phone › "AI 세션 승인" on the PC, and while
+  you are away from it (no keyboard or mouse for a minute), Claude Code's permission prompts — run a
+  command, edit a file, fetch a page — reach your phone as a notification with the command or file
+  it is about and **허용 (Allow)** / **거부 (Deny)** buttons. The buttons need the phone unlocked. Come
+  back to the PC, or leave it unanswered for 10 minutes, and Claude Code simply asks on the PC as
+  usual. Off by default; turning it on adds one hook to your `~/.claude/settings.json` (the previous
+  file is kept as `settings.json.homebase.bak`) and turning it off removes just that hook
+  (DECISIONS M-48).
+- A new notification kind, "AI 세션 권한 요청" (pops up by default), can be reprioritised or turned off
+  like the others. While a prompt was just sent with buttons, the plain "waiting for input" alert for
+  that session is skipped.
+
 ## v0.35.0 — Device group: connect once, connected everywhere
 
 ### Added

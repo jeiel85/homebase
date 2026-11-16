@@ -101,7 +101,7 @@ public partial class PhoneConnectPanel : UserControl
         {
             StatusText.Text = "휴대폰 연결이 꺼져 있습니다. 쓸 경로를 고른 뒤 ENABLE을 누르세요.";
             IntroCard.Visibility = Visibility.Visible;
-            PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = Visibility.Collapsed;
+            PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = ApprovalPanel.Visibility = Visibility.Collapsed;
             ApplyButtonText.Text = "ENABLE";
             return;
         }
@@ -129,6 +129,7 @@ public partial class PhoneConnectPanel : UserControl
         PathsPanel.Visibility = Visibility.Visible;
         DevicesPanel.Visibility = Visibility.Visible;
         LinkPanel.Visibility = Visibility.Visible;
+        ShowApprovals();
         ShowPaths(status);
         if (_inView) _statusTimer.Start();
         await LoadDevicesAsync();
@@ -403,6 +404,36 @@ public partial class PhoneConnectPanel : UserControl
         {
             // Clipboard busy: leave it — the code has expired and can't pair any more anyway.
         }
+    }
+
+    private bool _approvalLoading;
+
+    /// <summary>The phone-approvals toggle shows whether our hook is in ~/.claude/settings.json (M-48).</summary>
+    private void ShowApprovals()
+    {
+        _approvalLoading = true;
+        ApprovalCheck.IsChecked = ClaudeHookSetup.IsInstalled();
+        _approvalLoading = false;
+        ApprovalPanel.Visibility = Visibility.Visible;
+    }
+
+    private void ApprovalCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_approvalLoading) return;
+        var on = ApprovalCheck.IsChecked == true;
+        var error = on ? ClaudeHookSetup.Enable() : ClaudeHookSetup.Disable();
+        ApprovalResultText.Visibility = Visibility.Visible;
+        if (error is null)
+        {
+            ApprovalResultText.Text = on
+                ? "켰습니다. 새로 시작하는 Claude Code 세션부터 적용됩니다(열려 있던 세션은 다시 열어야 할 수 있습니다)."
+                : "껐습니다. Claude Code가 PC에서만 묻습니다.";
+            return;
+        }
+        ApprovalResultText.Text = (on ? "켜지 못했습니다: " : "끄지 못했습니다: ") + error;
+        _approvalLoading = true;
+        ApprovalCheck.IsChecked = ClaudeHookSetup.IsInstalled();
+        _approvalLoading = false;
     }
 
     private async void Link_Click(object sender, RoutedEventArgs e)

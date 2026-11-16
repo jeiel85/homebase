@@ -72,6 +72,22 @@ internal sealed class MobileBridgeClient : IDisposable
         WatchingChanged?.Invoke(on);
     }
 
+    /// <summary>
+    /// The title the work tab shows for Claude Code session <paramref name="sessionId"/>, from the last
+    /// pass of the session watcher; null when it has not seen that session.
+    /// </summary>
+    public string? SessionTitle(string sessionId) =>
+        _claudeCache.FirstOrDefault(c => string.Equals(c.Agent?.SessionId, sessionId, StringComparison.OrdinalIgnoreCase))?.Title;
+
+    /// <summary>Sends a message that expects no response.</summary>
+    public async Task SendPushAsync(string op, object? payload, CancellationToken ct = default)
+    {
+        var pipe = _pipe;
+        if (pipe is null || !pipe.IsConnected)
+            throw new IOException("Homebase Agent is not reachable (mobile bridge not connected).");
+        await SendAsync(pipe, MobileBridge.Message(op, payload), ct);
+    }
+
     /// <summary>Sends a request and waits for the Agent's response (10 s timeout unless given).</summary>
     public async Task<JsonObject> RequestAsync(string op, object? payload = null, CancellationToken ct = default, TimeSpan? timeout = null)
     {

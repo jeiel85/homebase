@@ -256,7 +256,7 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         _logger.LogWarning("Push endpoint of {Device} is gone; dropped the subscription until the app registers again", target.DeviceName);
     }
 
-    private PushMessage ToMessage(OutboundNotification n)
+    internal PushMessage ToMessage(OutboundNotification n)
     {
         string? Meta(string key) => n.Metadata is not null && n.Metadata.TryGetValue(key, out var v) ? v : null;
         var count = int.TryParse(Meta("count"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c) && c > 0 ? c : 1;
@@ -277,7 +277,11 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
             string.IsNullOrEmpty(n.Body) ? null : n.Body,
             Meta("sourceApp") ?? n.Category,
             count,
-            n.CreatedAt);
+            n.CreatedAt,
+            Meta(ClaudeHook.MetaApprovalId) is { } approvalId
+            && DateTimeOffset.TryParse(Meta(ClaudeHook.MetaApprovalExpires), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var expires)
+                ? new PushApproval(approvalId, expires)
+                : null);
     }
 
     /// <summary>Forwarded toasts go stale quickly; alerts stay relevant for a day.</summary>

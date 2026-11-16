@@ -89,6 +89,12 @@
             android:name=".push.NotificationDismissReceiver"
             android:exported="false" />
 
+        <!-- Allow / Deny on a Claude Code permission prompt (DECISIONS M-48). Only this app's own
+             notification actions reach it. -->
+        <receiver
+            android:name=".push.ApprovalActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".push.RaiseToForegroundService"
             android:exported="true">

@@ -49,6 +49,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly CloudflareTunnel? _tunnel;
     private readonly DeviceHub? _deviceHub;
     private DeviceGroupService? _group;
+    private readonly ApprovalBroker? _approvals;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -69,9 +70,11 @@ public sealed class MobileApiServer : BackgroundService
         ILogger<MobileApiServer> logger,
         CloudflareTunnel? tunnel = null,
         X509Certificate2? lanCertificate = null,
-        DeviceHub? deviceHub = null)
+        DeviceHub? deviceHub = null,
+        ApprovalBroker? approvals = null)
     {
         _deviceHub = deviceHub;
+        _approvals = approvals;
         _hub = hub;
         _pairing = pairing;
         _devices = devices;
@@ -579,6 +582,23 @@ public sealed class MobileApiServer : BackgroundService
                 return (200, Json(new LiveShareResponse(MobileProtocol.Schema, _deviceHub.AcceptLive(device, snapshot))));
             }
 
+            case ("POST", "/api/v1/approval"):
+            {
+                // A phone's Allow / Deny for a Claude Code permission prompt (M-48).
+                if (_approvals is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                ApprovalAnswer? answer;
+                try { answer = JsonSerializer.Deserialize<ApprovalAnswer>(body!, MobileProtocol.Json); }
+                catch (JsonException) { answer = null; }
+                return _approvals.Answer(answer?.Id, answer?.Decision, device.Name) switch
+                {
+                    ApprovalAnswerOutcome.Accepted => (200, "{\"schema\":1,\"accepted\":true}"),
+                    ApprovalAnswerOutcome.Unknown => (410, Error("approval_gone", "This request was already answered, withdrawn or timed out.")),
+                    _ => (400, Error("bad_request", "Invalid approval answer.")),
+                };
+            }
+
             case ("DELETE", "/api/v1/device"):
             {
                 if (_deviceHub is null) return (404, Error("not_found", "Not found."));
@@ -589,7 +609,7 @@ public sealed class MobileApiServer : BackgroundService
 
             case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"
                 or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"
-                or LiveSharePath):
+                or LiveSharePath or "/api/v1/approval"):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

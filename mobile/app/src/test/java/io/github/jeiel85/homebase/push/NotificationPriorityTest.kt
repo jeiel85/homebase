@@ -79,6 +79,8 @@ class NotificationPriorityTest {
         // DECISIONS M-45: waiting blocks the work until the user answers; done can wait for a look.
         assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("agent-waiting", "Claude Code", NotificationRules())))
         assertEquals(AlertLevel.NORMAL, AlertLevel.of(NotificationPriority.resolve("agent-done", "Codex", NotificationRules())))
+        // DECISIONS M-48: a permission prompt holds the session until it is answered.
+        assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("agent-approval", "Claude Code", NotificationRules())))
     }
 
     @Test

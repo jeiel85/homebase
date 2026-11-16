@@ -9,7 +9,7 @@ class NotificationGroupsTest {
     /** The `category` values in docs/MOBILE_PROTOCOL.md, minus the Tray test. */
     private val protocolCategories = setOf(
         "windows-toast", "process_watch", "service_watch", "http_monitor", "port_monitor", "event_log", "advisor", "boot",
-        "device-notification", "agent-waiting", "agent-done",
+        "device-notification", "agent-waiting", "agent-done", "agent-approval",
     )
 
     @Test

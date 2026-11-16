@@ -126,6 +126,23 @@
       </ItemsControl>
     </StackPanel>
 
+    <!-- Claude Code permission prompts answered from the phone (DECISIONS M-48); off by default. -->
+    <StackPanel x:Name="ApprovalPanel" Visibility="Collapsed">
+      <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="AI 세션 승인"/>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <CheckBox x:Name="ApprovalCheck" Margin="0,0,0,2" Checked="ApprovalCheck_Changed" Unchecked="ApprovalCheck_Changed">
+            <TextBlock Style="{StaticResource Type.Body}" Text="휴대폰에서 Claude Code 권한 요청에 답하기"/>
+          </CheckBox>
+          <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="20,0,0,0"
+                     Text="PC를 1분 넘게 비운 동안 Claude Code가 명령 실행·파일 수정 같은 권한을 물으면, 휴대폰 알림의 허용/거부로 답합니다. 알림에는 실행할 명령과 파일 경로가 들어갑니다. PC 앞으로 돌아오거나 10분 안에 답이 없으면 PC에서 평소처럼 묻습니다. 켜면 이 Windows 사용자의 ~/.claude/settings.json에 훅이 추가되고(이전 파일은 settings.json.homebase.bak), 끄면 그 훅만 지웁니다."/>
+          <TextBlock x:Name="ApprovalResultText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="20,6,0,0" Visibility="Collapsed"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
     <!-- Which paths to open; shown in both states (ENABLE when off, APPLY when on) -->
     <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
       <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePathSettings}"/>

@@ -28,6 +28,9 @@ import javax.net.ssl.SSLException
 class PairException(message: String) : Exception(message)
 
 /** The PC no longer knows this phone (revoked in the Tray) — re-pair. */
+/** A call cut off by its time budget: it may or may not have reached the PC. */
+class UnconfirmedException : IOException("PC의 응답을 기다리다 시간이 다 됐습니다.")
+
 class UnauthorizedException : Exception("이 PC에서 휴대폰 연결이 해제되었습니다. 다시 페어링하세요.")
 
 /** What the detail screen shows about the live connection. */
@@ -199,19 +202,47 @@ class HomebaseApi(
             if (code in 200..299) text else null
         }
 
-    /** One authenticated call over [pc]'s paths in order; the first path that answers decides. */
+    /**
+     * Answers a Claude Code permission prompt on [pc] (DECISIONS M-48). True when the PC took it,
+     * false when the prompt is gone (answered elsewhere, withdrawn or timed out: 410) or the PC is too
+     * old to know approvals (404).
+     */
+    suspend fun answerApproval(pc: PcEntry, id: String, decision: String, budgetMillis: Long): Boolean {
+        val body = JSONObject().put("schema", 1).put("id", id).put("decision", decision).toString()
+        return authedCall(pc, "/api/v1/approval", Request.Builder().post(body.toRequestBody(JSON)), budgetMillis) { code, text ->
+            when {
+                code in 200..299 -> true
+                code == 404 || code == 410 -> false
+                else -> throw IOException(errorMessage(text) ?: "승인 응답 실패 (HTTP $code)")
+            }
+        }
+    }
+
+    /**
+     * One authenticated call over [pc]'s paths in order; the first path that answers decides.
+     * With [budgetMillis] every attempt is bounded by what is left of it (OkHttp's call timeout, which
+     * really stops a blocking call), and no further path is tried once it is spent. A call cut off by
+     * the budget may already have reached the PC, so it ends in [UnconfirmedException], not a retry.
+     */
     private suspend fun <T> authedCall(
         pc: PcEntry,
         path: String,
         builder: Request.Builder,
+        budgetMillis: Long? = null,
         handle: (code: Int, body: String?) -> T,
     ): T = withContext(Dispatchers.IO) {
+        val deadline = budgetMillis?.let { System.currentTimeMillis() + it }
         var last: Exception = IOException("no endpoints")
         for (e in pc.orderedEndpoints(networks())) {
+            val remaining = deadline?.let { it - System.currentTimeMillis() }
+            if (remaining != null && remaining <= 0) break
             val req = builder.url(e.url(path)).header("Authorization", "Bearer ${pc.token}").build()
+            val base = clientFor(e, quick)
+            val client = if (remaining != null) base.newBuilder().callTimeout(remaining, TimeUnit.MILLISECONDS).build() else base
             val res = try {
-                clientFor(e, quick).newCall(req).execute()
+                client.newCall(req).execute()
             } catch (ex: IOException) {
+                if (deadline != null && System.currentTimeMillis() >= deadline) throw UnconfirmedException()
                 last = IOException("${e.label}: ${describe(ex)}")
                 continue
             }

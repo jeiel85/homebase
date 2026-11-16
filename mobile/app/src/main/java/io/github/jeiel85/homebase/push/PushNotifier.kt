@@ -80,7 +80,8 @@ object PushNotifier {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val group = if (profile.bundle) groupKey(message) else null
+        // A permission prompt stands on its own so its Allow / Deny buttons are always in reach (M-48).
+        val group = if (profile.bundle && message.approval == null) groupKey(message) else null
         // Who sent it leads the header and the badge; the title keeps only what the notification says (M-38).
         val badge = badge(context, mark)
         val builder = NotificationCompat.Builder(context, channelId)
@@ -106,9 +107,54 @@ object PushNotifier {
                 .setDeleteIntent(dismissed(context))
         }
         val id = message.id.hashCode()
+        message.approval?.let { addApprovalActions(context, builder, message, it, id) }
         if (!post(context, null, id, builder.build())) return false
         if (group != null) updateBundle(context, group, channelId, message, id, mark, badge)
         return true
+    }
+
+    /**
+     * Allow / Deny on a Claude Code permission prompt (DECISIONS M-48). Both need the phone unlocked
+     * (Android 12+), so nobody can answer from the lock screen. The notification stays until it is
+     * answered and goes away by itself when the PC stops waiting.
+     */
+    private fun addApprovalActions(context: Context, builder: NotificationCompat.Builder, message: PushMessage, approval: PushApproval, id: Int) {
+        fun action(decision: String, label: String, request: Int): NotificationCompat.Action {
+            val intent = Intent(context, ApprovalActionReceiver::class.java)
+                .setAction(ApprovalActionReceiver.ACTION)
+                .putExtra(ApprovalActionReceiver.EXTRA_PC_ID, message.pcId)
+                .putExtra(ApprovalActionReceiver.EXTRA_APPROVAL_ID, approval.id)
+                .putExtra(ApprovalActionReceiver.EXTRA_DECISION, decision)
+                .putExtra(ApprovalActionReceiver.EXTRA_NOTIFICATION_ID, id)
+            val pending = PendingIntent.getBroadcast(
+                context, request, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            return NotificationCompat.Action.Builder(0, label, pending).setAuthenticationRequired(true).build()
+        }
+        builder.addAction(action(ApprovalActionReceiver.ALLOW, "허용", id * 2))
+            .addAction(action(ApprovalActionReceiver.DENY, "거부", id * 2 + 1))
+            .setAutoCancel(false)
+        approval.expiresAtMillis?.let { builder.setTimeoutAfter((it - System.currentTimeMillis()).coerceAtLeast(1_000)) }
+    }
+
+    /** Replaces an answered prompt's notification with what became of it; it then times out on its own. */
+    fun showApprovalResult(context: Context, id: Int, text: String) {
+        if (!canNotify(context)) return
+        val nm = context.getSystemService(NotificationManager::class.java)
+        val current = try {
+            nm.activeNotifications.firstOrNull { it.id == id && it.tag == null }?.notification
+        } catch (_: Exception) {
+            null
+        } ?: return
+        val updated = NotificationCompat.Builder(context, current)
+            .clearActions()
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setTimeoutAfter(15_000)
+            .build()
+        post(context, null, id, updated)
     }
 
     /**

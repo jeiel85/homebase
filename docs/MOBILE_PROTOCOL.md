@@ -61,6 +61,7 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | POST | `/api/v1/notifications` | `Authorization: Bearer <token>` | 202 `{schema, accepted: true}` · 400 `invalid_notification` · 401 · 503 `forwarding_off` (M-28) |
 | GET | `/api/v1/inbox?after=<seq>` | `Authorization: Bearer <token>` | 200 `{schema, next, items[]}` — 새 항목이 없으면 최대 25초 기다린다 · 401 (M-28) |
 | DELETE | `/api/v1/device` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, removed}` — 기기가 스스로 페어링을 끊는다 · 401 (M-29) |
+| POST | `/api/v1/approval` | `Authorization: Bearer <token>` | 본문 `{schema, id, decision}`(`allow`·`deny`) → 200 `{schema, accepted}`. Claude Code 권한 요청(M-48, 푸시의 `approval.id`)에 답한다. 410 `approval_gone`: 이미 답했거나 PC가 더는 기다리지 않음(다른 휴대폰이 먼저 답함, 사용자가 PC로 돌아옴, 10분 지남), 400 잘못된 본문 |
 | POST | `/api/v1/live-snapshot` | `Authorization: Bearer <token>` (PC만) | 200 `{schema, live}` · 400 `invalid_snapshot` · 401 · 403 (M-46) |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
@@ -111,7 +112,7 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
 | `schema` | 1. 다르면 앱은 버린다 |
 | `id` | 알림 id(32 hex) |
 | `pcId`, `pcName` | 보낸 PC. 앱은 페어링된 PC가 아니면 버린다 |
-| `category` | `windows-toast`, `process_watch`, `service_watch`, `http_monitor`, `port_monitor`, `event_log`, `advisor`, `boot`, `device-notification`, `agent-waiting`, `agent-done`, `test`. `agent-*`(M-45)는 AI 코딩 세션이 사용자 입력을 기다리거나 1분 넘게 하던 작업을 마쳤을 때, PC 사용자가 60초 넘게 입력이 없을 때만 온다: `title`은 세션 제목, `body`는 "입력을 기다립니다: <이유>" 또는 "작업을 마쳤습니다 (<걸린 시간> 걸림)"와 폴더 이름, `source`는 `Claude Code`·`Codex` |
+| `category` | `windows-toast`, `process_watch`, `service_watch`, `http_monitor`, `port_monitor`, `event_log`, `advisor`, `boot`, `device-notification`, `agent-waiting`, `agent-done`, `agent-approval`, `test`. `agent-approval`(M-48)은 Claude Code 권한 요청: `priority: critical`, `title`은 할 일("명령 실행", "파일 수정"), `body`는 세션 제목과 실행할 명령·파일(최대 3000자), `source`는 `Claude Code`, 그리고 `approval: {id (32 hex), expiresAt}`가 붙는다. 앱은 잠금 해제가 필요한 허용/거부 버튼을 달고 `POST /api/v1/approval`로 답한다. `agent-*`(M-45)는 AI 코딩 세션이 사용자 입력을 기다리거나 1분 넘게 하던 작업을 마쳤을 때, PC 사용자가 60초 넘게 입력이 없을 때만 온다: `title`은 세션 제목, `body`는 "입력을 기다립니다: <이유>" 또는 "작업을 마쳤습니다 (<걸린 시간> 걸림)"와 폴더 이름, `source`는 `Claude Code`·`Codex` |
 | `priority` | `info`·`warning`·`critical`·`recovery` |
 | `title`, `body?` | 표시할 텍스트(평문, HTML 아님) |
 | `source` | 알림 채널 키. Windows 알림은 원래 앱 이름, AI 세션 알림은 도구 이름, 그 밖은 `category`와 같다 |
@@ -188,5 +189,6 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
   `hubs.link {link}`(다른 PC의 페어링 링크로 연결 → `{linked, pcName?, error?, message?}`), `hubs.unlink {pcId}`(M-29).
   `live.get {target}`(M-46): `target`은 `self` · `hub:<pcId>` · `device:<deviceId>` → `{state, snapshot?, via?, detail?, at?}`, `state`는 `live`·`connecting`·`unreachable`·`unsupported`·`unknown`. 부를 때마다 그 보기를 10초 동안 열어 두고, 아무도 묻지 않으면 닫는다(수집도 멈춤). `devices.overview`에는 `local: [{deviceId, pairedAt, push, muted?}]`가 더해졌다.
   `session.report`에는 `agents[]`(Codex 세션 등 Claude 밖의 작업, M-26)가 더해졌다.
+  `approval.ask` ApprovalRequest `{id, app, session, project?, toolTitle, detail, expiresAt}` → `{decision}`(M-48, 최대 10분 대기, `null`이면 PC에서 묻기): Tray의 훅 수신기가 보낸다. Agent는 연결의 읽기 루프와 따로 처리해 그동안 다른 메시지가 막히지 않는다. `approval.cancel {id}`(응답 없음): 사용자가 PC로 돌아와 Tray가 기다리기를 그만둠.
   `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.
