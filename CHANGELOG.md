@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.28.0 — PC aliases
+
+### Added
+- **Give each PC your own name on the phone.** In the phone app, a PC card's menu has "별칭 지정"
+  (Set alias). The alias replaces the Windows computer name (such as `DESKTOP-V0JCEPJ`) on the PC
+  card, the PC's live screen, its push notifications (and its group in Android's notification
+  settings), the notification center and the "via" line of other devices. The computer name stays
+  visible in small print under it. Leave the field empty, or tap "원래 이름" (Original name), to go
+  back. Aliases live on this phone only: other phones and the PC tray still show the computer name
+  (DECISIONS M-36).
+
 ## v0.27.0 — Separate Google Play build
 
 ### Added

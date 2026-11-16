@@ -89,12 +89,14 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     val pushOn = remember { PushState(context).endpoint != null }
-    val pairedPcs = remember { store.all().map { it.pcId }.toSet() }
+    // Paired PCs; an entry is drawn under the PC's alias (M-36), else the name it was sent with.
+    val paired = remember { store.all().associateBy { it.pcId } }
+    fun nameOf(pcId: String, sent: String) = paired[pcId]?.shownName(sent) ?: sent
 
     val entries = history.entries
     val groups = remember(entries) { entries.map { PushHistoryRules.categoryLabel(it.category) }.distinct() }
     // Latest name per PC, in the order they last sent something.
-    val pcs = remember(entries) { entries.distinctBy { it.pcId }.map { it.pcId to it.pcName } }
+    val pcs = remember(entries) { entries.distinctBy { it.pcId }.map { it.pcId to nameOf(it.pcId, it.pcName) } }
     // A filter whose last entry was deleted would hide everything with its chip row (and "전체") gone: drop it.
     LaunchedEffect(groups, pcs) {
         if (groupFilter != null && groupFilter !in groups) groupFilter = null
@@ -170,7 +172,8 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                         entry = e,
                         unread = seenBefore.let { it != null && e.receivedAt > it },
                         expanded = expanded == e.key,
-                        canOpenPc = e.pcId in pairedPcs,
+                        pcName = nameOf(e.pcId, e.pcName),
+                        canOpenPc = e.pcId in paired,
                         onToggle = { expanded = if (expanded == e.key) null else e.key },
                         onOpenPc = { onOpenPc(e.pcId) },
                         onDelete = {
@@ -246,6 +249,7 @@ private fun HistoryCard(
     entry: HistoryEntry,
     unread: Boolean,
     expanded: Boolean,
+    pcName: String,
     canOpenPc: Boolean,
     onToggle: () -> Unit,
     onOpenPc: () -> Unit,
@@ -270,7 +274,7 @@ private fun HistoryCard(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     // The tag already names the kind; repeat the source only when it adds something (an app, a monitor).
-                    if (source == PushHistoryRules.categoryLabel(entry.category)) entry.pcName else "${entry.pcName} · $source",
+                    if (source == PushHistoryRules.categoryLabel(entry.category)) pcName else "$pcName · $source",
                     style = HbType.label,
                     color = hb.inkSoft,
                     maxLines = 1,

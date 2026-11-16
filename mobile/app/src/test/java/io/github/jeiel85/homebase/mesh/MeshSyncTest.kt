@@ -40,6 +40,21 @@ class MeshSyncTest {
     }
 
     @Test
+    fun the_via_name_is_the_alias_given_on_this_phone() {
+        val mine = listOf(pc("A", "DESKTOP-V0JCEPJ", "me1").copy(alias = "집 데스크톱"), pc("B", "WORK-PC", "me2"))
+        val hubs = mapOf(
+            "A" to hub("DESKTOP-V0JCEPJ", dev("tab", "Galaxy Tab")),
+            "B" to hub("WORK-PC-RENAMED", dev("laptop", "LAPTOP", DeviceKind.PC)),
+        )
+
+        val others = MeshSync.otherDevices(hubs, mine, now)
+
+        assertEquals(listOf("집 데스크톱"), others.single { it.entry.name == "Galaxy Tab" }.via)
+        // Without an alias the PC's current name wins over the one stored at pairing.
+        assertEquals(listOf("WORK-PC-RENAMED"), others.single { it.entry.name == "LAPTOP" }.via)
+    }
+
+    @Test
     fun a_phone_paired_with_two_pcs_shows_once_with_its_freshest_state() {
         val mine = listOf(pc("A", "HOME-PC", "me1"), pc("B", "WORK-PC", "me2"))
         val hubs = mapOf(
