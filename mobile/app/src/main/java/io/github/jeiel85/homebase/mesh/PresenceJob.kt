@@ -27,7 +27,10 @@ class PresenceJobService : JobService() {
         val app = applicationContext
         work = PushRegistrar.scope.launch {
             try {
-                MeshSync.reportAll(app, HomebaseApi(networks = NetworkProbe(app)::current), PcStore(app))
+                val api = HomebaseApi(networks = NetworkProbe(app)::current)
+                MeshSync.reportAll(app, api, PcStore(app))
+                // Keep this phone and its PCs in one group (DECISIONS M-47).
+                GroupSync.syncIfDue(app, api, PcStore(app))
             } finally {
                 jobFinished(params, false)
             }

@@ -38,6 +38,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly TrayToastRelay? _toasts;
     private readonly INotificationHistoryStore? _history;
     private readonly TrayLiveService? _trayLive;
+    private readonly DeviceGroupService? _group;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
@@ -61,8 +62,10 @@ public sealed class MobileBridgeServer : BackgroundService
         HubLinkService? hubLinks = null,
         TrayToastRelay? toasts = null,
         INotificationHistoryStore? history = null,
-        TrayLiveService? trayLive = null)
+        TrayLiveService? trayLive = null,
+        DeviceGroupService? group = null)
     {
+        _group = group;
         _history = history;
         _trayLive = trayLive;
         _deviceHub = deviceHub;
@@ -214,8 +217,21 @@ public sealed class MobileBridgeServer : BackgroundService
         }
         if (op == MobileBridge.OpHubsUnlink)
         {
-            var ok = _hubLinks is not null && await _hubLinks.UnlinkAsync((string?)payload?["pcId"] ?? "");
+            // Unlinking takes the PC out of the whole group (M-47), not just this pair.
+            var pcId = (string?)payload?["pcId"] ?? "";
+            if (_group is not null && pcId.Length > 0) await _group.RemoveAsync(GroupKeys.Pc(pcId), fanOut: true, ct);
+            var ok = _hubLinks is not null && (await _hubLinks.UnlinkAsync(pcId) || _group is not null);
             await SendAsync(conn, MobileBridge.Response(id, ok), ct);
+            return;
+        }
+        if (op == MobileBridge.OpDevicesRevoke && _group is not null)
+        {
+            // Removing a device takes it out of the whole group (M-47): every member revokes it.
+            var deviceId = (string?)payload?["deviceId"] ?? "";
+            if (_devices.List().FirstOrDefault(d => d.DeviceId == deviceId) is { } device && _group.KeyOf(device) is { } key)
+                await _group.RemoveAsync(key, fanOut: true, ct);
+            var revoked = _devices.Revoke(deviceId) || !_devices.IsPaired(deviceId);
+            await SendAsync(conn, MobileBridge.Response(id, revoked), ct);
             return;
         }
         JsonObject response = op switch

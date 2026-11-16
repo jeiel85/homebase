@@ -81,18 +81,35 @@ public static class MobileServiceCollectionExtensions
                     sp.GetRequiredService<ILogger<HubFinder>>()),
                 live: sp.GetRequiredService<LiveSnapshotHub>());
         });
+        // The device group (M-47): links both ways, introductions, removals that reach every member.
+        services.AddSingleton(sp => GroupTombstoneFile.Open(MobileDeviceStore.DefaultDirectory,
+            sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>()));
+        services.AddSingleton(sp =>
+        {
+            var api = new Lazy<MobileApiServer>(() => sp.GetRequiredService<MobileApiServer>());
+            return new DeviceGroupService(sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<IMobileDeviceStore>(),
+                sp.GetRequiredService<DeviceStatusBoard>(), sp.GetRequiredService<GroupTombstones>(),
+                () => api.Value.CreateOffer(introduction: true), Environment.MachineName,
+                sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>());
+        });
+        services.AddHostedService(sp => sp.GetRequiredService<DeviceGroupService>());
         // The Tray's device page (M-46): this PC, linked PCs and PCs linked here, live while it looks.
         services.AddSingleton(sp => new TrayLiveService(
             sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<IMobileDeviceStore>(),
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<TrayLiveService>>(),
             sp.GetRequiredService<DeviceHub>(), sp.GetRequiredService<HubLinkService>()));
         services.AddHostedService(sp => sp.GetRequiredService<HubLinkService>());
-        services.AddSingleton(sp => new MobileApiServer(
-            sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<PairingService>(),
-            sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<TailscaleAddressResolver>(),
-            sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
-            sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
-            deviceHub: sp.GetRequiredService<DeviceHub>()));
+        services.AddSingleton(sp =>
+        {
+            var api = new MobileApiServer(
+                sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<PairingService>(),
+                sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<TailscaleAddressResolver>(),
+                sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
+                sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
+                deviceHub: sp.GetRequiredService<DeviceHub>());
+            api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
+            return api;
+        });
         services.AddHostedService(sp => sp.GetRequiredService<MobileApiServer>());
         // Idle (returns at once) unless mobile:cloudflare:enabled.
         services.AddHostedService(sp => sp.GetRequiredService<CloudflareTunnel>());

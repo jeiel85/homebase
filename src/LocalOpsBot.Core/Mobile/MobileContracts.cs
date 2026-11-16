@@ -73,8 +73,11 @@ public sealed record PairingOffer(
 /// <summary><c>GET /api/v1/endpoints</c>: the current paths, so a paired phone follows DHCP or tunnel-address changes.</summary>
 public sealed record EndpointsResponse(int Schema, IReadOnlyList<MobileEndpoint> Endpoints);
 
-/// <summary><c>Kind</c> (DECISIONS M-27): <c>phone</c> (default, what older apps send by omission) or <c>pc</c>.</summary>
-public sealed record PairRequest(string Code, string DeviceName, string? DeviceModel, string? Kind = null);
+/// <summary>
+/// <c>Kind</c> (DECISIONS M-27): <c>phone</c> (default, what older apps send by omission) or <c>pc</c>.
+/// <c>PcId</c> (M-47): a PC names itself, so pairing it by hand brings it back into the group.
+/// </summary>
+public sealed record PairRequest(string Code, string DeviceName, string? DeviceModel, string? Kind = null, string? PcId = null);
 
 public sealed record PairResponse(int Schema, string DeviceId, string Token, string PcId, string PcName);
 

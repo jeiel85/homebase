@@ -98,6 +98,28 @@ public sealed class HubLinkService : BackgroundService
         return Task.CompletedTask;
     }
 
+    /// <summary>Raised after this PC linked to another (by hand or by a group introduction, M-47).</summary>
+    public event Action<LinkedHub>? Linked;
+
+    /// <summary>The PCs this one holds a token for.</summary>
+    public IReadOnlyList<LinkedHub> Hubs() => _links.Values.Select(l => l.Hub with { PcName = l.LastDevices?.Hub.PcName ?? l.Hub.PcName }).ToList();
+
+    /// <summary>
+    /// Calls a linked PC's API with this PC's token over the link's paths (the group's introductions,
+    /// M-47). Null when not linked to <paramref name="pcId"/>.
+    /// </summary>
+    public async Task<HubReply?> CallAsync(string pcId, HttpMethod method, string path, object? body, TimeSpan timeout, CancellationToken ct)
+    {
+        if (!_links.TryGetValue(pcId, out var link)) return null;
+        try
+        {
+            return method == HttpMethod.Get
+                ? await link.Client.GetAsync(link.Hub.Endpoints, path, link.Hub.Token, timeout, ct)
+                : await link.Client.PostAsync(link.Hub.Endpoints, path, body ?? new { schema = MobileProtocol.Schema }, link.Hub.Token, timeout, ct);
+        }
+        catch (ObjectDisposedException) { return null; } // unlinked meanwhile
+    }
+
     /// <summary>What the Tray's device list shows for the linked PCs.</summary>
     public IReadOnlyList<LinkedHubView> Views() => _links.Values
         .Select(l => new LinkedHubView(l.Hub.PcId, l.LastDevices?.Hub.PcName ?? l.Hub.PcName, l.Online, l.LastContactAt,
@@ -166,11 +188,12 @@ public sealed class HubLinkService : BackgroundService
         return await LinkWithOfferAsync(offer, ct);
     }
 
-    private async Task<HubLinkResult> LinkWithOfferAsync(PairingOffer offer, CancellationToken ct)
+    /// <summary>Pairs with the PC behind <paramref name="offer"/> as a PC device and starts the link.</summary>
+    public async Task<HubLinkResult> LinkWithOfferAsync(PairingOffer offer, CancellationToken ct)
     {
         var client = new HubClient(_allowLoopback);
         var reply = await client.PostAsync(offer.Endpoints, "/api/v1/pair",
-            new PairRequest(offer.Code, Environment.MachineName, "Windows", DeviceKind.Pc), null, CallTimeout, ct);
+            new PairRequest(offer.Code, Environment.MachineName, "Windows", DeviceKind.Pc, _devices.PcId), null, CallTimeout, ct);
         if (reply.Status == 0)
         {
             client.Dispose();
@@ -205,6 +228,7 @@ public sealed class HubLinkService : BackgroundService
         _store.Upsert(hub);
         Start(hub);
         _logger.LogInformation("Linked to {Name} ({PcId}) as device {DeviceId}.", paired.PcName, paired.PcId, paired.DeviceId);
+        Linked?.Invoke(hub);
         return new HubLinkResult(true, paired.PcName, null, null);
     }
 
@@ -259,8 +283,9 @@ public sealed class HubLinkService : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
+                // The pcId lets the hub's group know this PC (M-47).
                 var reply = await link.Client.PostAsync(link.Hub.Endpoints, "/api/v1/presence",
-                    _status.Report(OwnPushHashes()), link.Hub.Token, CallTimeout, ct);
+                    _status.Report(OwnPushHashes()) with { PcId = _devices.PcId }, link.Hub.Token, CallTimeout, ct);
                 var wait = PresenceInterval;
                 if (reply.Ok && reply.Read<DevicesResponse>() is { } devices)
                 {

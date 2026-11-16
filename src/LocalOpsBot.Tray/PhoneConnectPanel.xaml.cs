@@ -605,7 +605,7 @@ public partial class PhoneConnectPanel : UserControl
     private async void Revoke_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not string id || MobileHost.Client is not { } client) return;
-        if (!MessageDialog.Show("Homebase", "이 휴대폰의 연결을 해제할까요? 다시 쓰려면 QR로 다시 연결해야 합니다.", "Revoke", "Cancel"))
+        if (!MessageDialog.Show("Homebase", L.PhoneRevokeConfirm, "Revoke", "Cancel"))
             return;
         try { await client.RequestAsync(MobileBridge.OpDevicesRevoke, new { deviceId = id }); }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }

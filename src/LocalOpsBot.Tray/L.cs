@@ -247,16 +247,19 @@ public static class L
     public static string PhoneCopyLinkFailed => T("Couldn't copy to the clipboard. Try again.", "클립보드에 복사하지 못했습니다. 다시 누르세요.");
     public static string PhoneLinkHeader => T("LINK ANOTHER PC", "다른 PC 연결");
     public static string PhoneLinkIntro => T(
-        "Paste the link (COPY LINK) or the 24-word code (COPY CODE) from the other PC's Settings › Phone. Both PCs then see each other's status and get each other's notifications; phones paired with either PC see both.",
-        "다른 PC의 설정 → 휴대폰에서 받은 링크('링크 복사')나 24단어 코드('코드 복사')를 붙여 넣으세요. 두 PC가 서로의 상태를 보고 서로의 알림을 받으며, 어느 쪽에 붙은 휴대폰이든 둘 다 볼 수 있습니다.");
+        "Paste the link (COPY LINK) or the 24-word code (COPY CODE) from the other PC's Settings › Phone. This PC joins that PC's group: every PC and phone in it connects to every other within a few minutes, and they see each other's status and notifications.",
+        "다른 PC의 설정 → 휴대폰에서 받은 링크('링크 복사')나 24단어 코드('코드 복사')를 붙여 넣으세요. 이 PC가 그 PC의 그룹에 들어가고, 몇 분 안에 그룹의 모든 PC·휴대폰이 서로 연결되어 상태와 알림을 주고받습니다.");
     public static string PhoneLinkButton => T("LINK", "연결");
     public static string PhoneLinking => T("Linking… (a code searches the network, up to about 10 seconds)", "연결하는 중… (코드는 네트워크에서 그 PC를 찾느라 10초쯤 걸릴 수 있습니다)");
     public static string PhoneLinked(string name) => T($"Linked to {name}.", $"{name}에 연결했습니다.");
     public static string PhoneLinkFailed => T("Couldn't link.", "연결하지 못했습니다.");
     public static string PhoneUnlink => T("UNLINK", "연결 끊기");
     public static string PhoneUnlinkConfirm => T(
-        "Unlink this PC? Status and notifications stop flowing between the two PCs. To link again you need a new link.",
-        "이 PC와의 연결을 끊을까요? 두 PC 사이의 상태·알림 전달이 멈춥니다. 다시 연결하려면 새 링크가 필요합니다.");
+        "Take this PC out of the group? Every PC in the group disconnects from it, and status and notifications stop flowing. To bring it back you need a new link or code.",
+        "이 PC를 그룹에서 뺄까요? 그룹의 모든 PC에서 연결이 끊기고 상태·알림 전달이 멈춥니다. 다시 넣으려면 새 링크나 코드가 필요합니다.");
+    public static string PhoneRevokeConfirm => T(
+        "Take this phone out of the group? Every PC in the group disconnects it. To use it again, scan a QR code on any PC.",
+        "이 휴대폰을 그룹에서 뺄까요? 그룹의 모든 PC에서 연결이 해제됩니다. 다시 쓰려면 아무 PC에서나 QR로 다시 연결하세요.");
 
     // ── Devices (dashboard and Phone tab; DECISIONS M-27, M-29) ──────────────
     public static string DashDevices => T("DEVICES", "기기");

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "pcId": "6f1c0d2e9b8a4c7d",
+  "pcName": "HOME-PC",
+  "pcs": [
+    {
+      "pcId": "3b9e1f5a7c2d4e60",
+      "pcName": "LAPTOP",
+      "token": false
+    },
+    {
+      "pcId": "a1b2c3d4e5f60718",
+      "pcName": "WORK-PC",
+      "token": true
+    }
+  ],
+  "removed": [
+    {
+      "key": "pc:0fedcba987654321",
+      "at": "2026-11-16T12:00:00+00:00"
+    }
+  ]
+}
