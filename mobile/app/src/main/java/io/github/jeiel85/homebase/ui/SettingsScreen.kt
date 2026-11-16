@@ -92,7 +92,8 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
                 SectionLabel("화면")
                 SettingsPlate { ThemeChoice() }
             }
-            item {
+            // The Play build has no in-app updater — Play updates it (DECISIONS M-33).
+            if (UpdateSurface.IN_APP) item {
                 SectionLabel("업데이트")
                 SettingsPlate {
                     UpdateSurface.SettingsRows()
@@ -124,7 +125,8 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit) {
                     LinkRow("오픈소스 라이선스", "이 앱과 사용한 라이브러리의 라이선스") { showLicenses = true }
                     Text(
                         "이 앱은 연결한 PC와 직접 통신합니다. 광고·분석·사용 기록 수집이 없고, " +
-                            "외부로 나가는 것은 업데이트 확인(GitHub)과 종단 암호화된 푸시(배포자 앱의 중계 서버)뿐입니다.",
+                            if (UpdateSurface.IN_APP) "외부로 나가는 것은 업데이트 확인(GitHub)과 종단 암호화된 푸시(배포자 앱의 중계 서버)뿐입니다."
+                            else "외부로 나가는 것은 종단 암호화된 푸시(배포자 앱의 중계 서버)뿐입니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = hb.inkSoft,
                         modifier = Modifier.padding(top = 4.dp, bottom = 14.dp),

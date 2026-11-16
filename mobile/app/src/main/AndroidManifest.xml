@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Shared by every distribution channel. The GitHub build's in-app updater (permission, job, file
+     provider) lives in src/github/AndroidManifest.xml and is absent from the Play build (DECISIONS M-33). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -6,11 +8,10 @@
     <!-- Route choice: is the phone on the PC's Wi-Fi subnet, is the Tailscale VPN up (DECISIONS M-18). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Sideload-only app: the in-app updater hands the verified APK to the system installer. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- PC alerts and forwarded Windows notifications arrive by UnifiedPush (DECISIONS M-19). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Keeps the background update check scheduled across reboots (JobInfo.setPersisted, DECISIONS M-22). -->
+    <!-- Keeps the background jobs scheduled across reboots (JobInfo.setPersisted): presence (M-27), and the
+         GitHub build's update check (M-22). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -90,12 +91,6 @@
             </intent-filter>
         </service>
 
-        <!-- Background update check → "new version" notification (DECISIONS M-22). -->
-        <service
-            android:name=".update.UpdateCheckJobService"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
-
         <!-- Tells the paired PCs this phone's state every ~30 min (DECISIONS M-27). -->
         <service
             android:name=".mesh.PresenceJobService"
@@ -113,15 +108,5 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
     </application>
 </manifest>

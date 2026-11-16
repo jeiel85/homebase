@@ -23,8 +23,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Both distribution channels (DECISIONS M-33): github (in-app updater) and play (none).
       - name: Unit tests, lint, debug build
         working-directory: mobile
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+          ./gradlew --no-daemon testGithubDebugUnitTest testPlayDebugUnitTest lintGithubDebug lintPlayDebug assembleGithubDebug assemblePlayDebug
+
+      # The Play build must not carry the self-updater: Play forbids apps that update themselves
+      # outside Play. Checked on the merged manifest so a stray main/ entry fails the PR.
+      - name: Play build has no self-update permission
+        working-directory: mobile
+        run: |
+          P=app/build/intermediates/merged_manifests/playDebug/processPlayDebugManifest/AndroidManifest.xml
+          G=app/build/intermediates/merged_manifests/githubDebug/processGithubDebugManifest/AndroidManifest.xml
+          test -f "$P" && test -f "$G"
+          if grep -q -e REQUEST_INSTALL_PACKAGES -e UpdateCheckJobService "$P"; then echo "updater leaked into the Play build"; exit 1; fi
+          grep -q REQUEST_INSTALL_PACKAGES "$G"

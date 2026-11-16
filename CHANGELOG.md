@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.27.0 — Separate Google Play build
+
+### Added
+- **A Google Play build of the phone app.** The app is now built per distribution channel: the GitHub
+  build (`Homebase-Mobile.apk`) is unchanged and keeps updating itself from GitHub Releases; the Play
+  build is updated by Google Play and has no in-app updater, no "install unknown apps" permission and
+  no "업데이트" section in settings. The two are signed with different keys, so one cannot be installed
+  over the other: to switch, uninstall the app, install the other one and pair your PCs again
+  (DECISIONS M-33, `docs/PLAY_RELEASE.md`).
+
+### Changed
+- The phone app now targets Android 16 (API 36), which Google Play requires for new apps.
+
 ## v0.26.0 — Notification center on the PC
 
 ### Added

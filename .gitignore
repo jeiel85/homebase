@@ -67,6 +67,7 @@ mobile/app/build/
 mobile/local.properties
 mobile/.kotlin/
 mobile/release-signing.properties
+mobile/play-upload-signing.properties
 .keystore/
 *.jks
 *.keystore

@@ -47,13 +47,23 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 사이드로드 빌드가 얻는 이음매. `src/storeStub/java`의 같은 이름 파일과 **배타적으로**
- * 컴파일된다 (Markleaf D074). Homebase는 사이드로드 전용이라 스텁 없이 이 구현만 컴파일된다.
+ * GitHub(사이드로드) 빌드가 얻는 이음매. `src/play/java`의 같은 이름 파일과 **배타적으로**
+ * 컴파일된다(DECISIONS M-33, product flavor `channel`).
  *
- * 공통 UI(`main`)는 이 객체만 부른다. 그래서 설정 화면과 노트 목록은 업데이트 기능의 존재를
- * 몰라도 되고, 스토어 빌드에는 그 기능의 코드가 아예 들어가지 않는다.
+ * 공통 코드(`main`)는 업데이트 기능에서 이 객체만 부른다. 그래서 MainActivity·PC 목록·설정 화면은
+ * 업데이트 기능의 존재를 몰라도 되고, Play 빌드에는 그 기능의 코드·권한·서비스가 아예 들어가지 않는다.
  */
 internal object UpdateSurface {
+
+    /** 이 빌드가 앱 안에서 업데이트를 확인·설치하는가. 설정 화면이 "업데이트" 섹션을 그릴지 정한다. */
+    const val IN_APP = true
+
+    /** 백그라운드 업데이트 확인(DECISIONS M-22) 예약을 설정에 맞춘다. 앱이 열릴 때마다 부른다. */
+    fun sync(context: Context) = UpdateCheckScheduler.sync(context)
+
+    /** 업데이트 알림을 눌러 앱이 열렸는가. */
+    fun isUpdateTap(intent: Intent?): Boolean =
+        intent?.getBooleanExtra(UpdateNotifier.EXTRA_OPEN_UPDATE, false) == true
 
     /**
      * 설정 → 앱 섹션에 붙는 행들.

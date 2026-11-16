@@ -19,30 +19,40 @@ val homebaseVersionCode = homebaseVersion.split('.', '-').take(3).map { it.toInt
 val defaultManifestUrl = "https://github.com/jeiel85/homebase/releases/latest/download/update.json"
 val debugManifestUrl = providers.gradleProperty("homebase.updateManifestUrl").orElse(defaultManifestUrl).get()
 
-// --- Release signing --------------------------------------------------------------------------
-val signingProps = Properties().apply {
-    rootProject.file("release-signing.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+// --- Release signing: one key per distribution channel (DECISIONS M-33) -----------------------
+// github: the key phones already trust for in-app updates (M-4) — HOMEBASE_RELEASE_*.
+// play:   the Play upload key (Play re-signs with its app signing key) — HOMEBASE_PLAY_UPLOAD_*.
+// Each value comes from the environment (CI) or from the channel's properties file in mobile/
+// (local release builds; gitignored, never committed).
+class ChannelSigning(private val prefix: String, propertiesFile: String) {
+    private val props = Properties().apply {
+        rootProject.file(propertiesFile).takeIf { it.exists() }?.inputStream()?.use(::load)
+    }
+    private fun value(name: String): String? = providers.environmentVariable("${prefix}_$name").orNull ?: props.getProperty("${prefix}_$name")
+    val storeFile = value("STORE_FILE")
+    val storePassword = value("STORE_PASSWORD")
+    val keyAlias = value("KEY_ALIAS")
+    val keyPassword = value("KEY_PASSWORD")
+    val complete = listOf(storeFile, storePassword, keyAlias, keyPassword).all { !it.isNullOrBlank() }
 }
-fun signing(name: String): String? = providers.environmentVariable(name).orNull ?: signingProps.getProperty(name)
-val storeFilePath = signing("HOMEBASE_RELEASE_STORE_FILE")
-val hasReleaseSigning = listOf(
-    storeFilePath,
-    signing("HOMEBASE_RELEASE_STORE_PASSWORD"),
-    signing("HOMEBASE_RELEASE_KEY_ALIAS"),
-    signing("HOMEBASE_RELEASE_KEY_PASSWORD"),
-).all { !it.isNullOrBlank() }
-if (providers.gradleProperty("homebase.requireReleaseSigning").orNull == "true" && !hasReleaseSigning) {
+val githubSigning = ChannelSigning("HOMEBASE_RELEASE", "release-signing.properties")
+val playSigning = ChannelSigning("HOMEBASE_PLAY_UPLOAD", "play-upload-signing.properties")
+if (providers.gradleProperty("homebase.requireReleaseSigning").orNull == "true" && !githubSigning.complete) {
     throw GradleException("Release signing values are missing (HOMEBASE_RELEASE_STORE_FILE/STORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD).")
+}
+if (providers.gradleProperty("homebase.requirePlaySigning").orNull == "true" && !playSigning.complete) {
+    throw GradleException("Play upload signing values are missing (HOMEBASE_PLAY_UPLOAD_STORE_FILE/STORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD).")
 }
 
 android {
     namespace = "io.github.jeiel85.homebase"
-    compileSdk = 35
+    // Google Play requires new apps and updates to target API 36 from 2026-08-31.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.github.jeiel85.homebase"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = homebaseVersionCode
         versionName = homebaseVersion
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$defaultManifestUrl\"")
@@ -50,13 +60,37 @@ android {
     }
 
     signingConfigs {
-        if (hasReleaseSigning) {
-            create("release") {
-                storeFile = rootProject.file(storeFilePath!!)
-                storePassword = signing("HOMEBASE_RELEASE_STORE_PASSWORD")
-                keyAlias = signing("HOMEBASE_RELEASE_KEY_ALIAS")
-                keyPassword = signing("HOMEBASE_RELEASE_KEY_PASSWORD")
+        if (githubSigning.complete) {
+            create("github") {
+                storeFile = rootProject.file(githubSigning.storeFile!!)
+                storePassword = githubSigning.storePassword
+                keyAlias = githubSigning.keyAlias
+                keyPassword = githubSigning.keyPassword
             }
+        }
+        if (playSigning.complete) {
+            create("playUpload") {
+                storeFile = rootProject.file(playSigning.storeFile!!)
+                storePassword = playSigning.storePassword
+                keyAlias = playSigning.keyAlias
+                keyPassword = playSigning.keyPassword
+            }
+        }
+    }
+
+    // Distribution channel (DECISIONS M-33). Same applicationId — the Play Console app is
+    // io.github.jeiel85.homebase — but different signing keys, so one cannot be installed over the other.
+    //   github: sideloaded APK from GitHub Releases, updates itself (src/github: updater + REQUEST_INSTALL_PACKAGES).
+    //   play:   AAB for Google Play, which updates it; no updater code or install permission at all.
+    flavorDimensions += "channel"
+    productFlavors {
+        create("github") {
+            dimension = "channel"
+            if (githubSigning.complete) signingConfig = signingConfigs.getByName("github")
+        }
+        create("play") {
+            dimension = "channel"
+            if (playSigning.complete) signingConfig = signingConfigs.getByName("playUpload")
         }
     }
 
@@ -70,7 +104,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+            // Signing comes from the channel flavor above; a build type's signingConfig would override it.
         }
     }
 
