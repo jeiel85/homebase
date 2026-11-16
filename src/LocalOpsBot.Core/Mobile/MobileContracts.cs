@@ -129,4 +129,54 @@ public sealed record LiveSnapshot(
     IReadOnlyList<AppEntry> Apps,
     IReadOnlyList<ProcessEntry> Processes,
     IReadOnlyList<ClaudeSession> ClaudeSessions,
-    IReadOnlyList<WorkItem>? Work = null);
+    IReadOnlyList<WorkItem>? Work = null,
+    HardwareInfo? Hardware = null);
+
+/// <summary>
+/// The hardware panel (DECISIONS M-34): CPU model and temperature, GPUs, fixed drives and internet
+/// latency. Absent from PCs older than v0.28.0; each field is null (or the list empty) when this PC
+/// cannot read it, never zero.
+/// </summary>
+public sealed record HardwareInfo(
+    string? CpuName,
+    double? CpuTempC,
+    double? BoardTempC,
+    IReadOnlyList<GpuReading> Gpus,
+    IReadOnlyList<DiskUsage> Disks,
+    PingStats? Ping);
+
+/// <summary>
+/// One GPU. The main one (discrete before integrated, then most video memory) comes first.
+/// <c>Vendor</c>: <c>nvidia</c> · <c>amd</c> · <c>intel</c> · <c>qualcomm</c> · null. <c>Shared*</c> is the
+/// system memory the GPU uses, which is where an integrated GPU mostly lives. <c>PowerPct</c> is board
+/// power as a share of its limit (all Windows reports without a vendor tool). <c>Source</c> names where
+/// the values came from: <c>windows</c>, <c>nvidia-smi</c>, or both joined with <c>+</c>.
+/// </summary>
+public sealed record GpuReading(
+    string Name,
+    string? Vendor,
+    bool Integrated,
+    double? LoadPct,
+    double? TempC,
+    double? TempMaxC,
+    long? VramUsedBytes,
+    long? VramTotalBytes,
+    long? SharedUsedBytes,
+    long? SharedTotalBytes,
+    double? PowerW,
+    double? PowerLimitW,
+    double? PowerPct,
+    double? FanPct,
+    double? FanRpm,
+    double? ClockMhz,
+    double? MemClockMhz,
+    string? Source);
+
+/// <summary>A fixed drive: <c>Name</c> is the drive letter (<c>C:</c>).</summary>
+public sealed record DiskUsage(string Name, long TotalBytes, long UsedBytes);
+
+/// <summary>
+/// ICMP round trips to <c>Host</c> while a phone watches: the last one, the average of the answered ones
+/// in the window, and the share of the window that went unanswered. <c>Samples</c> is the window's size so far.
+/// </summary>
+public sealed record PingStats(string Host, double? LastMs, double? AvgMs, double LossPct, int Samples);

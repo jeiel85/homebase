@@ -121,5 +121,60 @@
       "title": "Release notes",
       "foreground": false
     }
-  ]
+  ],
+  "hardware": {
+    "cpuName": "AMD Ryzen 7 250 w/ Radeon 780M Graphics",
+    "cpuTempC": 61.5,
+    "gpus": [
+      {
+        "name": "NVIDIA GeForce RTX 5060 Laptop GPU",
+        "vendor": "nvidia",
+        "integrated": false,
+        "loadPct": 37,
+        "tempC": 54,
+        "tempMaxC": 89,
+        "vramUsedBytes": 1492123648,
+        "vramTotalBytes": 8546942976,
+        "sharedUsedBytes": 338051072,
+        "sharedTotalBytes": 8217880576,
+        "powerW": 41.2,
+        "clockMhz": 1905,
+        "memClockMhz": 7001,
+        "source": "nvidia-smi+windows"
+      },
+      {
+        "name": "AMD Radeon 780M Graphics",
+        "vendor": "amd",
+        "integrated": true,
+        "loadPct": 4,
+        "tempC": 53,
+        "vramUsedBytes": 379809792,
+        "vramTotalBytes": 536870912,
+        "sharedUsedBytes": 355807232,
+        "sharedTotalBytes": 8217880576,
+        "powerPct": 3.2,
+        "memClockMhz": 1600,
+        "source": "windows"
+      }
+    ],
+    "disks": [
+      {
+        "name": "C:",
+        "totalBytes": 510891388928,
+        "usedBytes": 327434858496
+      },
+      {
+        "name": "D:",
+        "totalBytes": 1447034875904,
+        "usedBytes": 1400076177408
+      }
+    ],
+    "ping": {
+      "host": "1.1.1.1",
+      "lastMs": 8,
+      "avgMs": 10.3,
+      "lossPct": 0,
+      "samples": 30
+    }
+  }
 }

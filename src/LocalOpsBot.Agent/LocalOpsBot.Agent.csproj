@@ -13,6 +13,10 @@
     <InternalsVisibleTo Include="LocalOpsBot.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Licences of adapted code; shipped next to Homebase.Agent.exe (both installers copy publish\Agent). -->
+    <None Include="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />

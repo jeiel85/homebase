@@ -40,7 +40,28 @@ public class ProtocolGoldenTests
             new WorkItem(WorkKind.Document, "Word", "견적서.docx", Foreground: true),
             new WorkItem(WorkKind.Editor, "VS Code", "Program.cs", "homebase"),
             new WorkItem(WorkKind.Browser, "Chrome", "Release notes"),
-        });
+        },
+        new HardwareInfo(
+            "AMD Ryzen 7 250 w/ Radeon 780M Graphics",
+            CpuTempC: 61.5,
+            BoardTempC: null,
+            new[]
+            {
+                new GpuReading("NVIDIA GeForce RTX 5060 Laptop GPU", "nvidia", false,
+                    LoadPct: 37, TempC: 54, TempMaxC: 89,
+                    VramUsedBytes: 1_492_123_648, VramTotalBytes: 8_546_942_976,
+                    SharedUsedBytes: 338_051_072, SharedTotalBytes: 8_217_880_576,
+                    PowerW: 41.2, PowerLimitW: null, PowerPct: null, FanPct: null, FanRpm: null,
+                    ClockMhz: 1_905, MemClockMhz: 7_001, Source: "nvidia-smi+windows"),
+                new GpuReading("AMD Radeon 780M Graphics", "amd", true,
+                    LoadPct: 4, TempC: 53, TempMaxC: null,
+                    VramUsedBytes: 379_809_792, VramTotalBytes: 536_870_912,
+                    SharedUsedBytes: 355_807_232, SharedTotalBytes: 8_217_880_576,
+                    PowerW: null, PowerLimitW: null, PowerPct: 3.2, FanPct: null, FanRpm: null,
+                    ClockMhz: null, MemClockMhz: 1_600, Source: "windows"),
+            },
+            new[] { new DiskUsage("C:", 510_891_388_928, 327_434_858_496), new DiskUsage("D:", 1_447_034_875_904, 1_400_076_177_408) },
+            new PingStats("1.1.1.1", LastMs: 8, AvgMs: 10.3, LossPct: 0, Samples: 30)));
 
     public static PresenceReport SamplePresence() => new(MobileProtocol.Schema, DeviceKind.Phone, "0.22.0",
         Battery: 76, Charging: false, Network: "wifi");
