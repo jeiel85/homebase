@@ -50,7 +50,7 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 
 | 메서드 | 경로 | 인증 | 응답 |
 |---|---|---|---|
-| GET | `/api/v1/info` | 없음 | `{schema, protocol, pcId, pcName, agentVersion, os}`. Cloudflare 터널로 온 요청은 페어링된 기기의 `Authorization: Bearer <token>`이 없으면 `pcName`·`os`가 `""`다(M-38) |
+| GET | `/api/v1/info` | 없음 | `{schema, protocol, pcId, pcName, agentVersion, os}`. Cloudflare 터널로 온 요청은 페어링된 기기의 `Authorization: Bearer <token>`이 없으면 `pcName`·`os`가 `""`다(M-39) |
 | POST | `/api/v1/pair` | 본문의 `code` | 200 `{schema, deviceId, token, pcId, pcName}` · 400 `invalid_code` · 410 `code_expired` · 429 `locked` |
 | GET | `/api/v1/endpoints` | `Authorization: Bearer <token>` | 200 `{schema, endpoints}`([`endpoints.v1.json`](mobile-protocol/endpoints.v1.json)) · 401 |
 | GET | `/api/v1/snapshot` | `Authorization: Bearer <token>` | 200 `LiveSnapshot` · 401 `unauthorized` |

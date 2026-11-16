@@ -404,7 +404,10 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRename: 
                     PcStatus.Offline -> hb.ledOff to false
                 }
                 Led(led, size = 8.dp, pulse = pulse)
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(8.dp))
+                // The same badge its notifications carry (M-38).
+                PcBadge(pc.mark, size = 22.dp)
+                Spacer(Modifier.width(8.dp))
                 Text(
                     pc.displayName.uppercase(),
                     style = HbType.display.copy(fontSize = 19.sp),

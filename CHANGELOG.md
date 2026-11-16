@@ -1,22 +1,22 @@
 # Changelog
 
-## v0.31.0 — Hardening
+## v0.32.0 — Hardening
 
-Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #5 (DECISIONS M-38–M-42).
+Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #5 (DECISIONS M-39–M-43).
 
 ### Security
 - **The tray's notification pipe is no longer open to every local account.** `Homebase.NotificationPipe`
   admitted all Authenticated Users, so another account on the PC could inject notifications that the
   service forwarded to your phone. It now admits only SYSTEM, Administrators and the tray's user (#5).
 - **`/api/v1/info` through the Cloudflare Tunnel no longer tells anonymous callers the PC name and OS
-  version.** Paired phones still get the full answer (M-38).
+  version.** Paired phones still get the full answer (M-39).
 - The installer locks the data folder to SYSTEM and Administrators before the service first starts.
 - A copied pairing code or link is kept out of Windows clipboard history and cloud sync, and is cleared
   from the clipboard when it expires (only if the clipboard still holds it).
 
 ### Fixed
 - **Alerts raised during a short network outage are sent once the network is back** (retried for up to
-  30 minutes) instead of being dropped (#2, M-40).
+  30 minutes) instead of being dropped (#2, M-41).
 - **A repeated alert is no longer held back until UTC midnight.** Duplicate suppression compared dates as
   text, so after one alert the same alert (for example a process that went down again) stayed silent for
   the rest of the UTC day instead of for its 10-minute window.
@@ -39,7 +39,7 @@ Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #
 - App: choosing 어둡게 or 밝게 no longer flashes the other background at start (the system splash follows
   it on Android 13+).
 - App: a PC whose clock went backwards is heard again: its address pushes are accepted again once 10
-  minutes have passed on the phone (M-39).
+  minutes have passed on the phone (M-40).
 - App: if Android restarts the app after "install unknown apps" is granted, the update download resumes.
 - App: the manual update check says when a new version needs a newer Android, instead of "최신 버전입니다".
 - App: the notification permission is not asked again after Android closes the app in the background.
@@ -68,7 +68,7 @@ Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #
   cause is logged once. Telegram errors are classified so only passing failures are retried.
 - Transient Telegram polling errors, repeated forwarding failures and `nvidia-smi` failures are logged
   once as a one-line warning instead of a stack trace or a line every few seconds.
-- PC-to-PC inbox long polls are capped at 16 at a time, so phones always get a connection (M-41).
+- PC-to-PC inbox long polls are capped at 16 at a time, so phones always get a connection (M-42).
 - Linking with a connection code stops searching as soon as the PC is found on the tailnet.
 - The PC's 40-app list is chosen by foreground, busy (5 % CPU or more) and memory instead of the last
   second's CPU, so apps no longer drop in and out every second.
@@ -86,6 +86,27 @@ Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #
 - Release: the Windows tests run in CI on every pull request and before each release, the release checks
   that the pairing-link file on jeiel85.github.io lists the release certificate, and pull requests must add
   a CHANGELOG entry under an unreleased version.
+
+## v0.31.0 — Tell PCs apart in notifications
+
+### Changed
+- **Each PC has a colour badge.** Every paired PC gets its own colour and the first letter of its
+  name (or alias), shown as a round badge on its Android notifications, before its name on the PC
+  list and on its notification center cards, so a notification can be matched to its PC at a glance.
+  Colours are picked so two PCs don't share one (up to 8 PCs) and stay put when PCs are added,
+  re-paired or removed. Notifications relayed from your other devices carry that device's badge
+  (DECISIONS M-38).
+- **Notifications read sender first.** The small header line now names the PC (or the device a
+  relayed notification came from) and then the app or alert kind — "작업실 · 카카오톡",
+  "작업실 · 프로세스 감시" — and the bold title is just what the notification says ("홍길동" rather than
+  "카카오톡: 홍길동"). Bundles name the PC in the header and the app in the title.
+- In the notification center, a relayed notification's header names the device first and the PC it
+  came through last ("Galaxy S24 · 카카오톡 · 작업실 경유").
+
+### Known limits
+- When Android itself folds four or more Homebase notifications into one collapsed entry, the
+  collapsed lines show only titles and text; expand it to see each one's badge. Bundles from one app
+  on one PC keep the PC in their header.
 
 ## v0.30.0 — Bundled notifications and notification priorities
 

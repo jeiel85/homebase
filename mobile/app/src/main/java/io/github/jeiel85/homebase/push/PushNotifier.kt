@@ -10,6 +10,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.Build
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
@@ -17,6 +22,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.github.jeiel85.homebase.MainActivity
 import io.github.jeiel85.homebase.R
+import io.github.jeiel85.homebase.data.PcMark
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 
@@ -28,6 +34,9 @@ import java.time.OffsetDateTime
  * How each one appears — popup, sound, vibration, bundling, or not at all — follows the user's
  * [AlertProfile] for it (DECISIONS M-37). Bundled notifications share a group with a summary, so a
  * burst from one app folds into one entry in the shade instead of a long list.
+ *
+ * Each one carries its sender's badge and colour, with the sender first in the header line, so
+ * notifications from two PCs are told apart without reading them (see [NotificationLook], M-38).
  */
 object PushNotifier {
     const val EXTRA_PC_ID = "io.github.jeiel85.homebase.PC_ID"
@@ -60,7 +69,7 @@ object PushNotifier {
      * blocked, this app/PC turned off in Android's settings, or [AlertProfile.shade] off (the
      * notification center still has it).
      */
-    fun show(context: Context, message: PushMessage, profile: AlertProfile): Boolean {
+    fun show(context: Context, message: PushMessage, profile: AlertProfile, mark: PcMark): Boolean {
         if (!profile.shade || !canNotify(context)) return false
         val channelId = ensureChannel(context, message, profile) ?: return false
         val open = PendingIntent.getActivity(
@@ -72,12 +81,16 @@ object PushNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val group = if (profile.bundle) groupKey(message) else null
+        // Who sent it leads the header and the badge; the title keeps only what the notification says (M-38).
+        val badge = badge(context, mark)
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(message.title)
+            .setColor(mark.argb)
+            .setLargeIcon(badge)
+            .setContentTitle(NotificationLook.title(message))
             .setContentText(message.body)
             .setStyle(message.body?.let { NotificationCompat.BigTextStyle().bigText(it) })
-            .setSubText(message.pcName)
+            .setSubText(NotificationLook.header(message))
             .setWhen(epochMillis(message.ts))
             .setShowWhen(true)
             .setNumber(if (message.count > 1) message.count else 0)
@@ -94,7 +107,7 @@ object PushNotifier {
         }
         val id = message.id.hashCode()
         if (!post(context, null, id, builder.build())) return false
-        if (group != null) updateBundle(context, group, channelId, message, id)
+        if (group != null) updateBundle(context, group, channelId, message, id, mark, badge)
         return true
     }
 
@@ -183,7 +196,15 @@ object PushNotifier {
      * (dropping the oldest from the shade). The notification just posted may not be listed as
      * active yet — `notify` is queued — so it is counted by hand.
      */
-    private fun updateBundle(context: Context, group: String, channelId: String, message: PushMessage, postedId: Int) {
+    private fun updateBundle(
+        context: Context,
+        group: String,
+        channelId: String,
+        message: PushMessage,
+        postedId: Int,
+        mark: PcMark,
+        badge: Bitmap,
+    ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         val active = try {
             nm.activeNotifications
@@ -219,10 +240,12 @@ object PushNotifier {
         )
         val summary = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(mark.argb)
+            .setLargeIcon(badge)
             .setContentTitle(title)
             .setContentText("새 알림 ${count}건")
             .setStyle(style)
-            .setSubText(message.pcName)
+            .setSubText(NotificationLook.sender(message))
             .setNumber(count)
             .setCategory(category(message))
             .setGroup(group)
@@ -235,9 +258,35 @@ object PushNotifier {
         post(context, SUMMARY_TAG, group.hashCode(), summary)
     }
 
-    /** What a bundle is called: the app (and device) for app notifications, the alert kind otherwise. */
-    private fun bundleTitle(message: PushMessage): String =
-        if (NotificationPriority.hasApps(message.category)) message.source else channelName(message)
+    /**
+     * What a bundle is called: the app for app notifications, the alert kind otherwise. Who sent them
+     * is the summary's header, as on the notifications themselves.
+     */
+    private fun bundleTitle(message: PushMessage): String = when {
+        message.category == NotificationGroups.DEVICE -> NotificationLook.appOf(message.source).ifEmpty { message.source }
+        NotificationPriority.hasApps(message.category) -> message.source
+        else -> channelName(message)
+    }
+
+    /**
+     * The round badge shown as the notification's large icon: the mark's colour with its letter in
+     * white, at the size Android shows large icons.
+     */
+    private fun badge(context: Context, mark: PcMark): Bitmap {
+        val size = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_width).coerceAtLeast(48)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val half = size / 2f
+        canvas.drawCircle(half, half, half, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = mark.argb })
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            textSize = size * 0.46f
+        }
+        canvas.drawText(mark.letter, half, half - (text.descent() + text.ascent()) / 2, text)
+        return bitmap
+    }
 
     private fun post(context: Context, tag: String?, id: Int, notification: Notification): Boolean = try {
         NotificationManagerCompat.from(context).notify(tag, id, notification)

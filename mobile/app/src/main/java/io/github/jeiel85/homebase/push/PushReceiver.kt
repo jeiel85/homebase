@@ -105,8 +105,9 @@ class PushReceiver : BroadcastReceiver() {
         // How the user wants this kind / this app to appear (DECISIONS M-37).
         val profile = NotificationRuleStore(context).resolve(message.category, message.source)
         // Shown under the user's alias for the PC, else the name the PC sent; the history keeps what the
-        // PC sent and maps it when drawn.
-        val shown = PushNotifier.show(context, message.copy(pcName = pc.shownName(message.pcName)), profile)
+        // PC sent and maps it when drawn. The badge is the PC's (or the relayed device's), as on its card (M-38).
+        val shownMessage = message.copy(pcName = pc.shownName(message.pcName))
+        val shown = PushNotifier.show(context, shownMessage, profile, NotificationLook.mark(shownMessage, pc))
         // The notification center keeps it even when Android blocked the notification (DECISIONS M-31)
         // or the user keeps this kind out of the shade.
         try {

@@ -68,7 +68,7 @@ class HomebaseApi(
         for (e in pc.orderedEndpoints(networks())) {
             try {
                 // The token isn't needed for /info, but over the Cloudflare Tunnel an anonymous caller
-                // gets an empty PC name (M-38), and the list keeps the stored name in sync with it.
+                // gets an empty PC name (M-39), and the list keeps the stored name in sync with it.
                 val req = Request.Builder().url(e.url("/api/v1/info")).header("Authorization", "Bearer ${pc.token}").build()
                 clientFor(e, quick).newCall(req).execute().use { res ->
                     if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
