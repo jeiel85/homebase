@@ -105,6 +105,8 @@ data class LiveSnapshot(
     val claudeSessions: List<ClaudeSession>,
     /** The work tab (DECISIONS M-26); null from a PC older than v0.23.0, which only sends [claudeSessions]. */
     val work: List<WorkItem>? = null,
+    /** GPU, drives, temperatures, ping (DECISIONS M-34); null from a PC older than v0.29.0. */
+    val hardware: Hardware? = null,
 ) {
     /** What the work tab lists: [work] when the PC sends it, else the Claude sessions as work items. */
     val workItems: List<WorkItem>
@@ -140,6 +142,7 @@ data class LiveSnapshot(
                     ClaudeSession(it.optString("title"), it.optString("project").ifBlank { null }, it.optString("lastActivity"))
                 },
                 work = WorkItem.parseList(o.optJSONArray("work")),
+                hardware = o.optJSONObject("hardware")?.let(Hardware::parse),
             )
         }
 
@@ -152,6 +155,100 @@ data class LiveSnapshot(
         )
 
         private fun JSONObject.toProcess() = ProcessEntry(optInt("pid"), optString("name"), getJSONObject("usage").toUsage())
+    }
+}
+
+/**
+ * The hardware panel (DECISIONS M-34). A value the PC cannot read is null, never 0, so the screen can
+ * leave it out instead of showing a false reading.
+ */
+data class Hardware(
+    val cpuName: String?,
+    val cpuTempC: Double?,
+    val boardTempC: Double?,
+    val gpus: List<Gpu>,
+    val disks: List<Disk>,
+    val ping: Ping?,
+) {
+    data class Gpu(
+        val name: String,
+        val vendor: String?,
+        val integrated: Boolean,
+        val loadPct: Double?,
+        val tempC: Double?,
+        val tempMaxC: Double?,
+        val vramUsedBytes: Long?,
+        val vramTotalBytes: Long?,
+        val sharedUsedBytes: Long?,
+        val sharedTotalBytes: Long?,
+        val powerW: Double?,
+        val powerLimitW: Double?,
+        val powerPct: Double?,
+        val fanPct: Double?,
+        val fanRpm: Double?,
+        val clockMhz: Double?,
+        val memClockMhz: Double?,
+    ) {
+        /**
+         * The memory the panel shows: the card's own VRAM, or for an integrated GPU (whose small reserved
+         * carve-out says little) the system memory it uses. Null when neither is known.
+         */
+        val memory: Pair<Long, Long>?
+            get() {
+                val dedicated = if (vramUsedBytes != null && vramTotalBytes != null && vramTotalBytes > 0) vramUsedBytes to vramTotalBytes else null
+                val shared = if (sharedUsedBytes != null && sharedTotalBytes != null && sharedTotalBytes > 0) sharedUsedBytes to sharedTotalBytes else null
+                return if (integrated) shared ?: dedicated else dedicated ?: shared
+            }
+    }
+
+    data class Disk(val name: String, val totalBytes: Long, val usedBytes: Long) {
+        val usedPct: Double get() = if (totalBytes > 0) usedBytes * 100.0 / totalBytes else 0.0
+    }
+
+    data class Ping(val host: String, val lastMs: Double?, val avgMs: Double?, val lossPct: Double, val samples: Int)
+
+    companion object {
+        fun parse(o: JSONObject) = Hardware(
+            cpuName = o.str("cpuName"),
+            cpuTempC = o.num("cpuTempC"),
+            boardTempC = o.num("boardTempC"),
+            gpus = o.optJSONArray("gpus").objects().mapNotNull { g ->
+                val name = g.str("name") ?: return@mapNotNull null
+                Gpu(
+                    name = name,
+                    vendor = g.str("vendor"),
+                    integrated = g.optBoolean("integrated"),
+                    loadPct = g.num("loadPct"),
+                    tempC = g.num("tempC"),
+                    tempMaxC = g.num("tempMaxC"),
+                    vramUsedBytes = g.long("vramUsedBytes"),
+                    vramTotalBytes = g.long("vramTotalBytes"),
+                    sharedUsedBytes = g.long("sharedUsedBytes"),
+                    sharedTotalBytes = g.long("sharedTotalBytes"),
+                    powerW = g.num("powerW"),
+                    powerLimitW = g.num("powerLimitW"),
+                    powerPct = g.num("powerPct"),
+                    fanPct = g.num("fanPct"),
+                    fanRpm = g.num("fanRpm"),
+                    clockMhz = g.num("clockMhz"),
+                    memClockMhz = g.num("memClockMhz"),
+                )
+            },
+            disks = o.optJSONArray("disks").objects().mapNotNull { d ->
+                val name = d.str("name") ?: return@mapNotNull null
+                Disk(name, d.optLong("totalBytes"), d.optLong("usedBytes"))
+            },
+            ping = o.optJSONObject("ping")?.let { p ->
+                Ping(p.optString("host"), p.num("lastMs"), p.num("avgMs"), p.optDouble("lossPct", 0.0), p.optInt("samples"))
+            },
+        )
+
+        private fun JSONObject.num(key: String): Double? =
+            if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
+
+        private fun JSONObject.long(key: String): Long? = if (has(key) && !isNull(key)) optLong(key) else null
+
+        private fun JSONObject.str(key: String): String? = if (has(key) && !isNull(key)) optString(key).ifBlank { null } else null
     }
 }
 

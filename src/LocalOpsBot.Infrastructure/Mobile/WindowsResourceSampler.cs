@@ -139,7 +139,7 @@ public sealed class WindowsResourceSampler : IResourceSampler, IDisposable
             foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (nic.OperationalStatus != OperationalStatus.Up ||
-                    nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+                    !CountsTowardTotals(nic.NetworkInterfaceType, nic.Name, nic.Description)) continue;
                 var s = nic.GetIPStatistics();
                 rx += s.BytesReceived;
                 tx += s.BytesSent;
@@ -163,6 +163,24 @@ public sealed class WindowsResourceSampler : IResourceSampler, IDisposable
             rxBps,
             txBps,
             Environment.TickCount64 / 1000);
+    }
+
+    private static readonly string[] VirtualAdapterMarks =
+        ["Virtual", "Hyper-V", "vEthernet", "VMware", "VirtualBox", "WSL", "Bluetooth", "Tailscale", "WireGuard", "Wintun", "ZeroTier"];
+
+    /// <summary>
+    /// Whether an adapter's bytes count toward the PC's network rate: physical Ethernet and Wi-Fi only.
+    /// Traffic of a VM switch, WSL, a VPN or Tailscale also crosses the physical adapter, so counting
+    /// those adapters too would show it twice. Adapted from PhoneBox (MIT, see THIRD-PARTY-NOTICES.txt).
+    /// </summary>
+    internal static bool CountsTowardTotals(NetworkInterfaceType type, string name, string description)
+    {
+        if (type is not (NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.GigabitEthernet)) return false;
+        var text = description + " " + name;
+        if (text.Contains("TAP", StringComparison.Ordinal)) return false; // OpenVPN's TAP-Windows ("TAP" in capitals, not "tap")
+        foreach (var mark in VirtualAdapterMarks)
+            if (text.Contains(mark, StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
     }
 
     private static IEnumerable<(int Pid, int ParentPid, string Name)> EnumerateProcesses()

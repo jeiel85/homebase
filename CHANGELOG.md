@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.29.0 — GPU, drives, temperature and ping on the phone
+
+### Added
+- **GPUs on the PC screen of the phone app.** Each GPU gets a card with its load (meter and the last
+  60 seconds), the video memory in use (for an integrated GPU, the system memory it uses), and its
+  temperature, power, fan and clock where the PC can read them. Any GPU maker works: the values come
+  from Windows itself (the same source as Task Manager), without a kernel driver. On NVIDIA cards the
+  Agent also runs `nvidia-smi` while a phone is watching, for power in watts and clocks. On a laptop
+  this keeps the NVIDIA GPU awake while you watch (DECISIONS M-34).
+- **Drives, internet ping and temperature.** Fixed drives with a fill meter and the space left; a ping
+  to 1.1.1.1 every 2 seconds with the last result, the one-minute average and the loss (set
+  `mobile.pingHost` to another host, or to `""` to turn pinging off); the CPU temperature (or, with the
+  default sensors, the board temperature) with its history; and the CPU model name.
+  Like the rest of the live view, all of this is read only while a phone is watching.
+
+### Fixed
+- **The network speed on the phone no longer counts traffic twice.** Tailscale, VPN, Hyper-V/WSL and
+  VMware adapters were added to the physical Wi-Fi or Ethernet adapter that carries the same traffic,
+  so that traffic was counted twice (watching over Tailscale counted the live view's own traffic on
+  both adapters). Only physical Wi-Fi and Ethernet adapters count now (DECISIONS M-35).
+
 ## v0.28.0 — PC aliases
 
 ### Added

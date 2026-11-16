@@ -16,6 +16,7 @@ public sealed class LiveSnapshotHub : IDisposable
     public static readonly TimeSpan SessionStaleAfter = TimeSpan.FromSeconds(15);
 
     private readonly IResourceSampler _sampler;
+    private readonly IHardwareSampler? _hardware;
     private readonly ILogger<LiveSnapshotHub> _logger;
     private readonly TimeProvider _time;
     private readonly int _intervalMs;
@@ -26,9 +27,11 @@ public sealed class LiveSnapshotHub : IDisposable
     private SessionReport? _session;
     private DateTimeOffset _sessionAt;
 
-    public LiveSnapshotHub(IResourceSampler sampler, IOptions<MobileOptions> options, TimeProvider time, ILogger<LiveSnapshotHub> logger)
+    public LiveSnapshotHub(IResourceSampler sampler, IOptions<MobileOptions> options, TimeProvider time, ILogger<LiveSnapshotHub> logger,
+        IHardwareSampler? hardware = null)
     {
         _sampler = sampler;
+        _hardware = hardware;
         _time = time;
         _logger = logger;
         _intervalMs = options.Value.ClampedIntervalMs;
@@ -67,6 +70,7 @@ public sealed class LiveSnapshotHub : IDisposable
             if (first)
             {
                 _sampler.Start();
+                _hardware?.Start();
                 _sampler.Sample(); // prime the deltas so the first pushed tick has real rates
                 // Capture this loop's own token: the lambda may run after Unsubscribe nulled
                 // _loopCts or a new watcher replaced it, and each loop must keep its own lifetime.
@@ -107,7 +111,11 @@ public sealed class LiveSnapshotHub : IDisposable
         {
             // Another watcher may have arrived while we were stopping; it restarted the sampler.
             stopped = _subscribers.Count == 0;
-            if (stopped) _sampler.Stop();
+            if (stopped)
+            {
+                _sampler.Stop();
+                _hardware?.Stop();
+            }
         }
         if (!stopped) return;
         _logger.LogInformation("Mobile live view stopped.");
@@ -166,7 +174,8 @@ public sealed class LiveSnapshotHub : IDisposable
             session is null ? Array.Empty<AppEntry>() : AppAggregator.BuildApps(processes, session.Windows),
             AppAggregator.TopProcesses(processes),
             claude,
-            work);
+            work,
+            _hardware?.Current);
     }
 
     public void Dispose()

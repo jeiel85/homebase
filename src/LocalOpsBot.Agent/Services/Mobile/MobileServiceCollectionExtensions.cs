@@ -43,6 +43,8 @@ public static class MobileServiceCollectionExtensions
             sp.GetRequiredService<ILogger<UnifiedPushOutboundChannel>>()));
         services.AddSingleton<IOutboundChannel>(sp => sp.GetRequiredService<UnifiedPushOutboundChannel>());
         services.AddSingleton<IResourceSampler, WindowsResourceSampler>();
+        // GPU, drives, temperatures, ping for the live view (M-34); the temperature collector is the one the advisor uses.
+        services.AddSingleton<IHardwareSampler, WindowsHardwareSampler>();
         services.AddSingleton<TailscaleAddressResolver>();
         services.AddSingleton<LanAddressResolver>();
         services.AddSingleton<LiveSnapshotHub>();

@@ -275,16 +275,23 @@ fun ArcGauge(
 }
 
 /**
- * Rolling line for unbounded values (bytes/s): auto-scales to the window's peak so the shape of
- * the traffic is readable even when the absolute number isn't. Filled area under a line.
+ * Rolling line for unbounded values (bytes/s, ping ms): auto-scales to the window's peak (at least
+ * [floor]) so the shape is readable even when the absolute number isn't. Filled area under a line.
  */
 @Composable
-fun RateTrace(values: List<Float>, color: Color, modifier: Modifier = Modifier, capacity: Int = 60, height: Dp = 30.dp) {
+fun RateTrace(
+    values: List<Float>,
+    color: Color,
+    modifier: Modifier = Modifier,
+    capacity: Int = 60,
+    height: Dp = 30.dp,
+    floor: Float = 1024f,
+) {
     val hb = Hb.colors
     Canvas(modifier.fillMaxWidth().height(height)) {
         drawLine(hb.meterOff, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), strokeWidth = 1f)
         if (values.size < 2) return@Canvas
-        val peak = values.max().coerceAtLeast(1024f) // below 1 KB/s everything is "flat"
+        val peak = values.max().coerceAtLeast(floor) // below the floor (1 KB/s for rates) everything is "flat"
         val step = size.width / (capacity - 1)
         val x0 = (capacity - values.size) * step
         val line = Path()

@@ -73,6 +73,9 @@ import java.time.OffsetDateTime
 
 private const val HISTORY = 60
 
+/** GPUs shown on the panel; a third one (rare) is left out. */
+private const val MAX_GPUS = 2
+
 /**
  * One PC, live. The WebSocket is open only while this screen is at least STARTED
  * (`collectAsStateWithLifecycle`), so leaving the screen or turning the display off closes it
@@ -168,6 +171,11 @@ private class History {
     val rx = mutableStateListOf<Float>()
     val tx = mutableStateListOf<Float>()
 
+    /** Load of the first [MAX_GPUS] GPUs, in the order the PC lists them (main GPU first). */
+    val gpu = List(MAX_GPUS) { mutableStateListOf<Float>() }
+    val ping = mutableStateListOf<Float>()
+    val temp = mutableStateListOf<Float>()
+
     fun add(s: LiveSnapshot) {
         val sys = s.system
         push(cpu, sys.cpuPct.toFloat())
@@ -175,6 +183,11 @@ private class History {
         push(io, sys.ioBps.toFloat())
         push(rx, sys.netRxBps.toFloat())
         push(tx, sys.netTxBps.toFloat())
+        val hw = s.hardware ?: return
+        gpu.forEachIndexed { i, list -> hw.gpus.getOrNull(i)?.loadPct?.let { push(list, it.toFloat()) } }
+        // A lost ping leaves a gap in time, not a dip to 0 ms; the cell shows the loss as a number.
+        hw.ping?.lastMs?.let { push(ping, it.toFloat()) }
+        (hw.cpuTempC ?: hw.boardTempC)?.let { push(temp, it.toFloat()) }
     }
 
     private fun push(list: MutableList<Float>, v: Float) {
@@ -299,11 +312,29 @@ private fun InstrumentPanel(s: LiveSnapshot, h: History) {
             color = hb.onSlabSoft.copy(alpha = 0.7f),
             modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
         )
+        val hw = s.hardware
+        hw?.gpus?.take(MAX_GPUS)?.forEachIndexed { i, g ->
+            Spacer(Modifier.height(if (i == 0) 12.dp else 8.dp))
+            GpuCell(g, h.gpu[i], capacity = HISTORY)
+        }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             RateCell("디스크", sys.ioBps, h.io, hb.meterOk, Modifier.weight(1f))
             RateCell("받기 ↓", sys.netRxBps, h.rx, Color(0xFF6FD3C1), Modifier.weight(1f))
             RateCell("보내기 ↑", sys.netTxBps, h.tx, hb.accent, Modifier.weight(1f))
+        }
+        val ping = hw?.ping
+        val temp = hw?.cpuTempC?.let { "CPU 온도" to it } ?: hw?.boardTempC?.let { "보드 온도" to it }
+        if (ping != null || temp != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (ping != null) PingCell(ping, h.ping, capacity = HISTORY, modifier = Modifier.weight(2f))
+                if (temp != null) TempCell(temp.first, temp.second, h.temp, capacity = HISTORY, modifier = Modifier.weight(1f))
+            }
+        }
+        if (!hw?.disks.isNullOrEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            DrivesBlock(hw!!.disks)
         }
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -314,6 +345,16 @@ private fun InstrumentPanel(s: LiveSnapshot, h: History) {
                 Spacer(Modifier.width(10.dp))
                 Text("· 앱별 네트워크 없음", style = androidx.compose.material3.MaterialTheme.typography.bodySmall, color = hb.onSlabSoft)
             }
+        }
+        hw?.cpuName?.let {
+            Text(
+                it,
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = hb.onSlabSoft,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

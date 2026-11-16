@@ -43,6 +43,56 @@ class ProtocolTest {
         assertEquals("""D:\Project\homebase""", s.claudeSessions.single().project)
     }
 
+    @Test
+    fun snapshot_fixture_carries_the_hardware_panel() {
+        val h = LiveSnapshot.parse(fixture("snapshot.v1.json")).hardware!!
+
+        assertEquals("AMD Ryzen 7 250 w/ Radeon 780M Graphics", h.cpuName)
+        assertEquals(61.5, h.cpuTempC!!, 0.001)
+        assertNull(h.boardTempC)
+
+        val (dgpu, igpu) = h.gpus
+        assertEquals("NVIDIA GeForce RTX 5060 Laptop GPU", dgpu.name)
+        assertEquals("nvidia", dgpu.vendor)
+        assertFalse(dgpu.integrated)
+        assertEquals(37.0, dgpu.loadPct!!, 0.001)
+        assertEquals(41.2, dgpu.powerW!!, 0.001)
+        assertNull(dgpu.powerLimitW) // a laptop GPU has none: null, not 0
+        assertNull(dgpu.fanPct)
+        // A discrete card shows its own VRAM, an integrated one the system memory it uses.
+        assertEquals(1_492_123_648L to 8_546_942_976L, dgpu.memory)
+        assertTrue(igpu.integrated)
+        assertEquals(355_807_232L to 8_217_880_576L, igpu.memory)
+        assertEquals(3.2, igpu.powerPct!!, 0.001)
+
+        assertEquals(listOf("C:", "D:"), h.disks.map { it.name })
+        assertEquals(96.8, h.disks[1].usedPct, 0.1)
+        val ping = h.ping!!
+        assertEquals("1.1.1.1", ping.host)
+        assertEquals(10.3, ping.avgMs!!, 0.001)
+        assertEquals(0.0, ping.lossPct, 0.001)
+        assertEquals(30, ping.samples)
+    }
+
+    @Test
+    fun snapshot_from_an_older_pc_has_no_hardware() {
+        val old = org.json.JSONObject(fixture("snapshot.v1.json")).apply { remove("hardware") }.toString()
+        assertNull(LiveSnapshot.parse(old).hardware)
+    }
+
+    @Test
+    fun hardware_values_the_pc_cannot_read_stay_null() {
+        val h = Hardware.parse(
+            org.json.JSONObject("""{"cpuName":null,"gpus":[{"name":"GPU","integrated":false},{"integrated":true}],"disks":[]}"""),
+        )
+        assertNull(h.cpuName)
+        assertNull(h.ping)
+        val g = h.gpus.single() // the entry without a name is dropped
+        assertNull(g.loadPct)
+        assertNull(g.tempC)
+        assertNull(g.memory)
+    }
+
     @Test(expected = ProtocolException::class)
     fun unknown_schema_is_rejected_not_half_parsed() {
         LiveSnapshot.parse(fixture("snapshot.v1.json").replaceFirst("\"schema\": 1", "\"schema\": 2"))

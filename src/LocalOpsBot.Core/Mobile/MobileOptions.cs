@@ -33,6 +33,12 @@ public sealed class MobileOptions
     public bool ClaudeSessions { get; set; } = true;
 
     /// <summary>
+    /// Host the live view pings every 2 s for internet latency and loss (DECISIONS M-34), only while a
+    /// phone is watching. Empty turns pinging off.
+    /// </summary>
+    public string? PingHost { get; set; } = "1.1.1.1";
+
+    /// <summary>
     /// SID of the Windows user whose Tray may use the mobile bridge pipe (written by the Tray when it
     /// enables the feature). Empty → the INTERACTIVE group.
     /// </summary>
