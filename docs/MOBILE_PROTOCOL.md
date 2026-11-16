@@ -61,17 +61,20 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | POST | `/api/v1/notifications` | `Authorization: Bearer <token>` | 202 `{schema, accepted: true}` · 400 `invalid_notification` · 401 · 503 `forwarding_off` (M-28) |
 | GET | `/api/v1/inbox?after=<seq>` | `Authorization: Bearer <token>` | 200 `{schema, next, items[]}` — 새 항목이 없으면 최대 25초 기다린다 · 401 (M-28) |
 | DELETE | `/api/v1/device` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, removed}` — 기기가 스스로 페어링을 끊는다 · 401 (M-29) |
+| POST | `/api/v1/live-snapshot` | `Authorization: Bearer <token>` (PC만) | 200 `{schema, live}` · 400 `invalid_snapshot` · 401 · 403 (M-46) |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
 
 ### 기기 공유 (M-27 ~ M-29)
 
 PC는 페어링한 기기(휴대폰·다른 PC)의 허브다.
-- **상태**: 기기는 `POST /api/v1/presence`로 자기 상태를 보낸다([`presence.v1.json`](mobile-protocol/presence.v1.json)): `{schema, kind, appVersion?, battery?, charging?, network?, cpuPct?, memUsedBytes?, memTotalBytes?, uptimeSec?, pushHashes?}`. 휴대폰은 배터리·네트워크를, PC는 CPU·메모리·가동 시간을 채운다. 응답과 `GET /api/v1/devices`는 [`devices.v1.json`](mobile-protocol/devices.v1.json): `{schema, hub: {pcId, pcName, agentVersion, status}, devices: [{deviceId, name, kind, model?, lastSeenAt?, online, status?}], pushHashes?}`. 상태는 PC 메모리에만 있고 2분 넘게 보고가 없으면 `online=false`. 휴대폰은 앱을 열거나 목록이 PC를 확인할 때, 그리고 30분 주기 잡에서, PC는 30초마다 보고한다.
+- **상태**: 기기는 `POST /api/v1/presence`로 자기 상태를 보낸다([`presence.v1.json`](mobile-protocol/presence.v1.json)): `{schema, kind, appVersion?, battery?, charging?, network?, cpuPct?, memUsedBytes?, memTotalBytes?, uptimeSec?, pushHashes?}`. 휴대폰은 배터리·네트워크를, PC는 CPU·메모리·가동 시간을 채운다.
+  v0.34.0(M-46)부터 표시용 필드가 더해졌다: `os`(≤64자), `storageUsedBytes`·`storageTotalBytes`, `batteryTempC`(−40~120), `batteryHealth`(`good`·`overheat`·`dead`·`over_voltage`·`cold`·`failure`), `plug`(`ac`·`usb`·`wireless`·`dock`), `chargeFullSec`(완충까지 초, 0~7일), `powerSave`, `thermal`(`none`~`shutdown`), `signal`(0~4칸), `linkMbps`(Wi-Fi 링크 속도), `forwarding`(이 휴대폰이 자기 알림을 PC로 보내는 중), `dnd`(방해 금지). 휴대폰은 메모리·가동 시간도 채우고, PC는 `os`를 채운다. 범위를 벗어난 표시용 필드는 허브가 버리며 보고 전체를 거절하지 않는다. 앱은 배터리·충전·네트워크·충전 방식·절전·발열·알림 전달·방해 금지·신호가 바뀔 때만 1분 주기보다 먼저 다시 보낸다. 응답과 `GET /api/v1/devices`는 [`devices.v1.json`](mobile-protocol/devices.v1.json): `{schema, hub: {pcId, pcName, agentVersion, status}, devices: [{deviceId, name, kind, model?, lastSeenAt?, online, status?}], pushHashes?}`. 상태는 PC 메모리에만 있고 2분 넘게 보고가 없으면 `online=false`. 휴대폰은 앱을 열거나 목록이 PC를 확인할 때, 그리고 30분 주기 잡에서, PC는 30초마다 보고한다.
 - **`pushHashes`**: UnifiedPush 엔드포인트 URL의 SHA-256(소문자 hex). PC가 자기 휴대폰 목록을 보내고(presence), 허브는 자기 휴대폰 목록을 돌려준다(devices). 같은 휴대폰이 두 PC에 붙어 있으면 중계 알림을 한 번만 받도록 보내는 쪽에서 건너뛴다.
 - **알림 중계**: `POST /api/v1/notifications` 본문은 [`device-notification.v1.json`](mobile-protocol/device-notification.v1.json): `{schema, id, app (≤64), title (≤200), body? (≤1000), ts}`. 허브는 마스킹한 뒤 자기 트레이에 띄우고, 범주 **`device-notification`**으로 다른 휴대폰에 푸시한다(보낸 기기와 그 기기의 `pushHashes`는 제외). 푸시 제목은 `"<기기> · <앱>: <제목>"`이다. 푸시 `id`는 원본 알림 `id`에서 만들어 모든 PC에서 같으므로, 두 PC에 함께 붙은 휴대폰은 같은 중계 알림을 한 번만 띄운다(앱이 30분 안의 같은 `id`를 버림). 허브의 Windows 알림 forwarding이 꺼져 있으면 503 `forwarding_off`.
 - **PC 연결 코드 (M-30)**: 트레이의 "코드 복사"는 지금 오퍼를 24단어(BIP39 영어, 256비트 + 8비트 체크섬)로 준다. 32바이트 = 버전 1 · SHA-256(`pcId`) 앞 4바이트 · LAN 인증서 SHA-256 앞 8바이트(LAN 없으면 0) · 포트(빅엔디언 2바이트) · 페어링 `code`의 16바이트 · 예약 0. 받는 PC는 온라인 tailnet 피어와 자기 LAN /24 호스트에 `GET /api/v1/info`를 묻고(LAN은 지문 앞부분이 맞는 TLS만), `pcId` 앞 4바이트가 맞는 PC에 `POST /api/v1/pair {kind: pc}`를 보낸 뒤 `GET /api/v1/endpoints`로 전체 경로를 받는다. 프로토콜 추가는 없다.
-- **inbox**: 연결된 PC가 롱 폴링한다. `{schema, next, items: [{seq, id, originId, originName, app, title, body?, ts}]}` — 허브의 Windows 알림(`originId: "self"`)과 기기에서 받은 알림의 최근 200건·30분, 요청한 기기가 보낸 것은 뺀다. `after`가 허브의 `next`보다 크면(허브 재시작) 처음부터 준다. 받은 PC는 이 항목을 다시 중계하지 않는다(한 단계). `id`는 모든 경로에서 같아서, 두 PC가 서로 연결돼 같은 알림이 두 길로 와도 한 번만 띄운다.
+- **실시간 공유 (M-46)**: 허브의 트레이가 자기에게 연결한 PC(`kind: pc`)를 보고 있으면, 허브는 그 PC의 inbox 응답에 `live: true`를 싣는다(기다리던 롱 폴은 바로 깨우고, 폴 사이에 온 요청은 다음 폴에 바로 답한다. 요청이 이어지는 동안은 다시 깨우지 않는다). 받은 PC는 자기 `LiveSnapshot`을 2초마다 `POST /api/v1/live-snapshot`(인증, 본문 최대 1MiB, 토큰 확인 뒤에 본문을 읽음)으로 보내고, 응답 `{schema, live}`가 `false`이거나 세 번 연속 실패하면 멈춘다. 허브는 요청을 15초 동안 유지하고(트레이가 1초마다 갱신) 최신 스냅숏 하나만 메모리에 둔다. 휴대폰이 보내면 403, 형식이 틀리면 400 `invalid_snapshot`. 반대 방향(이 PC가 연결한 허브)은 그 허브의 `GET /api/v1/live` WebSocket을 이 PC가 가진 토큰으로 연다. 공유하는 동안 보내는 PC의 트레이에는 "다른 기기가 이 PC를 보는 중"이 켜진다. v0.33.0 이하 PC는 `live`를 모르므로 요약만 보인다.
+- **inbox**: 연결된 PC가 롱 폴링한다. `{schema, next, items: [{seq, id, originId, originName, app, title, body?, ts}], live?}` — 허브의 Windows 알림(`originId: "self"`)과 기기에서 받은 알림의 최근 200건·30분, 요청한 기기가 보낸 것은 뺀다. `after`가 허브의 `next`보다 크면(허브 재시작) 처음부터 준다. 받은 PC는 이 항목을 다시 중계하지 않는다(한 단계). `id`는 모든 경로에서 같아서, 두 PC가 서로 연결돼 같은 알림이 두 길로 와도 한 번만 띄운다.
 
 ## 푸시 알림 (UnifiedPush, M-19 · M-21)
 
@@ -170,11 +173,12 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 ## Tray ↔ Agent (`\\.\pipe\Homebase.MobileBridge`)
 
 프레임은 4바이트 LE 길이 + UTF-8 JSON `{op, id?, payload?}`이고 최대 1MiB다.
-- Agent → Tray: `watch {on}`, `toast.show {title, body?}`(다른 기기 알림을 이 PC에 띄움, M-28), `response {id, ok, payload?, error?}`.
+- Agent → Tray: `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?}`(다른 기기 알림을 이 PC에 띄움, M-28), `response {id, ok, payload?, error?}`.
 - Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`,
   `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`),
   `devices.overview`(→ `{here: DevicesResponse, hubs: [{pcId, pcName, online, lastContactAt?, status?, devices[], error?, selfDeviceId?}]}`),
   `hubs.link {link}`(다른 PC의 페어링 링크로 연결 → `{linked, pcName?, error?, message?}`), `hubs.unlink {pcId}`(M-29).
+  `live.get {target}`(M-46): `target`은 `self` · `hub:<pcId>` · `device:<deviceId>` → `{state, snapshot?, via?, detail?, at?}`, `state`는 `live`·`connecting`·`unreachable`·`unsupported`·`unknown`. 부를 때마다 그 보기를 10초 동안 열어 두고, 아무도 묻지 않으면 닫는다(수집도 멈춤). `devices.overview`에는 `local: [{deviceId, pairedAt, push, muted?}]`가 더해졌다.
   `session.report`에는 `agents[]`(Codex 세션 등 Claude 밖의 작업, M-26)가 더해졌다.
   `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.

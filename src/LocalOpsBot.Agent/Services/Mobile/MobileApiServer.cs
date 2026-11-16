@@ -92,7 +92,7 @@ public sealed class MobileApiServer : BackgroundService
     {
         lock (_gate)
         {
-            return new BridgeStatus(_listening, LegacyHostsLocked(), _options.Port, _hub.Watchers, EndpointsLocked(),
+            return new BridgeStatus(_listening, LegacyHostsLocked(), _options.Port, _hub.RemoteWatchers, EndpointsLocked(),
                 new MobileOptionsSummary(_options.Tailscale, _options.Lan, _options.Cloudflare.Enabled),
                 _tunnel?.Status());
         }
@@ -352,7 +352,18 @@ public sealed class MobileApiServer : BackgroundService
         byte[]? body = null;
         if (r.Head.Method == "POST")
         {
-            body = await MiniHttp.ReadBodyAsync(stream, r.Head, r.Leftover, ct);
+            var maxBody = MiniHttp.MaxBodyBytes;
+            if (r.Head.Path == LiveSharePath)
+            {
+                // The one large body: only a paired device may make us read it (M-46).
+                if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
+                {
+                    await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                    return;
+                }
+                maxBody = MiniHttp.MaxSnapshotBodyBytes;
+            }
+            body = await MiniHttp.ReadBodyAsync(stream, r.Head, r.Leftover, ct, maxBody);
             if (body is null)
             {
                 await MiniHttp.WriteResponseAsync(stream, 400, Error("bad_request", "Missing or oversized body."), ct);
@@ -534,6 +545,28 @@ public sealed class MobileApiServer : BackgroundService
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return (200, Json(_deviceHub.Inbox.Read(after, device.DeviceId))); }
             }
 
+            case ("POST", LiveSharePath):
+            {
+                if (_deviceHub is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                // Phones have nothing to share this way; only a linked PC is asked to (M-46).
+                if (device.Kind != DeviceKind.Pc) return (403, Error("forbidden", "Only a linked PC shares its live view."));
+                LiveSnapshot? snapshot;
+                try { snapshot = JsonSerializer.Deserialize<LiveSnapshot>(body!, MobileProtocol.Json); }
+                catch (JsonException) { snapshot = null; }
+                if (snapshot is null || snapshot.Schema != MobileProtocol.Schema || snapshot.System is null)
+                    return (400, Error("invalid_snapshot", "Invalid live snapshot."));
+                // Lists left out of the JSON come back null; the Tray reads them as empty.
+                snapshot = snapshot with
+                {
+                    Apps = snapshot.Apps ?? Array.Empty<AppEntry>(),
+                    Processes = snapshot.Processes ?? Array.Empty<ProcessEntry>(),
+                    ClaudeSessions = snapshot.ClaudeSessions ?? Array.Empty<ClaudeSession>(),
+                };
+                return (200, Json(new LiveShareResponse(MobileProtocol.Schema, _deviceHub.AcceptLive(device, snapshot))));
+            }
+
             case ("DELETE", "/api/v1/device"):
             {
                 if (_deviceHub is null) return (404, Error("not_found", "Not found."));
@@ -543,7 +576,8 @@ public sealed class MobileApiServer : BackgroundService
             }
 
             case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"
-                or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"):
+                or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"
+                or LiveSharePath):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:
@@ -618,6 +652,9 @@ public sealed class MobileApiServer : BackgroundService
             await receive;
         }
     }
+
+    /// <summary>Where a linked PC shares its live snapshots while this PC's Tray looks at it (M-46).</summary>
+    public const string LiveSharePath = "/api/v1/live-snapshot";
 
     /// <summary>WebSocket close reason (status 1008) when the device was revoked; the app treats it like 401.</summary>
     public const string RevokedCloseReason = "revoked";

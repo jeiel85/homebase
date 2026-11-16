@@ -13,7 +13,7 @@ namespace LocalOpsBot.Tray.Services.Mobile;
 /// windows every 2 s and AI coding transcripts (Claude Code, Codex) every 10 s, and stops on <c>watch off</c>.
 /// While connected it also watches the AI sessions' live state every 3 s — Claude Code's small
 /// status files and the Codex rollouts' appended lines — and asks the Agent to push an alert when a
-/// session starts waiting for the user or finishes a long turn while the user is away (M-44, M-45).
+/// session starts waiting for the user or finishes a long turn while the user is away (M-46, M-45).
 /// <c>mobile:claudeSessions</c> turns all of this off (DECISIONS M-9, M-26).
 /// </summary>
 internal sealed class MobileBridgeClient : IDisposable
@@ -52,7 +52,11 @@ internal sealed class MobileBridgeClient : IDisposable
 
     public bool IsConnected => _pipe?.IsConnected == true;
 
-    /// <summary>True between the Agent's <c>watch on</c> and <c>watch off</c> (or a lost pipe): a phone is viewing this PC.</summary>
+    /// <summary>
+    /// True while another device (a phone or a linked PC) is viewing this PC: the Agent's <c>watch</c>
+    /// with <c>remote</c> (M-46), or plain <c>on</c> from an Agent older than v0.34.0. This PC's own
+    /// dashboard also makes the Agent collect, but does not count.
+    /// </summary>
     public bool IsWatching { get; private set; }
 
     /// <summary>A notification from another device to show here (DECISIONS M-28). Background thread.</summary>
@@ -179,16 +183,10 @@ internal sealed class MobileBridgeClient : IDisposable
         switch ((string?)msg["op"])
         {
             case MobileBridge.OpWatch:
-                if ((bool?)msg["payload"]?["on"] == true)
-                {
-                    StartReporting(pipe);
-                    SetWatching(true);
-                }
-                else
-                {
-                    StopReporting();
-                    SetWatching(false);
-                }
+                var on = (bool?)msg["payload"]?["on"] == true;
+                if (on) StartReporting(pipe);
+                else StopReporting();
+                SetWatching(on && ((bool?)msg["payload"]?["remote"] ?? true));
                 break;
             case MobileBridge.OpToast:
                 if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);

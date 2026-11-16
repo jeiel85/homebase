@@ -9,7 +9,8 @@
       "cpuPct": 23.4,
       "memUsedBytes": 12884901888,
       "memTotalBytes": 34359738368,
-      "uptimeSec": 93784
+      "uptimeSec": 93784,
+      "os": "Windows 11 Pro 24H2"
     }
   },
   "devices": [
@@ -25,7 +26,8 @@
         "cpuPct": 8,
         "memUsedBytes": 8589934592,
         "memTotalBytes": 17179869184,
-        "uptimeSec": 7200
+        "uptimeSec": 7200,
+        "os": "Windows 11 Home 24H2"
       }
     },
     {
@@ -36,10 +38,26 @@
       "lastSeenAt": "2026-11-14T09:29:00+00:00",
       "online": true,
       "status": {
-        "appVersion": "0.22.0",
+        "appVersion": "0.33.0",
         "battery": 76,
-        "charging": false,
-        "network": "wifi"
+        "charging": true,
+        "network": "wifi",
+        "memUsedBytes": 5368709120,
+        "memTotalBytes": 11811160064,
+        "uptimeSec": 259200,
+        "os": "Android 15",
+        "storageUsedBytes": 143881404416,
+        "storageTotalBytes": 255550554112,
+        "batteryTempC": 31.5,
+        "batteryHealth": "good",
+        "plug": "usb",
+        "chargeFullSec": 2100,
+        "powerSave": false,
+        "thermal": "none",
+        "signal": 4,
+        "linkMbps": 866,
+        "forwarding": true,
+        "dnd": false
       }
     },
     {

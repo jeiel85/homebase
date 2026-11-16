@@ -14,11 +14,17 @@ public static class DeviceKind
 }
 
 /// <summary>
-/// <c>POST /api/v1/presence</c> body (DECISIONS M-27): a device's own state. Phones fill battery and
-/// network; PCs fill CPU, memory and uptime. <c>PushHashes</c> are the SHA-256 (lowercase hex) of the
-/// UnifiedPush endpoints the device itself delivers to — a PC lists its phones so the hub does not
-/// push the same relayed notification to them twice (M-28).
+/// <c>POST /api/v1/presence</c> body (DECISIONS M-27, M-46): a device's own state. Phones fill battery,
+/// network, memory, storage and the rest of what Android tells without extra permissions; PCs fill CPU,
+/// memory, uptime and OS. <c>PushHashes</c> are the SHA-256 (lowercase hex) of the UnifiedPush endpoints
+/// the device itself delivers to — a PC lists its phones so the hub does not push the same relayed
+/// notification to them twice (M-28).
 /// </summary>
+/// <remarks>
+/// The fields after <c>PushHashes</c> came with v0.34.0 (M-46). They are display-only: a value out of
+/// range is dropped by <see cref="Sanitized"/> instead of failing the whole report, so one odd sensor on
+/// a phone never hides the rest of its state.
+/// </remarks>
 public sealed record PresenceReport(
     int Schema,
     string Kind,
@@ -30,7 +36,20 @@ public sealed record PresenceReport(
     long? MemUsedBytes = null,
     long? MemTotalBytes = null,
     long? UptimeSec = null,
-    IReadOnlyList<string>? PushHashes = null)
+    IReadOnlyList<string>? PushHashes = null,
+    string? Os = null,
+    long? StorageUsedBytes = null,
+    long? StorageTotalBytes = null,
+    double? BatteryTempC = null,
+    string? BatteryHealth = null,
+    string? Plug = null,
+    long? ChargeFullSec = null,
+    bool? PowerSave = null,
+    string? Thermal = null,
+    int? Signal = null,
+    int? LinkMbps = null,
+    bool? Forwarding = null,
+    bool? Dnd = null)
 {
     public const int MaxPushHashes = 32;
 
@@ -47,12 +66,34 @@ public sealed record PresenceReport(
         return null;
     }
 
+    /// <summary>The report with the v0.34.0 display fields that are out of range left out (M-46).</summary>
+    public PresenceReport Sanitized() => this with
+    {
+        Os = Word(Os, 64),
+        StorageUsedBytes = StorageUsedBytes is >= 0 && StorageTotalBytes is > 0 && StorageUsedBytes <= StorageTotalBytes ? StorageUsedBytes : null,
+        StorageTotalBytes = StorageUsedBytes is >= 0 && StorageTotalBytes is > 0 && StorageUsedBytes <= StorageTotalBytes ? StorageTotalBytes : null,
+        BatteryTempC = BatteryTempC is >= -40 and <= 120 ? Math.Round(BatteryTempC.Value, 1) : null,
+        BatteryHealth = Word(BatteryHealth, 16),
+        Plug = Word(Plug, 16),
+        ChargeFullSec = ChargeFullSec is > 0 and <= 7 * 86400 ? ChargeFullSec : null,
+        Thermal = Word(Thermal, 16),
+        Signal = Signal is >= 0 and <= 4 ? Signal : null,
+        LinkMbps = LinkMbps is > 0 and <= 100_000 ? LinkMbps : null,
+    };
+
+    private static string? Word(string? s, int max) => string.IsNullOrWhiteSpace(s) || s.Length > max ? null : s.Trim();
+
     private static bool IsHash(string? s) => s is { Length: 64 } && s.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
-    public DeviceStatus ToStatus() => new(AppVersion, Battery, Charging, Network, CpuPct, MemUsedBytes, MemTotalBytes, UptimeSec);
+    public DeviceStatus ToStatus() => new(AppVersion, Battery, Charging, Network, CpuPct, MemUsedBytes, MemTotalBytes, UptimeSec,
+        Os, StorageUsedBytes, StorageTotalBytes, BatteryTempC, BatteryHealth, Plug, ChargeFullSec, PowerSave, Thermal, Signal,
+        LinkMbps, Forwarding, Dnd);
 }
 
-/// <summary>The last reported state of one device; every field may be missing.</summary>
+/// <summary>
+/// The last reported state of one device; every field may be missing. The fields after <c>UptimeSec</c>
+/// are the v0.34.0 additions of <see cref="PresenceReport"/> (M-46); older devices and hubs leave them out.
+/// </summary>
 public sealed record DeviceStatus(
     string? AppVersion = null,
     int? Battery = null,
@@ -61,7 +102,20 @@ public sealed record DeviceStatus(
     double? CpuPct = null,
     long? MemUsedBytes = null,
     long? MemTotalBytes = null,
-    long? UptimeSec = null);
+    long? UptimeSec = null,
+    string? Os = null,
+    long? StorageUsedBytes = null,
+    long? StorageTotalBytes = null,
+    double? BatteryTempC = null,
+    string? BatteryHealth = null,
+    string? Plug = null,
+    long? ChargeFullSec = null,
+    bool? PowerSave = null,
+    string? Thermal = null,
+    int? Signal = null,
+    int? LinkMbps = null,
+    bool? Forwarding = null,
+    bool? Dnd = null);
 
 /// <summary>
 /// One device paired with a hub PC. <c>Online</c>: it reported within <see cref="DeviceStatusBoard.OnlineWindow"/>.
@@ -119,8 +173,18 @@ public sealed record InboxItem(
     string? Body,
     DateTimeOffset Ts);
 
-/// <summary><c>Next</c> is the <c>after</c> value for the following poll.</summary>
-public sealed record InboxResponse(int Schema, long Next, IReadOnlyList<InboxItem> Items);
+/// <summary>
+/// <c>Next</c> is the <c>after</c> value for the following poll. <c>Live</c> (v0.34.0, M-46) is true while
+/// someone on the hub is looking at the polling PC: it should then share its live snapshots with
+/// <c>POST /api/v1/live-snapshot</c> until the hub answers <c>live: false</c>.
+/// </summary>
+public sealed record InboxResponse(int Schema, long Next, IReadOnlyList<InboxItem> Items, bool? Live = null);
+
+/// <summary>
+/// <c>POST /api/v1/live-snapshot</c> answer (M-46): <c>Live</c> false means nobody on the hub is watching
+/// any more, so the sharing PC stops.
+/// </summary>
+public sealed record LiveShareResponse(int Schema, bool Live);
 
 /// <summary><c>DELETE /api/v1/device</c> response: the caller unpaired itself.</summary>
 public sealed record UnpairResponse(int Schema, string DeviceId, bool Removed);

@@ -17,7 +17,9 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// <item>this PC's own Windows notifications → <c>POST /api/v1/notifications</c>;</item>
 /// <item>a long poll of <c>GET /api/v1/inbox</c>; what arrives is shown here and pushed to this PC's
 /// phones, except phones the hub already reaches (M-28) — and never sent on again;</item>
-/// <item>every 10 minutes, the hub's current paths (<c>GET /api/v1/endpoints</c>) replace the stored ones.</item>
+/// <item>every 10 minutes, the hub's current paths (<c>GET /api/v1/endpoints</c>) replace the stored ones;</item>
+/// <item>while the hub's Tray looks at this PC (its inbox answers say <c>live</c>), this PC's live snapshots
+/// every 2 s → <c>POST /api/v1/live-snapshot</c>, until the hub answers <c>live: false</c> (M-46).</item>
 /// </list>
 /// </summary>
 [SupportedOSPlatform("windows")]
@@ -29,6 +31,10 @@ public sealed class HubLinkService : BackgroundService
     private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan InboxTimeout = DeviceHub.InboxWait + TimeSpan.FromSeconds(15);
 
+    /// <summary>How often a shared live snapshot goes to a hub whose Tray is looking at this PC (M-46).</summary>
+    public static readonly TimeSpan LiveShareInterval = TimeSpan.FromSeconds(2);
+    private const int LiveShareMaxFailures = 3;
+
     private readonly HubStore _store;
     private readonly IMobileDeviceStore _devices;
     private readonly SystemStatusProbeAdapter _status;
@@ -39,6 +45,7 @@ public sealed class HubLinkService : BackgroundService
     private readonly ConcurrentDictionary<string, Link> _links = new(StringComparer.Ordinal);
     private CancellationToken _stopping;
     private readonly HubFinder? _finder;
+    private readonly LiveSnapshotHub? _live;
 
     private sealed class Link(LinkedHub hub, HubClient client, CancellationTokenSource cts)
     {
@@ -51,6 +58,8 @@ public sealed class HubLinkService : BackgroundService
         public DateTimeOffset? LastContactAt { get; set; }
         public bool Online { get; set; }
         public string? Error { get; set; }
+        /// <summary>1 while this PC shares its live view with the hub (M-46).</summary>
+        public int Sharing;
         public IReadOnlyCollection<string> HubPushHashes => LastDevices?.PushHashes ?? (IReadOnlyCollection<string>)Array.Empty<string>();
     }
 
@@ -62,9 +71,11 @@ public sealed class HubLinkService : BackgroundService
         ILogger<HubLinkService> logger,
         NotificationForwardingService? forwarding = null,
         bool allowLoopback = false,
-        HubFinder? finder = null)
+        HubFinder? finder = null,
+        LiveSnapshotHub? live = null)
     {
         _finder = finder;
+        _live = live;
         _store = store;
         _devices = devices;
         _status = status;
@@ -95,7 +106,19 @@ public sealed class HubLinkService : BackgroundService
         .OrderBy(v => v.PcName, StringComparer.CurrentCultureIgnoreCase)
         .ToList();
 
-    /// <summary>Pairs with the PC behind a pairing link (the other Tray's QR link) and starts the link.</summary>
+    /// <summary>
+    /// The stored link to <paramref name="pcId"/> (paths and token) for this PC's own live view of that hub
+    /// (M-46), with the path that answered last first; null when not linked.
+    /// </summary>
+    public LinkedHub? Hub(string pcId)
+    {
+        if (!_links.TryGetValue(pcId, out var link)) return null;
+        var hub = link.Hub;
+        if (link.Client.Preferred is { } p && hub.Endpoints.Contains(p))
+            hub = hub with { Endpoints = new[] { p }.Concat(hub.Endpoints.Where(e => e != p)).ToList() };
+        return hub;
+    }
+
     /// <summary>
     /// Pairs with the PC behind a pairing link or a 24-word connection code (DECISIONS M-29, M-30)
     /// and starts the link.
@@ -289,6 +312,8 @@ public sealed class HubLinkService : BackgroundService
                     await Task.Delay(reply.Status == 401 ? RejectedRetry : PresenceInterval, _time, ct);
                     continue;
                 }
+                // The hub's Tray is looking at this PC: share the live view while it does (M-46).
+                if (inbox.Live == true) StartSharing(link, ct);
                 foreach (var item in inbox.Items)
                 {
                     // On (re)start, don't replay the hub's last 30 minutes as fresh notifications.
@@ -311,6 +336,58 @@ public sealed class HubLinkService : BackgroundService
             : link.LastDevices?.Devices.FirstOrDefault(d => d.DeviceId == item.OriginId)?.Kind ?? DeviceKind.Phone;
         var origin = new ToastOrigin($"hub:{link.Hub.PcId}:{item.OriginId}", name, FromHub: true, link.HubPushHashes, kind);
         await _forwarding.AcceptFromDeviceAsync(origin, item.App, item.Title, item.Body, item.Ts, item.Id);
+    }
+
+    private void StartSharing(Link link, CancellationToken ct)
+    {
+        if (_live is null || Interlocked.CompareExchange(ref link.Sharing, 1, 0) != 0) return;
+        _ = Task.Run(() => ShareLiveAsync(link, ct), CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Sends this PC's live snapshots to the hub every <see cref="LiveShareInterval"/> while its Tray looks
+    /// at this PC. Counts as a remote watcher here, so this PC's Tray shows that another device is viewing
+    /// it, and the sampler runs only meanwhile (M-5). Stops when the hub says nobody looks any more, after
+    /// a few failed sends, or when the link ends; the next inbox answer with <c>live</c> starts it again.
+    /// </summary>
+    private async Task ShareLiveAsync(Link link, CancellationToken ct)
+    {
+        _logger.LogInformation("{Name} is viewing this PC: sharing the live view.", link.Hub.PcName);
+        var failures = 0;
+        var sentAt = DateTimeOffset.MinValue;
+        try
+        {
+            using var sub = _live!.Subscribe();
+            await foreach (var snapshot in sub.Reader.ReadAllAsync(ct))
+            {
+                var now = _time.GetUtcNow();
+                if (now - sentAt < LiveShareInterval - TimeSpan.FromMilliseconds(250)) continue;
+                sentAt = now;
+                var reply = await link.Client.PostAsync(link.Hub.Endpoints, MobileApiServer.LiveSharePath, snapshot,
+                    link.Hub.Token, CallTimeout, ct);
+                if (reply.Ok && reply.Read<LiveShareResponse>() is { } answer)
+                {
+                    failures = 0;
+                    if (!answer.Live) break;
+                }
+                else if (++failures >= LiveShareMaxFailures)
+                {
+                    _logger.LogInformation("Sharing the live view with {Name} stopped: {Error}", link.Hub.PcName,
+                        reply.Error ?? reply.ErrorCode ?? $"HTTP {reply.Status}");
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Sharing the live view with {Name} failed: {Message}", link.Hub.PcName, ex.GetBaseException().Message);
+        }
+        finally
+        {
+            Volatile.Write(ref link.Sharing, 0);
+            _logger.LogInformation("{Name} stopped viewing this PC.", link.Hub.PcName);
+        }
     }
 
     private void OnLocalNotification(ToastItem item)

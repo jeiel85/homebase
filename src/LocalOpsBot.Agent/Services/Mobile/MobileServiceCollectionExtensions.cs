@@ -64,7 +64,8 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<DeviceStatusBoard>(),
                 sp.GetRequiredService<NotificationInbox>(), probe.Read,
                 forwarding is null ? null : (origin, n) => forwarding.AcceptFromDeviceAsync(origin, n.App, n.Title, n.Body, n.Ts, n.Id),
-                Environment.MachineName, SystemStatusProbe.AgentVersion, sp.GetRequiredService<ILogger<DeviceHub>>());
+                Environment.MachineName, SystemStatusProbe.AgentVersion, sp.GetRequiredService<ILogger<DeviceHub>>(),
+                sp.GetRequiredService<TimeProvider>());
         });
         // Links to other PCs this one paired with as a device (M-29).
         services.AddSingleton(sp => new HubStore(MobileDeviceStore.DefaultDirectory, sp.GetRequiredService<ILogger<HubStore>>()));
@@ -77,8 +78,14 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<HubLinkService>>(), sp.GetService<NotificationForwardingService>(),
                 finder: new HubFinder(
                     HubFinder.NetworkCandidates(sp.GetRequiredService<TailscaleAddressResolver>(), sp.GetRequiredService<LanAddressResolver>()),
-                    sp.GetRequiredService<ILogger<HubFinder>>()));
+                    sp.GetRequiredService<ILogger<HubFinder>>()),
+                live: sp.GetRequiredService<LiveSnapshotHub>());
         });
+        // The Tray's device page (M-46): this PC, linked PCs and PCs linked here, live while it looks.
+        services.AddSingleton(sp => new TrayLiveService(
+            sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<IMobileDeviceStore>(),
+            sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<TrayLiveService>>(),
+            sp.GetRequiredService<DeviceHub>(), sp.GetRequiredService<HubLinkService>()));
         services.AddHostedService(sp => sp.GetRequiredService<HubLinkService>());
         services.AddSingleton(sp => new MobileApiServer(
             sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<PairingService>(),

@@ -37,6 +37,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly HubLinkService? _hubLinks;
     private readonly TrayToastRelay? _toasts;
     private readonly INotificationHistoryStore? _history;
+    private readonly TrayLiveService? _trayLive;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
@@ -59,9 +60,11 @@ public sealed class MobileBridgeServer : BackgroundService
         DeviceHub? deviceHub = null,
         HubLinkService? hubLinks = null,
         TrayToastRelay? toasts = null,
-        INotificationHistoryStore? history = null)
+        INotificationHistoryStore? history = null,
+        TrayLiveService? trayLive = null)
     {
         _history = history;
+        _trayLive = trayLive;
         _deviceHub = deviceHub;
         _hubLinks = hubLinks;
         _toasts = toasts;
@@ -73,7 +76,14 @@ public sealed class MobileBridgeServer : BackgroundService
         _options = options.Value;
         _logger = logger;
         _hub.WatchingChanged += OnWatchingChanged;
+        _hub.RemoteWatchingChanged += OnWatchingChanged;
     }
+
+    /// <summary>
+    /// <c>watch</c>: <c>on</c> — someone watches, so report windows; <c>remote</c> — it is another device,
+    /// not this PC's own Tray, so show the "viewing this PC" indicator (M-46).
+    /// </summary>
+    private object WatchPayload() => new { on = _hub.IsWatching, remote = _hub.IsRemoteWatching };
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -133,7 +143,7 @@ public sealed class MobileBridgeServer : BackgroundService
         lock (_gate) _connections.Add(conn);
         try
         {
-            await SendAsync(conn, MobileBridge.Message(MobileBridge.OpWatch, new { on = _hub.IsWatching }), ct);
+            await SendAsync(conn, MobileBridge.Message(MobileBridge.OpWatch, WatchPayload()), ct);
             while (!ct.IsCancellationRequested)
             {
                 var msg = await MobileBridge.ReadFrameAsync(pipe, ct);
@@ -196,6 +206,12 @@ public sealed class MobileBridgeServer : BackgroundService
             await SendAsync(conn, await HistoryAsync(op, id, payload, ct), ct);
             return;
         }
+        if (op == MobileBridge.OpLiveGet)
+        {
+            var view = _trayLive?.Get(MobileBridge.StringOf(payload?["target"])) ?? new LiveView(LiveViewState.Unknown);
+            await SendAsync(conn, MobileBridge.Response(id, true, view), ct);
+            return;
+        }
         if (op == MobileBridge.OpHubsUnlink)
         {
             var ok = _hubLinks is not null && await _hubLinks.UnlinkAsync((string?)payload?["pcId"] ?? "");
@@ -214,7 +230,7 @@ public sealed class MobileBridgeServer : BackgroundService
             MobileBridge.OpDevicesOverview => _deviceHub is null
                 ? MobileBridge.Response(id, false, error: "unsupported")
                 : MobileBridge.Response(id, true, new DeviceOverview(_deviceHub.Devices(),
-                    _hubLinks?.Views() ?? (IReadOnlyList<LinkedHubView>)Array.Empty<LinkedHubView>())),
+                    _hubLinks?.Views() ?? (IReadOnlyList<LinkedHubView>)Array.Empty<LinkedHubView>(), _deviceHub.LocalInfo())),
             _ => MobileBridge.Response(id, false, error: "unsupported"),
         };
         await SendAsync(conn, response, ct);
@@ -294,13 +310,14 @@ public sealed class MobileBridgeServer : BackgroundService
         }
     }
 
-    private void OnWatchingChanged(bool on)
+    private void OnWatchingChanged(bool changed)
     {
         List<Connection> conns;
         lock (_gate) conns = _connections.ToList();
+        var payload = WatchPayload();
         foreach (var c in conns)
         {
-            _ = SendAsync(c, MobileBridge.Message(MobileBridge.OpWatch, new { on }), CancellationToken.None)
+            _ = SendAsync(c, MobileBridge.Message(MobileBridge.OpWatch, payload), CancellationToken.None)
                 .ContinueWith(t => _logger.LogDebug("Watch notify failed: {Message}", t.Exception?.GetBaseException().Message),
                     TaskContinuationOptions.OnlyOnFaulted);
         }
@@ -318,6 +335,7 @@ public sealed class MobileBridgeServer : BackgroundService
     public override void Dispose()
     {
         _hub.WatchingChanged -= OnWatchingChanged;
+        _hub.RemoteWatchingChanged -= OnWatchingChanged;
         if (_toasts is not null) _toasts.Requested -= OnToastRequested;
         base.Dispose();
     }

@@ -1,11 +1,18 @@
 package io.github.jeiel85.homebase.mesh
 
+import android.app.ActivityManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiInfo
 import android.os.BatteryManager
+import android.os.Build
+import android.os.Environment
+import android.os.PowerManager
+import android.os.StatFs
 import android.os.SystemClock
 import android.util.Log
 import io.github.jeiel85.homebase.BuildConfig
@@ -42,29 +49,138 @@ object MeshSync {
     /** pcId → that PC's last device list. */
     val hubs: StateFlow<Map<String, HubView>> = _hubs
 
-    /** This phone's own state, as far as Android tells it without extra permissions. */
+    /**
+     * This phone's own state, as far as Android tells it without extra permissions (DECISIONS M-27, M-46).
+     * Each extra reading is best effort: one that fails is left out, never the whole report.
+     */
     fun report(context: Context): PresenceReport {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         val plugged = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val temp = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        val caps = activeCaps(context)
+        val mem = safe { memory(context) }
+        val storage = safe { storage() }
+        val power = context.getSystemService(PowerManager::class.java)
         return PresenceReport(
             appVersion = BuildConfig.VERSION_NAME,
             battery = if (level >= 0 && scale > 0) (level * 100 / scale).coerceIn(0, 100) else null,
             charging = if (battery != null) plugged != 0 else null,
-            network = network(context),
+            network = caps?.let { network(it) },
+            memUsedBytes = mem?.first,
+            memTotalBytes = mem?.second,
+            uptimeSec = SystemClock.elapsedRealtime() / 1000,
+            os = "Android ${Build.VERSION.RELEASE}",
+            storageUsedBytes = storage?.first,
+            storageTotalBytes = storage?.second,
+            // Tenths of a degree; some phones report 0 when they have no sensor.
+            batteryTempC = if (temp != Int.MIN_VALUE && temp != 0) temp / 10.0 else null,
+            batteryHealth = battery?.getIntExtra(BatteryManager.EXTRA_HEALTH, 0)?.let { health(it) },
+            plug = plug(plugged),
+            chargeFullSec = if (plugged != 0) safe { chargeFullSec(context) } else null,
+            powerSave = power?.let { safe { it.isPowerSaveMode } },
+            thermal = power?.let { safe { thermal(it) } },
+            signal = caps?.let { safe { signal(it) } },
+            linkMbps = caps?.let { safe { linkMbps(it) } },
+            forwarding = MeshPrefs(context).forwardEnabled() && NotificationForwarder.hasAccess(context),
+            dnd = safe { dnd(context) },
         )
     }
 
-    private fun network(context: Context): String? {
+    private inline fun <T> safe(block: () -> T?): T? = try {
+        block()
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun activeCaps(context: Context): NetworkCapabilities? {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return null
-        return when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+        return cm.getNetworkCapabilities(cm.activeNetwork)
+    }
+
+    private fun network(caps: NetworkCapabilities): String? = when {
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+        else -> null
+    }
+
+    /** Used and total RAM. */
+    private fun memory(context: Context): Pair<Long, Long>? {
+        val am = context.getSystemService(ActivityManager::class.java) ?: return null
+        val info = ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        return if (info.totalMem > 0) (info.totalMem - info.availMem).coerceAtLeast(0) to info.totalMem else null
+    }
+
+    /** Used and total space of the data partition (where apps and photos live). */
+    private fun storage(): Pair<Long, Long>? {
+        val fs = StatFs(Environment.getDataDirectory().path)
+        val total = fs.totalBytes
+        return if (total > 0) (total - fs.availableBytes).coerceAtLeast(0) to total else null
+    }
+
+    internal fun health(code: Int): String? = when (code) {
+        BatteryManager.BATTERY_HEALTH_GOOD -> "good"
+        BatteryManager.BATTERY_HEALTH_OVERHEAT -> "overheat"
+        BatteryManager.BATTERY_HEALTH_DEAD -> "dead"
+        BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "over_voltage"
+        BatteryManager.BATTERY_HEALTH_COLD -> "cold"
+        BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "failure"
+        else -> null
+    }
+
+    internal fun plug(plugged: Int): String? = when (plugged) {
+        BatteryManager.BATTERY_PLUGGED_AC -> "ac"
+        BatteryManager.BATTERY_PLUGGED_USB -> "usb"
+        BatteryManager.BATTERY_PLUGGED_WIRELESS -> "wireless"
+        8 -> "dock" // BATTERY_PLUGGED_DOCK, API 33
+        else -> null
+    }
+
+    private fun chargeFullSec(context: Context): Long? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        val bm = context.getSystemService(BatteryManager::class.java) ?: return null
+        val ms = bm.computeChargeTimeRemaining()
+        return if (ms > 0) ms / 1000 else null
+    }
+
+    private fun thermal(power: PowerManager): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return when (power.currentThermalStatus) {
+            PowerManager.THERMAL_STATUS_NONE -> "none"
+            PowerManager.THERMAL_STATUS_LIGHT -> "light"
+            PowerManager.THERMAL_STATUS_MODERATE -> "moderate"
+            PowerManager.THERMAL_STATUS_SEVERE -> "severe"
+            PowerManager.THERMAL_STATUS_CRITICAL -> "critical"
+            PowerManager.THERMAL_STATUS_EMERGENCY -> "emergency"
+            PowerManager.THERMAL_STATUS_SHUTDOWN -> "shutdown"
             else -> null
         }
+    }
+
+    /** 0–4 bars from the signal strength Android attaches to the active network (no location permission). */
+    private fun signal(caps: NetworkCapabilities): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return signalBars(caps.signalStrength, caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
+    }
+
+    /** Bars for an RSSI-like dBm value; Wi-Fi and mobile networks use different scales. */
+    internal fun signalBars(dbm: Int, wifi: Boolean): Int? {
+        if (dbm == Int.MIN_VALUE || dbm >= 0) return null // NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED
+        val steps = if (wifi) intArrayOf(-88, -77, -66, -55) else intArrayOf(-115, -105, -95, -85)
+        return steps.count { dbm >= it }
+    }
+
+    private fun linkMbps(caps: NetworkCapabilities): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val wifi = caps.transportInfo as? WifiInfo ?: return null
+        return wifi.linkSpeed.takeIf { it > 0 }
+    }
+
+    private fun dnd(context: Context): Boolean? {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return null
+        return nm.currentInterruptionFilter.let { it != NotificationManager.INTERRUPTION_FILTER_ALL && it != NotificationManager.INTERRUPTION_FILTER_UNKNOWN }
     }
 
     /**
@@ -92,9 +208,13 @@ object MeshSync {
         if (force || presenceDue(last?.report, last?.atElapsed, report, SystemClock.elapsedRealtime())) send(api, pc, report)
     }
 
-    /** Whether [report] should go to a PC that last got [last] at [lastAt]: new, changed, or [RESEND_MS] old. */
+    /**
+     * Whether [report] should go to a PC that last got [last] at [lastAt]: new, noticeably changed
+     * ([PresenceReport.noticeable]), or [RESEND_MS] old. Memory, uptime and the like change on every
+     * poll and would otherwise send a report every 15 s.
+     */
     fun presenceDue(last: PresenceReport?, lastAt: Long?, report: PresenceReport, now: Long): Boolean =
-        last == null || lastAt == null || report != last || now - lastAt >= RESEND_MS || now < lastAt
+        last == null || lastAt == null || report.noticeable() != last.noticeable() || now - lastAt >= RESEND_MS || now < lastAt
 
     private suspend fun send(api: HomebaseApi, pc: PcEntry, report: PresenceReport) {
         try {

@@ -48,7 +48,8 @@ public sealed class SystemStatusProbe
             CpuPct: cpu,
             MemUsedBytes: used,
             MemTotalBytes: totalMem,
-            UptimeSec: Environment.TickCount64 / 1000);
+            UptimeSec: Environment.TickCount64 / 1000,
+            Os: OsName);
     }
 
     /// <summary>The same, as a report to a hub this PC is linked to (DECISIONS M-29).</summary>
@@ -57,7 +58,32 @@ public sealed class SystemStatusProbe
         var s = Read();
         return new PresenceReport(MobileProtocol.Schema, DeviceKind.Pc, s.AppVersion,
             CpuPct: s.CpuPct, MemUsedBytes: s.MemUsedBytes, MemTotalBytes: s.MemTotalBytes, UptimeSec: s.UptimeSec,
-            PushHashes: pushHashes is { Count: > 0 } ? pushHashes.Take(PresenceReport.MaxPushHashes).ToList() : null);
+            PushHashes: pushHashes is { Count: > 0 } ? pushHashes.Take(PresenceReport.MaxPushHashes).ToList() : null,
+            Os: s.Os);
+    }
+
+    /// <summary>"Windows 11 Pro 24H2"-style name from the registry, else the runtime's description (M-46).</summary>
+    public static string OsName { get; } = ReadOsName();
+
+    private static string ReadOsName()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+            var product = key?.GetValue("ProductName") as string;
+            var display = key?.GetValue("DisplayVersion") as string;
+            var build = Environment.OSVersion.Version.Build;
+            if (!string.IsNullOrWhiteSpace(product))
+            {
+                // ProductName still says "Windows 10" on Windows 11 (build 22000 and later).
+                if (build >= 22000) product = product.Replace("Windows 10", "Windows 11", StringComparison.Ordinal);
+                var name = string.IsNullOrWhiteSpace(display) ? product : $"{product} {display}";
+                return name.Length <= 64 ? name : name[..64];
+            }
+        }
+        catch (Exception) { }
+        var fallback = RuntimeInformation.OSDescription;
+        return fallback.Length <= 64 ? fallback : fallback[..64];
     }
 
     [StructLayout(LayoutKind.Sequential)]

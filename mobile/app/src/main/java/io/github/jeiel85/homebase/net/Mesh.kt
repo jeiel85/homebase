@@ -78,12 +78,38 @@ data class DevicesResponse(val hub: HubEntry, val devices: List<DeviceEntry>) {
     }
 }
 
-/** What this phone reports about itself (`POST /api/v1/presence`). */
+/**
+ * What this phone reports about itself (`POST /api/v1/presence`). The fields after [network] came with
+ * v0.34.0 (DECISIONS M-46): the PC's device page shows them; the PC drops a value out of range.
+ */
 data class PresenceReport(
     val appVersion: String,
     val battery: Int?,
     val charging: Boolean?,
     val network: String?,
+    val memUsedBytes: Long? = null,
+    val memTotalBytes: Long? = null,
+    val uptimeSec: Long? = null,
+    val os: String? = null,
+    val storageUsedBytes: Long? = null,
+    val storageTotalBytes: Long? = null,
+    val batteryTempC: Double? = null,
+    val batteryHealth: String? = null,
+    /** `ac`, `usb`, `wireless` or `dock` while plugged in. */
+    val plug: String? = null,
+    /** Seconds until full while charging, when Android estimates it. */
+    val chargeFullSec: Long? = null,
+    val powerSave: Boolean? = null,
+    /** `none` … `shutdown` (PowerManager thermal status, Android 10+). */
+    val thermal: String? = null,
+    /** Wi-Fi or mobile signal, 0–4 bars. */
+    val signal: Int? = null,
+    /** Wi-Fi link speed. */
+    val linkMbps: Int? = null,
+    /** This phone forwards its notifications to the PCs (on and allowed). */
+    val forwarding: Boolean? = null,
+    /** Do Not Disturb is on. */
+    val dnd: Boolean? = null,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
@@ -93,7 +119,29 @@ data class PresenceReport(
             battery?.let { put("battery", it) }
             charging?.let { put("charging", it) }
             network?.let { put("network", it) }
+            memUsedBytes?.let { put("memUsedBytes", it) }
+            memTotalBytes?.let { put("memTotalBytes", it) }
+            uptimeSec?.let { put("uptimeSec", it) }
+            os?.let { put("os", it) }
+            storageUsedBytes?.let { put("storageUsedBytes", it) }
+            storageTotalBytes?.let { put("storageTotalBytes", it) }
+            batteryTempC?.let { put("batteryTempC", it) }
+            batteryHealth?.let { put("batteryHealth", it) }
+            plug?.let { put("plug", it) }
+            chargeFullSec?.let { put("chargeFullSec", it) }
+            powerSave?.let { put("powerSave", it) }
+            thermal?.let { put("thermal", it) }
+            signal?.let { put("signal", it) }
+            linkMbps?.let { put("linkMbps", it) }
+            forwarding?.let { put("forwarding", it) }
+            dnd?.let { put("dnd", it) }
         }
+
+    /**
+     * What makes a report worth sending before [MeshSync.RESEND_MS] has passed: the state a person
+     * notices. Memory, storage, uptime and temperature move all the time and ride along once a minute.
+     */
+    fun noticeable(): List<Any?> = listOf(battery, charging, network, plug, powerSave, thermal, forwarding, dnd, signal)
 }
 
 /** A notification this phone forwards to a PC (`POST /api/v1/notifications`). */
@@ -122,9 +170,9 @@ data class DeviceNotification(
 }
 
 /**
- * What the PC knows about an AI coding session beyond its title (DECISIONS M-44). Every field is
+ * What the PC knows about an AI coding session beyond its title (DECISIONS M-46). Every field is
  * optional: each comes from a file Claude Code or Codex writes for itself, and a PC older than
- * v0.33.0 sends none of it.
+ * v0.34.0 sends none of it.
  */
 data class AgentInfo(
     /** [BUSY], [WAITING] or [IDLE]; null when the PC cannot tell. */
@@ -176,7 +224,7 @@ data class AgentInfo(
     }
 }
 
-/** One entry of the work tab (DECISIONS M-26). [agent] is set for AI sessions by PCs from v0.33.0 (M-44). */
+/** One entry of the work tab (DECISIONS M-26). [agent] is set for AI sessions by PCs from v0.34.0 (M-46). */
 data class WorkItem(
     val kind: String,
     val app: String,

@@ -22,8 +22,8 @@ public static class L
     public static string MenuExit => T("Exit", "종료");
     public static string MenuCheckUpdates(string version) => T($"Check for updates (v{version})", $"업데이트 확인 (v{version})");
     public static string MenuUpdateAvailable(object version) => T($"Install update v{version}", $"새 버전 v{version} 설치");
-    public static string MenuPhoneWatching => T("● A phone is viewing this PC", "● 휴대폰이 이 PC를 보는 중");
-    public static string TrayTipWatching => T("Homebase — a phone is viewing this PC", "Homebase — 휴대폰이 이 PC를 보는 중");
+    public static string MenuPhoneWatching => T("● Another device is viewing this PC", "● 다른 기기가 이 PC를 보는 중");
+    public static string TrayTipWatching => T("Homebase — another device is viewing this PC", "Homebase — 다른 기기가 이 PC를 보는 중");
 
     // ── Common ───────────────────────────────────────────────────────────────
     public static string Close => T("CLOSE", "닫기");
@@ -45,7 +45,7 @@ public static class L
     public static string ChipCheck => T("CHECK", "확인 필요");
 
     // ── Dashboard ────────────────────────────────────────────────────────────
-    public static string DashEyebrow => T("PC MONITOR", "PC 모니터");
+    public static string DashEyebrow => T("MY DEVICES", "내 기기");
     public static string DashThisPc => T("THIS PC", "지금 이 PC");
     public static string DashDisks => T("DISKS", "디스크");
     public static string DashConnections => T("CONNECTIONS", "연결");
@@ -55,7 +55,7 @@ public static class L
     public static string DashTelegram => T("Telegram", "텔레그램");
     public static string DashForwarding => T("Notification forwarding", "알림 전달");
     public static string DashPhone => T("Phone", "휴대폰");
-    public static string DashOpenSettings => T("SETTINGS", "설정 열기");
+    public static string DashOpenSettings => T("Settings", "설정");
     public static string BadgeChecking => T("checking…", "확인 중…");
     public static string BadgeRunning => T("● Monitoring", "● 감시 중");
     public static string BadgeNotInstalled => T("● Service not installed", "● 감시 서비스 없음");
@@ -281,13 +281,187 @@ public static class L
     public static string DevHubConnecting => T("connecting…", "연결하는 중…");
     public static string DevHubPhones(int n) => T($"{n} phone(s) there", $"휴대폰 {n}대 연결됨");
 
+    // ── Device page (dashboard, DECISIONS M-46) ──────────────────────────────
+    public static string DashAddDevice => T("+  Connect a phone or PC", "+  휴대폰·PC 연결");
+    public static string RailThisPc => T("THIS PC", "이 PC");
+    public static string RailPcs => T("PCS", "PC");
+    public static string RailPhones => T("PHONES", "휴대폰");
+    public static string RoleHub => T("linked from this PC", "이 PC가 연결함");
+    public static string RoleLinkedHere => T("linked to this PC", "이 PC에 연결함");
+    public static string ListBattery(int pct, bool charging) => T($"battery {pct}%{(charging ? " ⚡" : "")}", $"배터리 {pct}%{(charging ? " ⚡" : "")}");
+    public static string HeadSelf => T("this PC", "이 PC");
+    public static string HeadHub => T("a PC this one linked to", "이 PC가 연결한 PC");
+    public static string HeadLinkedHere => T("a PC linked to this one", "이 PC에 연결한 PC");
+    public static string HeadPhone => T("paired with this PC", "이 PC에 연결된 휴대폰");
+    public static string ChipPhoneLink => T("Phone connection", "휴대폰 연결");
+    public static string ChipOpensSettings => T("Change it in Settings", "설정에서 바꿀 수 있습니다");
+    public static string PillThisPc => T("this PC", "이 PC");
+    public static string PillLive(string via) => T($"live · {via}", $"실시간 · {via}");
+    public static string PillConnecting => T("connecting…", "연결하는 중…");
+    public static string PillAsking => T("asking to share…", "공유 요청 중…");
+    public static string PillStarting => T("starting…", "시작하는 중…");
+    public static string DetCollecting => T("Starting this PC's live readings…", "이 PC의 실시간 값을 모으기 시작했습니다…");
+    public static string PillNoAnswer => T("no answer", "응답 없음");
+    public static string PillOnline(string ago) => T($"online · reported {ago}", $"온라인 · {ago} 보고");
+    public static string PillOffline(string ago) => T($"offline · last seen {ago}", $"오프라인 · {ago} 마지막 보고");
+    public static string PillLastReport(string ago) => T($"last report {ago}", $"{ago} 보고");
+    public static string ViaShared => T("shared by that PC", "상대 PC가 공유");
+
+    public static string DetMemory => T("RAM", "메모리");
+    public static string DetDiskIo => T("DISK I/O", "디스크 I/O");
+    public static string DetReceive => T("↓ IN", "받기 ↓");
+    public static string DetSend => T("↑ OUT", "보내기 ↑");
+    public static string DetPing => T("PING", "핑");
+    public static string DetTemp => T("TEMP", "온도");
+    public static string DetLoss => T("loss", "손실");
+    public static string DetAverage => T("avg", "평균");
+    public static string DetBoard => T("board", "보드");
+    public static string DetFreeOf(string free, string total) => T($"{free} free of {total}", $"{free} 남음 / {total}");
+    public static string DetShared => T("shared", "공유");
+    public static string DetPower => T("power", "전력");
+    public static string DetFan => T("fan", "팬");
+    public static string DetUptime => T("Up", "가동");
+    public static string DetUptimeDays(int d, int h) => T($"{d}d {h}h", $"{d}일 {h}시간");
+    public static string DetUptimeHours(int h, int m) => T($"{h}h {m}m", $"{h}시간 {m}분");
+    public static string DetHoursMinutes(int h, int m) => T($"{h} h {m} min", $"{h}시간 {m}분");
+    public static string DetMinutesOnly(int m) => T($"{m} min", $"{m}분");
+    public static string DetNoNetPerProcess => T("no per-app network", "앱별 네트워크 없음");
+    public static string DetApps => T("Apps", "앱");
+    public static string DetProcesses => T("Processes", "프로세스");
+    public static string DetWork => T("Work", "작업");
+    public static string DetSortBy => T("Sort", "정렬");
+    public static string DetName => T("Name", "이름");
+    public static string DetDisk => T("Disk", "디스크");
+    public static string DetNetwork => T("Network", "네트워크");
+    public static string DetNoSession => T(
+        "Nobody is signed in on that PC (or its tray isn't running), so there are no windows to show.",
+        "그 PC에 로그인한 사용자가 없거나 트레이가 꺼져 있어 창 목록이 없습니다.");
+    public static string DetNoApps => T("No apps with windows.", "창이 열린 앱이 없습니다.");
+    public static string DetNoWork => T("No work sessions, documents or tabs to show.", "보여 줄 작업(AI 세션·문서·탭)이 없습니다.");
+    public static string DetMoreWindows(int n) => T($"+ {n} more windows", $"창 {n}개 더");
+    public static string DetExpandHint => T("Click to see its windows and child processes", "눌러서 창과 하위 프로세스 보기");
+    public static string DetForeground => T("in front", "앞에 열림");
+    public static string WorkAgent => T("AI agent", "AI 에이전트");
+    public static string AgentWaiting => T("Waiting for input", "입력 대기");
+    public static string AgentBusy => T("Working", "작업 중");
+    public static string AgentIdle => T("Idle", "쉬는 중");
+    public static string WorkEditor => T("Editor", "편집기");
+    public static string WorkDocument => T("Document", "문서");
+    public static string WorkBrowser => T("Browser", "브라우저");
+    public static string DetReconnecting => T("Reconnecting — showing the last reading.", "다시 연결하는 중입니다. 마지막 값을 보여 줍니다.");
+    public static string DetStale(string ago) => T($"It doesn't answer right now. This is the last reading, from {ago}.", $"지금은 응답이 없습니다. {ago}의 마지막 값입니다.");
+    public static string DetAskingShare(string name) => T(
+        $"Asked {name} to share its live view. It starts within a few seconds once {name} gets the request.",
+        $"{name}에 실시간 화면 공유를 요청했습니다. 요청이 닿으면 몇 초 안에 시작됩니다.");
+    public static string DetConnectingTo(string name) => T($"Connecting to {name}…", $"{name}에 연결하는 중…");
+    public static string DetViaHubOnly(string via) => T(
+        $"Seen through {via}, so only its last report shows. Connect it to this PC directly to see more.",
+        $"{via}를 거쳐 보이는 기기라 마지막 보고만 보입니다. 이 PC와 직접 연결하면 더 자세히 볼 수 있습니다.");
+    public static string DetAgentTooOld => T(
+        "This PC's Homebase service is older than the tray, so other PCs can't be shown live. Install the update.",
+        "이 PC의 Homebase 서비스가 트레이보다 오래된 버전이라 실시간 화면을 볼 수 없습니다. 업데이트를 설치하세요.");
+    public static string DetPcOffline => T(
+        "That PC doesn't answer: it is off, asleep or out of reach. Its last report is shown.",
+        "그 PC가 응답하지 않습니다. 꺼져 있거나 절전 중이거나 네트워크에 닿지 않습니다. 마지막 보고를 보여 줍니다.");
+    public static string DetPcTooOld(string version) => T(
+        $"That PC runs Homebase v{version}. Update it to v0.34.0 or later to see it live here.",
+        $"그 PC는 Homebase v{version}입니다. v0.34.0 이상으로 업데이트하면 여기서 실시간으로 볼 수 있습니다.");
+    public static string DetNoLiveYet => T("No live view yet — its last report is shown.", "아직 실시간 화면이 없어 마지막 보고를 보여 줍니다.");
+    public static string DetSelfFeatureOff => T(
+        "Turn on the phone connection (Settings › Phone) to see GPUs, temperatures, ping, apps and processes here — and your other devices.",
+        "휴대폰·기기 연결(설정 → 휴대폰)을 켜면 GPU·온도·핑·앱·프로세스와 다른 기기까지 여기서 볼 수 있습니다.");
+    public static string DetSelfNoAgent => T(
+        "The Homebase service doesn't answer, so only the basics are shown. It may be restarting.",
+        "Homebase 서비스가 응답하지 않아 기본 정보만 보입니다. 다시 시작하는 중일 수 있습니다.");
+
+    public static string DetPhoneNoReportYet => T(
+        "No report since this PC's service started. Opening the Homebase app on the phone sends one.",
+        "이 PC의 서비스가 시작된 뒤 아직 보고가 없습니다. 휴대폰에서 Homebase 앱을 열면 바로 보냅니다.");
+    public static string DetPhoneNeverReported => T(
+        "No report from this phone yet. Open the Homebase app on it.",
+        "이 휴대폰의 보고가 아직 없습니다. 휴대폰에서 Homebase 앱을 열어 보세요.");
+    public static string DetPhoneOldApp => T(
+        "Update the Homebase app on this phone to v0.34.0 or later to see memory, storage, temperature and more here.",
+        "휴대폰의 Homebase 앱을 v0.34.0 이상으로 업데이트하면 메모리·저장공간·온도 등도 여기에 보입니다.");
+    public static string DetPhoneCadence => T(
+        "Phones report when the Homebase app opens and about once a minute while it is open; when it is closed, about every 30 minutes.",
+        "휴대폰은 Homebase 앱을 열 때와 열려 있는 동안 약 1분마다, 닫혀 있으면 약 30분마다 상태를 보냅니다.");
+    public static string DetBattery => T("BATTERY", "배터리");
+    public static string DetCharging => T("charging", "충전 중");
+    public static string DetOnBattery => T("on battery", "배터리 사용");
+    public static string DetBatteryTemp => T("Battery temp", "배터리 온도");
+    public static string DetBatteryHealth => T("Battery health", "배터리 상태");
+    public static string DetPlug => T("Charger", "충전 방식");
+    public static string DetUntilFull => T("Until full", "완충까지");
+    public static string DetThermal => T("Heat", "발열");
+    public static string DetStorage => T("Storage", "저장공간");
+    public static string DetSystem => T("System", "시스템");
+    public static string DetModel => T("Model", "모델");
+    public static string DetPowerSave => T("Power saving", "절전 모드");
+    public static string DetDnd => T("Do not disturb", "방해 금지");
+    public static string DetForwarding => T("Forwarding", "알림 전달");
+    public static string DetForwardingOn => T("sends its notifications to PCs", "휴대폰 알림을 PC로 보냄");
+    public static string DetForwardingOff => T("off", "보내지 않음");
+    public static string DetAppVersion => T("App", "앱 버전");
+    public static string DetPhoneSection => T("PHONE", "휴대폰 상태");
+    public static string DetWithThisPc => T("WITH THIS PC", "이 PC와의 연결");
+    public static string DetConnection => T("CONNECTION", "연결");
+    public static string DetPush => T("Push", "푸시 알림");
+    public static string DetPushOn => T("gets this PC's notifications", "이 PC의 알림을 받는 중");
+    public static string DetPushOnMuted(string list) => T($"gets them, except {list}", $"받는 중 (끈 종류: {list})");
+    public static string DetPushOff => T("not registered — this PC's notifications don't reach it", "등록 안 됨 — 이 PC의 알림이 가지 않습니다");
+    public static string DetPairedAt => T("Paired", "연결한 날");
+    public static string DetLastReport => T("Last report", "마지막 보고");
+    public static string DetSeenThrough => T("Seen through", "거쳐 온 PC");
+    public static string DetSignal => T("Signal", "신호");
+    public static string DetCellular => T("Mobile data", "모바일 데이터");
+    public static string DetEthernet => T("Ethernet", "유선");
+    public static string DetNoNetwork => T("No network", "연결 없음");
+    public static string ChipOnWord => T("On", "켜짐");
+    public static string ChipOffWord => T("Off", "꺼짐");
+    public static string Health(string h) => h switch
+    {
+        "good" => T("Good", "양호"),
+        "overheat" => T("Overheating", "과열"),
+        "dead" => T("Worn out", "수명 다함"),
+        "over_voltage" => T("Over voltage", "과전압"),
+        "cold" => T("Cold", "저온"),
+        "failure" => T("Fault", "이상"),
+        _ => h,
+    };
+    public static string Plug(string p) => p switch
+    {
+        "ac" => T("Charger", "충전기"),
+        "usb" => "USB",
+        "wireless" => T("Wireless", "무선"),
+        "dock" => T("Dock", "독"),
+        _ => p,
+    };
+    public static string Thermal(string t) => t switch
+    {
+        "none" => T("Normal", "정상"),
+        "light" => T("Warm", "약간 따뜻함"),
+        "moderate" => T("Hot", "뜨거움"),
+        "severe" => T("Throttling", "성능 제한 중"),
+        _ => T("Critical", "위험"),
+    };
+    public static string CategoryName(string category) => category switch
+    {
+        "windows-toast" => T("Windows notifications", "Windows 알림"),
+        "device-notification" => T("other devices", "다른 기기 알림"),
+        "boot" => T("boot", "부팅"),
+        "process_watch" => T("process watch", "프로세스 감시"),
+        "service_watch" => T("service watch", "서비스 감시"),
+        _ => CenterAlertKind(category),
+    };
+
     // ── Notification center (DECISIONS M-32) ────────────────────────────────
     public static string MenuNotifications(int unread) => unread > 0
         ? T($"Notification center ({Count(unread)})", $"알림 센터 ({Count(unread)})")
         : T("Notification center", "알림 센터");
     public static string DashNotifications(int unread) => unread > 0
-        ? T($"NOTIFICATIONS · {Count(unread)}", $"알림 센터 · {Count(unread)}")
-        : T("NOTIFICATIONS", "알림 센터");
+        ? T($"Notifications · {Count(unread)}", $"알림 센터 · {Count(unread)}")
+        : T("Notifications", "알림 센터");
     private static string Count(int n) => n > 99 ? "99+" : n.ToString(CultureInfo.InvariantCulture);
     public static string CenterTitle => T("Homebase notifications", "Homebase 알림 센터");
     public static string CenterEyebrow => T("NOTIFICATIONS", "알림 센터");

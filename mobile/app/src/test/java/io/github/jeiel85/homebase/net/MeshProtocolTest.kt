@@ -82,7 +82,7 @@ class MeshProtocolTest {
         assertEquals("Galaxy S24", phone.name)
         assertTrue(phone.online)
         assertEquals(76, phone.status!!.battery)
-        assertEquals(false, phone.status!!.charging)
+        assertEquals(true, phone.status!!.charging)
         assertEquals("wifi", phone.status!!.network)
         val tab = r.devices[2]
         assertFalse(tab.online)
@@ -91,8 +91,20 @@ class MeshProtocolTest {
 
     @Test
     fun presence_report_matches_the_fixture() {
-        val report = PresenceReport(appVersion = "0.22.0", battery = 76, charging = false, network = "wifi")
+        val report = PresenceReport(
+            appVersion = "0.33.0", battery = 76, charging = true, network = "wifi",
+            memUsedBytes = 5_368_709_120, memTotalBytes = 11_811_160_064, uptimeSec = 259_200,
+            os = "Android 15", storageUsedBytes = 143_881_404_416, storageTotalBytes = 255_550_554_112,
+            batteryTempC = 31.5, batteryHealth = "good", plug = "usb", chargeFullSec = 2_100, powerSave = false,
+            thermal = "none", signal = 4, linkMbps = 866, forwarding = true, dnd = false,
+        )
         assertJsonEquals(fixture("presence.v1.json"), report.toJson())
+    }
+
+    @Test
+    fun an_older_style_report_leaves_the_new_fields_out() {
+        val json = PresenceReport(appVersion = "0.33.0", battery = 50, charging = null, network = null).toJson()
+        assertEquals(setOf("schema", "kind", "appVersion", "battery"), json.keys().asSequence().toSet())
     }
 
     @Test
