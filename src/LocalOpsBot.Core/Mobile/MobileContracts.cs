@@ -111,12 +111,12 @@ public sealed record AppEntry(
     ResourceUsage Usage,
     IReadOnlyList<ProcessEntry> Children);
 
-public sealed record ClaudeSession(string Title, string? Project, DateTimeOffset LastActivity)
+public sealed record ClaudeSession(string Title, string? Project, DateTimeOffset LastActivity, AgentInfo? Agent = null)
 {
     public const string AppName = "Claude Code";
 
-    /// <summary>The same session as a work-tab entry (DECISIONS M-26).</summary>
-    public WorkItem ToWork() => new(WorkKind.Agent, AppName, Title, Project, LastActivity);
+    /// <summary>The same session as a work-tab entry (DECISIONS M-26, M-44).</summary>
+    public WorkItem ToWork() => new(WorkKind.Agent, AppName, Title, Project, LastActivity, Agent: Agent);
 }
 
 public sealed record LiveSnapshot(

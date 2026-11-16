@@ -32,6 +32,7 @@ public static class MobileBridge
     public const string OpHubsUnlink = "hubs.unlink";         // request {pcId} → bool (M-29)
     public const string OpHistoryList = "history.list";       // request {after?, limit?} → HistoryPage (M-32)
     public const string OpHistoryClear = "history.clear";     // request → int (relayed notifications removed; M-32)
+    public const string OpAgentAlert = "agent.alert";         // push AgentAlert — an AI session waits or finished (M-45)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on} — collect only while a phone watches
@@ -41,7 +42,7 @@ public static class MobileBridge
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
-        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear,
+        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>

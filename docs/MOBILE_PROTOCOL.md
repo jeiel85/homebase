@@ -100,10 +100,10 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
 | `schema` | 1. 다르면 앱은 버린다 |
 | `id` | 알림 id(32 hex) |
 | `pcId`, `pcName` | 보낸 PC. 앱은 페어링된 PC가 아니면 버린다 |
-| `category` | `windows-toast`, `process_watch`, `service_watch`, `http_monitor`, `port_monitor`, `event_log`, `advisor`, `boot`, `test` |
+| `category` | `windows-toast`, `process_watch`, `service_watch`, `http_monitor`, `port_monitor`, `event_log`, `advisor`, `boot`, `device-notification`, `agent-waiting`, `agent-done`, `test`. `agent-*`(M-45)는 AI 코딩 세션이 사용자 입력을 기다리거나 1분 넘게 하던 작업을 마쳤을 때, PC 사용자가 60초 넘게 입력이 없을 때만 온다: `title`은 세션 제목, `body`는 "입력을 기다립니다: <이유>" 또는 "작업을 마쳤습니다 (<걸린 시간> 걸림)"와 폴더 이름, `source`는 `Claude Code`·`Codex` |
 | `priority` | `info`·`warning`·`critical`·`recovery` |
 | `title`, `body?` | 표시할 텍스트(평문, HTML 아님) |
-| `source` | 알림 채널 키. Windows 알림은 원래 앱 이름, 그 밖은 `category`와 같다 |
+| `source` | 알림 채널 키. Windows 알림은 원래 앱 이름, AI 세션 알림은 도구 이름, 그 밖은 `category`와 같다 |
 | `count` | 묶음 건수(앱별 묶음이면 2 이상) |
 | `ts` | 생성 시각(ISO 8601) |
 
@@ -153,6 +153,7 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 | `processes[]` | CPU 상위 30개 프로세스(창 없는 백그라운드 에이전트용) |
 | `claudeSessions[]` | 최근 10분 안에 활동한 Claude Code 세션의 제목, 작업 폴더, 마지막 활동 시각(옛 앱용, `work`에도 들어 있다) |
 | `work[]` | 작업 탭(M-26): `{kind, app, title, detail?, lastActivity?, foreground}`. `kind`는 `agent`(Claude Code·Codex 세션, `detail`=폴더) · `editor`(코드 편집기, `detail`=프로젝트) · `document`(Office·한글·PDF 등) · `browser`(브라우저 창의 활성 탭). 순서는 agent(최근 활동순) → 전경 창 → editor → document → browser, 최대 30개. v0.23.0 전 PC는 보내지 않는다 |
+| `work[].agent?` | AI 세션의 상세(M-44, v0.33.0부터 `kind: agent`에만): `{status?, waitingFor?, statusSince?, model?, effort?, contextTokens?, contextWindow?, totalTokens?, lastTool?, mode?, prNumber?, remoteUrl?, sessionId?}`. `status`는 `busy`·`waiting`·`idle`(모르면 없음), `waitingFor`는 `waiting`일 때 Claude Code가 적은 이유, `contextTokens`는 마지막 요청이 보낸 토큰(컨텍스트 사용량), `contextWindow`·`totalTokens`는 Codex만, `lastTool`은 도구 이름뿐(인자 없음), `mode`는 Claude Code의 기본이 아닌 권한 모드(`plan` 등), `remoteUrl`은 Claude Code 세션의 claude.ai 주소(Remote Control, 앱은 `https://claude.ai/`로 시작할 때만 연다). 각 필드는 도구가 스스로 쓰는 파일에서 오므로 없을 수 있다. 같은 객체가 `claudeSessions[].agent`에도 있다 |
 | `hardware` | 하드웨어 패널(M-34). v0.29.0 전 PC는 보내지 않는다. 읽지 못한 값은 0이 아니라 빠진다(null) |
 | `hardware.cpuName` · `cpuTempC` · `boardTempC` | CPU 모델명(레지스트리), CPU 패키지 온도(LibreHardwareMonitor 센서가 있을 때), 보드 온도(가장 뜨거운 보드·ACPI 센서). 온도 백엔드는 `/status`와 같은 `temperature` 설정을 따른다 |
 | `hardware.gpus[]` | `{name, vendor?, integrated, loadPct?, tempC?, tempMaxC?, vramUsedBytes?, vramTotalBytes?, sharedUsedBytes?, sharedTotalBytes?, powerW?, powerLimitW?, powerPct?, fanPct?, fanRpm?, clockMhz?, memClockMhz?, source?}`. 주 GPU(외장 → VRAM 큰 순)가 먼저다. `windows`(D3DKMT·GPU 성능 카운터, 제조사 무관)와 `nvidia-smi`(전력·클럭·팬)를 이름으로 합치고 `source`에 `nvidia-smi+windows`처럼 적는다. `shared*`는 GPU가 쓰는 시스템 메모리(내장 GPU의 주 메모리), `powerPct`는 보드 전력 한도 대비 비율. PC 설정 `mobile.nvidiaSmi=false`면 `nvidia-smi`를 쓰지 않아 `windows` 값만 온다 |
@@ -175,4 +176,5 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
   `devices.overview`(→ `{here: DevicesResponse, hubs: [{pcId, pcName, online, lastContactAt?, status?, devices[], error?, selfDeviceId?}]}`),
   `hubs.link {link}`(다른 PC의 페어링 링크로 연결 → `{linked, pcName?, error?, message?}`), `hubs.unlink {pcId}`(M-29).
   `session.report`에는 `agents[]`(Codex 세션 등 Claude 밖의 작업, M-26)가 더해졌다.
+  `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.

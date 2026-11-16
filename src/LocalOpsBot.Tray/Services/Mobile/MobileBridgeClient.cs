@@ -10,13 +10,20 @@ namespace LocalOpsBot.Tray.Services.Mobile;
 /// <summary>
 /// Tray side of <c>\\.\pipe\Homebase.MobileBridge</c>. Stays connected while the Agent runs, but
 /// collects nothing until the Agent says a phone is watching (<c>watch on</c>); then it reports
-/// windows every 2 s and AI coding sessions (Claude Code, Codex) every 10 s, and stops on <c>watch off</c>.
-/// <c>mobile:claudeSessions</c> turns both session readers off (DECISIONS M-9, M-26).
+/// windows every 2 s and AI coding transcripts (Claude Code, Codex) every 10 s, and stops on <c>watch off</c>.
+/// While connected it also watches the AI sessions' live state every 3 s — Claude Code's small
+/// status files and the Codex rollouts' appended lines — and asks the Agent to push an alert when a
+/// session starts waiting for the user or finishes a long turn while the user is away (M-44, M-45).
+/// <c>mobile:claudeSessions</c> turns all of this off (DECISIONS M-9, M-26).
 /// </summary>
 internal sealed class MobileBridgeClient : IDisposable
 {
     private static readonly TimeSpan ReportInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan ClaudeInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan AgentInterval = TimeSpan.FromSeconds(3);
+
+    /// <summary>No keyboard or mouse input for this long: the user is not at the PC to see the session.</summary>
+    internal static readonly TimeSpan AwayAfter = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan[] Backoff = { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30) };
     private static readonly TimeSpan HealthyConnection = TimeSpan.FromSeconds(30);
 
@@ -28,9 +35,14 @@ internal sealed class MobileBridgeClient : IDisposable
     private NamedPipeClientStream? _pipe;
     private CancellationTokenSource? _reportCts;
     private readonly CodexSessionReader _codex = new(CodexSessionReader.DefaultHome);
-    private IReadOnlyList<ClaudeSession> _claudeCache = Array.Empty<ClaudeSession>();
-    private IReadOnlyList<WorkItem> _codexCache = Array.Empty<WorkItem>();
-    private DateTime _claudeReadAt;
+    private readonly ClaudeStatusReader _status = new(ClaudeStatusReader.DefaultDir);
+    private readonly AgentAlertDetector _detector = new();
+    // Written by the session watcher, read by the report loop: whole lists swapped, never mutated.
+    private volatile IReadOnlyList<ClaudeSession> _claudeCache = Array.Empty<ClaudeSession>();
+    private volatile IReadOnlyList<WorkItem> _codexCache = Array.Empty<WorkItem>();
+    private IReadOnlyList<ClaudeSession> _transcripts = Array.Empty<ClaudeSession>();
+    private DateTime _transcriptsAt;
+    private bool _watchErrorLogged;
 
     public MobileBridgeClient(bool claudeSessions)
     {
@@ -92,7 +104,14 @@ internal sealed class MobileBridgeClient : IDisposable
                 await pipe.ConnectAsync(3000, ct);
                 _pipe = pipe;
                 connectedAt = DateTime.UtcNow;
-                await ReadLoopAsync(pipe, ct);
+                using var watchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var watcher = Task.Run(() => WatchSessionsAsync(pipe, watchCts.Token));
+                try { await ReadLoopAsync(pipe, ct); }
+                finally
+                {
+                    watchCts.Cancel();
+                    await watcher;
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException or InvalidDataException or JsonException)
@@ -191,8 +210,7 @@ internal sealed class MobileBridgeClient : IDisposable
             {
                 while (!cts.IsCancellationRequested)
                 {
-                    var claude = ReadClaude();
-                    var report = new SessionReport(WindowEnumerator.Enumerate(), claude, _codexCache);
+                    var report = new SessionReport(WindowEnumerator.Enumerate(), _claudeCache, _codexCache);
                     await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpSessionReport, report), cts.Token);
                     await Task.Delay(ReportInterval, cts.Token);
                 }
@@ -208,18 +226,74 @@ internal sealed class MobileBridgeClient : IDisposable
         _reportCts = null;
     }
 
-    private IReadOnlyList<ClaudeSession> ReadClaude()
+    /// <summary>
+    /// The AI sessions every <see cref="AgentInterval"/>: Claude Code's status files and the Codex
+    /// rollouts always (both cheap: small files, appended bytes), the Claude transcripts only while a
+    /// phone watches (M-13). Feeds the report caches and turns state changes into alerts.
+    /// </summary>
+    private async Task WatchSessionsAsync(NamedPipeClientStream pipe, CancellationToken ct)
     {
-        if (!_claudeSessions) return Array.Empty<ClaudeSession>();
-        var now = DateTime.UtcNow;
-        if (now - _claudeReadAt >= ClaudeInterval)
+        if (!_claudeSessions) return;
+        _transcriptsAt = DateTime.MinValue; // a new connection reads the transcripts at once
+        try
         {
-            _claudeCache = _claude.ReadActive(now);
-            _codexCache = _codex.ReadActive(now);
-            _claudeReadAt = now;
+            while (!ct.IsCancellationRequested)
+            {
+                IReadOnlyList<AgentAlert> alerts = Array.Empty<AgentAlert>();
+                try { alerts = ReadSessions(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* a file in use: next pass */ }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A format this build does not expect must not end the watcher for the session.
+                    if (!_watchErrorLogged) TrayLog.Warn("agent-sessions", "Reading the AI sessions failed; retrying every pass.", ex);
+                    _watchErrorLogged = true;
+                }
+                if (alerts.Count > 0 && UserIdle.Duration() >= AwayAfter)
+                {
+                    foreach (var alert in alerts)
+                        await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpAgentAlert, alert), ct);
+                }
+                await Task.Delay(AgentInterval, ct);
+            }
         }
-        return _claudeCache;
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException) { }
     }
+
+    private IReadOnlyList<AgentAlert> ReadSessions()
+    {
+        var now = DateTime.UtcNow;
+        var live = _status.Read();
+        var codex = _codex.ReadActive(now);
+        if (IsWatching && now - _transcriptsAt >= ClaudeInterval)
+        {
+            _transcripts = _claude.ReadTranscripts(now);
+            _transcriptsAt = now;
+        }
+        var claude = ClaudeSessionReader.Merge(_transcripts, live);
+        _claudeCache = claude;
+        _codexCache = codex;
+
+        var titles = claude.Where(c => c.Agent?.SessionId is not null)
+            .GroupBy(c => c.Agent!.SessionId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase);
+        var states = live
+            .Select(l => new AgentState(
+                "claude:" + l.SessionId,
+                ClaudeSession.AppName,
+                titles.TryGetValue(l.SessionId, out var t) ? t : l.Name ?? FolderName(l.Cwd) ?? "Claude Code",
+                l.Cwd,
+                l.Status,
+                l.WaitingFor,
+                l.StatusSince))
+            .Concat(codex
+                .Where(c => c.Agent?.SessionId is not null)
+                .Select(c => new AgentState("codex:" + c.Agent!.SessionId, c.App, c.Title, c.Detail,
+                    c.Agent.Status, null, c.Agent.StatusSince)));
+        return _detector.Update(states, DateTimeOffset.UtcNow);
+    }
+
+    private static string? FolderName(string? cwd) =>
+        string.IsNullOrWhiteSpace(cwd) ? null : Path.GetFileName(cwd.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : null;
 
     private async Task SendAsync(Stream pipe, JsonObject message, CancellationToken ct)
     {

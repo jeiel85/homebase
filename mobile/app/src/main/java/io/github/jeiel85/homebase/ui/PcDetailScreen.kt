@@ -1,5 +1,7 @@
 package io.github.jeiel85.homebase.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -65,6 +67,7 @@ import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.net.LiveSnapshot
 import io.github.jeiel85.homebase.net.WorkItem
+import io.github.jeiel85.homebase.net.AgentInfo
 import io.github.jeiel85.homebase.net.LiveState
 import io.github.jeiel85.homebase.net.ProcessEntry
 import io.github.jeiel85.homebase.net.WindowTitle
@@ -688,45 +691,152 @@ private fun LazyListScope.sessionItems(s: LiveSnapshot) {
     // Positional keys: the protocol has no item id, and app + title can repeat (two untitled
     // sessions in one folder), which would crash LazyColumn with a duplicate key.
     itemsIndexed(work, key = { i, _ -> "w$i" }) { _, w ->
-        val hb = Hb.colors
-        val secs = w.lastActivity?.let { agoSeconds(it, s.ts) }
-        val active = if (w.kind == WorkItem.AGENT) secs != null && secs < 60 else w.foreground
-        Plate(Modifier.padding(horizontal = 12.dp, vertical = 5.dp), rail = active) {
-            Column(Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Led(if (active) hb.ledOn else hb.meterOk, size = 7.dp, pulse = active)
-                    Text(
-                        when {
-                            w.kind == WorkItem.AGENT -> ago(secs)
-                            w.foreground -> "지금 보는 창"
-                            else -> workKindLabel(w.kind)
-                        },
-                        style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.3.sp),
-                        color = hb.inkSoft,
-                        modifier = Modifier.weight(1f).padding(start = 6.dp),
-                    )
-                    Tag(w.app, hb.hairline, hb.inkSoft)
-                }
+        if (w.kind == WorkItem.AGENT) AgentCard(w, s.ts) else WindowCard(w)
+    }
+}
+
+/** An editor, document or browser window: kind (or "지금 보는 창"), app, title, folder. */
+@Composable
+private fun WindowCard(w: WorkItem) {
+    val hb = Hb.colors
+    Plate(Modifier.padding(horizontal = 12.dp, vertical = 5.dp), rail = w.foreground) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Led(if (w.foreground) hb.ledOn else hb.meterOk, size = 7.dp, pulse = w.foreground)
                 Text(
-                    w.title,
-                    style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+                    if (w.foreground) "지금 보는 창" else workKindLabel(w.kind),
+                    style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.3.sp),
+                    color = hb.inkSoft,
+                    modifier = Modifier.weight(1f).padding(start = 6.dp),
+                )
+                Tag(w.app, hb.hairline, hb.inkSoft)
+            }
+            WorkTitle(w)
+        }
+    }
+}
+
+/**
+ * An AI coding session (DECISIONS M-44): its status first — waiting for the user is amber and
+ * marked on the edge, working pulses — then title and folder, what it waits for, the model and
+ * context in use, smaller facts, and for Claude Code a way to type to it on claude.ai.
+ */
+@Composable
+private fun AgentCard(w: WorkItem, now: String) {
+    val hb = Hb.colors
+    val context = LocalContext.current
+    val a = w.agent
+    val activitySecs = w.lastActivity?.let { agoSeconds(it, now) }
+    val sinceSecs = a?.statusSince?.let { agoSeconds(it, now) }
+    val waiting = a?.status == AgentInfo.WAITING
+    val busy = a?.status == AgentInfo.BUSY || (a?.status == null && activitySecs != null && activitySecs < 60)
+    Plate(Modifier.padding(horizontal = 12.dp, vertical = 5.dp), rail = waiting) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Led(
+                    when {
+                        waiting -> hb.accent
+                        busy -> hb.ledOn
+                        else -> hb.meterOk
+                    },
+                    size = 7.dp,
+                    pulse = busy || waiting,
+                )
+                Text(
+                    AgentLook.statusLine(a, sinceSecs, activitySecs),
+                    style = HbType.label.copy(fontSize = 11.sp, letterSpacing = 0.3.sp),
+                    color = if (waiting) hb.accent else hb.inkSoft,
+                    modifier = Modifier.weight(1f).padding(start = 6.dp),
+                )
+                Tag(w.app, hb.hairline, hb.inkSoft)
+            }
+            WorkTitle(w)
+            if (a == null) return@Column
+            if (waiting && a.waitingFor != null) {
+                Text(
+                    a.waitingFor,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     color = hb.ink,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
-                w.detail?.let {
-                    Text(
-                        it,
-                        style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
-                        color = hb.inkSoft,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
+            }
+            val model = AgentLook.model(a.model, a.effort)
+            val ctx = AgentLook.context(a)
+            if (model != null || ctx != null) {
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    model?.let {
+                        Text(
+                            it,
+                            style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
+                            color = hb.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp),
+                        )
+                    }
+                    ctx?.let {
+                        Text(
+                            it,
+                            style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
+                            color = hb.inkSoft,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                    a.contextShare?.let { share ->
+                        Spacer(Modifier.width(6.dp))
+                        ShareBar(share, hb.load(share * 100.0), Modifier.weight(1f))
+                    }
                 }
             }
+            val facts = AgentLook.facts(a)
+            if (facts.isNotEmpty()) {
+                Text(
+                    facts.joinToString(" · "),
+                    style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
+                    color = hb.inkSoft,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            a.remoteUrl?.let { url ->
+                QuietButton(
+                    "Claude에서 열기",
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    },
+                    modifier = Modifier.padding(top = 10.dp).fillMaxWidth(),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun WorkTitle(w: WorkItem) {
+    val hb = Hb.colors
+    Text(
+        w.title,
+        style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+        color = hb.ink,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    w.detail?.let {
+        Text(
+            it,
+            style = HbType.readout.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal),
+            color = hb.inkSoft,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
@@ -758,10 +868,4 @@ private fun agoSeconds(at: String, now: String): Long? = try {
     Duration.between(OffsetDateTime.parse(at), OffsetDateTime.parse(now)).seconds.coerceAtLeast(0)
 } catch (_: Exception) {
     null
-}
-
-private fun ago(secs: Long?): String = when {
-    secs == null -> ""
-    secs < 60 -> "방금 활동"
-    else -> "${secs / 60}분 전 활동"
 }
