@@ -105,7 +105,7 @@ data class LiveSnapshot(
     val claudeSessions: List<ClaudeSession>,
     /** The work tab (DECISIONS M-26); null from a PC older than v0.23.0, which only sends [claudeSessions]. */
     val work: List<WorkItem>? = null,
-    /** GPU, drives, temperatures, ping (DECISIONS M-34); null from a PC older than v0.28.0. */
+    /** GPU, drives, temperatures, ping (DECISIONS M-34); null from a PC older than v0.29.0. */
     val hardware: Hardware? = null,
 ) {
     /** What the work tab lists: [work] when the PC sends it, else the Claude sessions as work items. */

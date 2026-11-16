@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.28.0 — GPU, drives, temperature and ping on the phone
+## v0.29.0 — GPU, drives, temperature and ping on the phone
 
 ### Added
 - **GPUs on the PC screen of the phone app.** Each GPU gets a card with its load (meter and the last
@@ -20,6 +20,17 @@
   VMware adapters were added to the physical Wi-Fi or Ethernet adapter that carries the same traffic,
   so that traffic was counted twice (watching over Tailscale counted the live view's own traffic on
   both adapters). Only physical Wi-Fi and Ethernet adapters count now (DECISIONS M-35).
+
+## v0.28.0 — PC aliases
+
+### Added
+- **Give each PC your own name on the phone.** In the phone app, a PC card's menu has "별칭 지정"
+  (Set alias). The alias replaces the Windows computer name (such as `DESKTOP-V0JCEPJ`) on the PC
+  card, the PC's live screen, its push notifications (and its group in Android's notification
+  settings), the notification center and the "via" line of other devices. The computer name stays
+  visible in small print under it. Leave the field empty, or tap "원래 이름" (Original name), to go
+  back. Aliases live on this phone only: other phones and the PC tray still show the computer name
+  (DECISIONS M-36).
 
 ## v0.27.0 — Separate Google Play build
 

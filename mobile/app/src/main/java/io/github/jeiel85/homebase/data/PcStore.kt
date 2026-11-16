@@ -18,7 +18,19 @@ data class PcEntry(
     val lastGood: String? = null,
     /** PC time (epoch ms) of the last path list received by push; older or replayed pushes are ignored. */
     val pushedEndpointsAt: Long? = null,
+    /** The user's own name for this PC, kept on this phone only (DECISIONS M-36); null = the PC's name. */
+    val alias: String? = null,
 ) {
+    /** What the app shows for this PC: the alias when set, else the name the PC reported. */
+    val displayName: String get() = alias ?: name
+
+    /**
+     * The name for something the PC sent now under [reported] (a push, a history entry, the hub's
+     * own name): the alias when set, else what the PC reports — [name] is from pairing and is not
+     * refreshed, so a PC renamed in Windows would otherwise keep its old name.
+     */
+    fun shownName(reported: String): String = alias ?: reported.ifBlank { name }
+
     /** Paths to try now, best first, for the phone's current network (DECISIONS M-18). */
     fun orderedEndpoints(net: LocalNetworks?): List<Endpoint> = RouteSelector.order(endpoints, net, lastGood)
 }
@@ -45,9 +57,19 @@ class PcStore(context: Context) {
 
     fun get(pcId: String): PcEntry? = all().firstOrNull { it.pcId == pcId }
 
-    /** Adds or replaces (re-pairing the same PC keeps one entry). */
+    /** Adds or replaces (re-pairing the same PC keeps one entry, and the alias the user gave it). */
     @Synchronized
-    fun upsert(pc: PcEntry) = save(all().filterNot { it.pcId == pc.pcId } + pc)
+    fun upsert(pc: PcEntry) = save(upserted(all(), pc))
+
+    /** Sets or clears (blank, or the PC's own name) the alias; false when the PC isn't paired. */
+    @Synchronized
+    fun setAlias(pcId: String, input: String?): Boolean {
+        val list = all()
+        val pc = list.firstOrNull { it.pcId == pcId } ?: return false
+        val alias = normalizeAlias(input, pc.name)
+        if (alias != pc.alias) save(list.map { if (it.pcId == pcId) it.copy(alias = alias) else it })
+        return true
+    }
 
     @Synchronized
     fun remove(pcId: String) = save(all().filterNot { it.pcId == pcId })
@@ -95,6 +117,7 @@ class PcStore(context: Context) {
         .put("token", encrypt(pc.token))
         .put("lastGood", pc.lastGood)
         .apply { pc.pushedEndpointsAt?.let { put("pushedEndpointsAt", it) } }
+        .apply { pc.alias?.let { put("alias", it) } }
 
     private fun fromJson(o: JSONObject): PcEntry? {
         val token = decrypt(o.optString("token")) ?: return null
@@ -107,6 +130,7 @@ class PcStore(context: Context) {
             token = token,
             lastGood = lastGood,
             pushedEndpointsAt = if (o.has("pushedEndpointsAt")) o.optLong("pushedEndpointsAt") else null,
+            alias = normalizeAlias(o.optString("alias"), o.optString("name")),
         )
     }
 
@@ -116,6 +140,31 @@ class PcStore(context: Context) {
     private fun decrypt(encoded: String): String? = cipher.decrypt(encoded)?.toString(Charsets.UTF_8)
 
     companion object {
+        /** Longest alias kept; the list card shows one line, so a longer one would only be cut off. */
+        const val ALIAS_MAX = 40
+        private val WHITESPACE = Regex("""\s+""")
+
+        /**
+         * The alias to store for [input]: trimmed, inner runs of whitespace (a pasted newline) made one
+         * space, cut to [ALIAS_MAX] characters. Blank, or the same as the PC's own [name], means none.
+         */
+        fun normalizeAlias(input: String?, name: String): String? {
+            val cleaned = input?.trim()?.replace(WHITESPACE, " ")?.let(::cutTo) ?: return null
+            return cleaned.takeUnless { it.isEmpty() || it == name }
+        }
+
+        /** First [ALIAS_MAX] code points, so an emoji at the edge is not split in half. */
+        private fun cutTo(s: String): String {
+            if (s.codePointCount(0, s.length) <= ALIAS_MAX) return s
+            return s.substring(0, s.offsetByCodePoints(0, ALIAS_MAX)).trimEnd()
+        }
+
+        /** [list] with [pc] added or replacing the same PC; a re-paired entry (no alias) keeps the old alias. */
+        fun upserted(list: List<PcEntry>, pc: PcEntry): List<PcEntry> {
+            val kept = pc.alias ?: list.firstOrNull { it.pcId == pc.pcId }?.alias
+            return list.filterNot { it.pcId == pc.pcId } + pc.copy(alias = kept)
+        }
+
         /** Whether a pushed path list should replace [pc]'s: non-empty and newer than the last push applied. */
         fun acceptsPush(pc: PcEntry, endpoints: List<Endpoint>, pcTimeMillis: Long): Boolean =
             endpoints.isNotEmpty() && (pc.pushedEndpointsAt == null || pcTimeMillis > pc.pushedEndpointsAt)

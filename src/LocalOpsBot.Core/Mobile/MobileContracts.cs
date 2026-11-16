@@ -134,7 +134,7 @@ public sealed record LiveSnapshot(
 
 /// <summary>
 /// The hardware panel (DECISIONS M-34): CPU model and temperature, GPUs, fixed drives and internet
-/// latency. Absent from PCs older than v0.28.0; each field is null (or the list empty) when this PC
+/// latency. Absent from PCs older than v0.29.0; each field is null (or the list empty) when this PC
 /// cannot read it, never zero.
 /// </summary>
 public sealed record HardwareInfo(

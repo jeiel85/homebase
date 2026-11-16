@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.TextButton
@@ -97,6 +98,7 @@ fun PcListScreen(
     var pcs by remember { mutableStateOf(store.all()) }
     val status = remember { mutableStateMapOf<String, PcStatus>() }
     var confirmRemove by remember { mutableStateOf<PcEntry?>(null) }
+    var renaming by remember { mutableStateOf<PcEntry?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     var pollRounds by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -210,7 +212,13 @@ fun PcListScreen(
                         item { SectionLabel("내 PC", trailing = "${pcs.size}대") }
                     }
                     items(pcs, key = { it.pcId }) { pc ->
-                        PcBay(pc, status[pc.pcId] ?: PcStatus.Checking, onClick = { onOpen(pc) }, onRemove = { confirmRemove = pc })
+                        PcBay(
+                            pc,
+                            status[pc.pcId] ?: PcStatus.Checking,
+                            onClick = { onOpen(pc) },
+                            onRename = { renaming = pc },
+                            onRemove = { confirmRemove = pc },
+                        )
                         Spacer(Modifier.height(12.dp))
                     }
                     if (others.isNotEmpty()) {
@@ -236,11 +244,24 @@ fun PcListScreen(
         }
     }
 
+    renaming?.let { pc ->
+        AliasDialog(
+            pc,
+            onSave = { input ->
+                store.setAlias(pc.pcId, input)
+                store.get(pc.pcId)?.let { PushNotifier.renamePc(context, it.pcId, it.displayName) }
+                pcs = store.all()
+                renaming = null
+            },
+            onDismiss = { renaming = null },
+        )
+    }
+
     confirmRemove?.let { pc ->
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
             title = { Text("PC 삭제") },
-            text = { Text("${pc.name}을(를) 목록에서 지울까요? PC 쪽 연결 해제는 PC의 \"설정…\" → \"휴대폰\" 탭에서 합니다.") },
+            text = { Text("${pc.displayName}을(를) 목록에서 지울까요? PC 쪽 연결 해제는 PC의 \"설정…\" → \"휴대폰\" 탭에서 합니다.") },
             confirmButton = {
                 TextButton(onClick = {
                     // Best effort: stop this PC pushing to the phone, then drop its notification channels.
@@ -323,11 +344,11 @@ private fun EmptyBay(onAdd: () -> Unit) {
  * plate. The plate's first line is the connection status — the slot where the route is shown.
  */
 @Composable
-private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRemove: () -> Unit) {
+private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
     val hb = Hb.colors
     var menu by remember { mutableStateOf(false) }
     val reading = LastSeen.get(pc.pcId)
-    Plate(onClick = onClick, onClickLabel = "${pc.name} 실시간 보기") {
+    Plate(onClick = onClick, onClickLabel = "${pc.displayName} 실시간 보기") {
         val showMeters = reading != null && status is PcStatus.Online
         Column(Modifier.fillMaxWidth().background(hb.slab).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = if (showMeters) 12.dp else 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -339,7 +360,7 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRemove: 
                 Led(led, size = 8.dp, pulse = pulse)
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    pc.name.uppercase(),
+                    pc.displayName.uppercase(),
                     style = HbType.display.copy(fontSize = 19.sp),
                     color = hb.onSlab,
                     maxLines = 1,
@@ -348,9 +369,13 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRemove: 
                 )
                 Box {
                     IconButton(onClick = { menu = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "${pc.name} 메뉴", tint = hb.onSlabSoft)
+                        Icon(Icons.Filled.MoreVert, contentDescription = "${pc.displayName} 메뉴", tint = hb.onSlabSoft)
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (pc.alias == null) "별칭 지정" else "별칭 바꾸기") },
+                            onClick = { menu = false; onRename() },
+                        )
                         DropdownMenuItem(text = { Text("목록에서 삭제") }, onClick = { menu = false; onRemove() })
                     }
                 }
@@ -376,6 +401,8 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRemove: 
                     maxLines = 2,
                 )
                 val meta = buildList {
+                    // With an alias the PC's own name stays visible, so it can still be told apart in the PC's own lists.
+                    if (pc.alias != null) add(pc.name)
                     if (status is PcStatus.Online && status.version.isNotBlank()) add("Agent v${status.version}")
                     if (reading != null && status is PcStatus.Online) add("부하 ${Fmt.age(SystemClock.elapsedRealtime() - reading.atElapsedMs)} 확인")
                 }
@@ -386,6 +413,40 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRemove: 
             Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = hb.inkSoft, modifier = Modifier.size(24.dp))
         }
     }
+}
+
+/** Names [pc] on this phone; an empty field (or "원래 이름") goes back to the PC's own name. */
+@Composable
+private fun AliasDialog(pc: PcEntry, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
+    var text by remember(pc.pcId) { mutableStateOf(pc.alias ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("별칭") },
+        text = {
+            Column {
+                Text(
+                    "이 휴대폰에서만 ${pc.name} 대신 보일 이름입니다. 비워 두면 원래 이름으로 보입니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { v -> if (v.codePointCount(0, v.length) <= PcStore.ALIAS_MAX) text = v },
+                    singleLine = true,
+                    placeholder = { Text(pc.name) },
+                    supportingText = { Text("${text.codePointCount(0, text.length)}/${PcStore.ALIAS_MAX}") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("저장") } },
+        dismissButton = {
+            Row {
+                if (pc.alias != null) TextButton(onClick = { onSave(null) }) { Text("원래 이름") }
+                TextButton(onClick = onDismiss) { Text("취소") }
+            }
+        },
+    )
 }
 
 @Composable
