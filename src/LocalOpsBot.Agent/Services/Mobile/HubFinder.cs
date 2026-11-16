@@ -16,7 +16,9 @@ public sealed record FoundHub(PcInfo Info, MobileEndpoint Endpoint);
 /// of every online tailnet peer and every host in this PC's own LAN /24, all at once with short
 /// timeouts. A LAN host is only spoken to over TLS whose certificate SHA-256 starts with the
 /// code's 8-byte prefix; a PC answers as the one only when its <c>pcId</c> hashes to the code's tag.
-/// LAN matches win over tailnet ones (faster, and what a phone would pick too).
+/// The first match on either path ends the search: pairing then fetches the hub's own path list
+/// (LAN first) to use from there on, so waiting out the LAN sweep after a tailnet hit would only
+/// cost seconds. When both answer at once, the LAN match wins (what a phone would pick too).
 /// </summary>
 public sealed class HubFinder
 {
@@ -86,7 +88,7 @@ public sealed class HubFinder
                 if (await ProbeAsync(code, ep, stop.Token) is { } hit)
                 {
                     found.Add(hit);
-                    if (hit.Endpoint.Transport == MobileTransport.Lan) stop.Cancel(); // nothing beats a LAN hit
+                    stop.Cancel(); // the pairing that follows learns the hub's LAN path anyway
                 }
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }

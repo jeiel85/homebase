@@ -33,6 +33,10 @@ public sealed class TrayIconManager : IDisposable
     private NotificationCenterWindow? _center;
     private readonly ToolStripMenuItem _centerItem;
     private readonly System.Windows.Threading.DispatcherTimer _unreadTimer;
+    private readonly System.Windows.Threading.DispatcherTimer _updateTimer;
+
+    // A release found by the startup check while first-run onboarding was open; offered when it closes.
+    private UpdateInfo? _deferredOffer;
 
     public TrayIconManager()
     {
@@ -104,7 +108,14 @@ public sealed class TrayIconManager : IDisposable
             await NotificationCenter.RefreshUnreadAsync();
         }));
 
+        // An unattended install that has since landed (or been superseded) is settled: log and forget it.
+        UpdateAutoOutcome.Reconcile(_updates.CurrentVersion);
         _ = BackgroundCheckAsync();
+
+        // The tray runs for days; look again once a day, relabelling the menu only (no popup mid-work).
+        _updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = DailyCheckInterval };
+        _updateTimer.Tick += async (_, _) => await DailyCheckAsync();
+        _updateTimer.Start();
 
         // First launch for this Windows user: walk them through the connection checklist
         // once. Guarded so a window failure can never take down the tray itself; it only
@@ -224,9 +235,15 @@ public sealed class TrayIconManager : IDisposable
         _onboarding.GetStartedRequested += () =>
             Application.Current.Dispatcher.BeginInvoke(new Action(ShowPopup));
         _onboarding.OpenTelegramSettingsRequested += () => ShowSettings(SettingsTab.Telegram);
-        _onboarding.Closed += (_, _) => _onboarding = null;
+        _onboarding.Closed += (_, _) =>
+        {
+            _onboarding = null;
+            TrayLog.Info("Onboarding", "Setup checklist closed");
+            _ = OfferDeferredUpdateAsync();
+        };
         _onboarding.Show();
         _onboarding.Activate();
+        TrayLog.Info("Onboarding", OnboardingState.IsCompleted() ? "Setup checklist opened" : "Setup checklist opened (first run)");
     }
 
     // The tray autostarts at sign-in, often before the network is up — the same race that broke the
@@ -257,30 +274,95 @@ public sealed class TrayIconManager : IDisposable
                 await Task.Delay(StartupCheckRetryDelays[attempt]);
                 continue;
             }
-            catch
+            catch (Exception ex)
             {
                 // Rate limit / API error / retries exhausted: background check is best-effort and the
                 // menu item still checks on demand.
+                TrayLog.Warn("Update", $"Startup update check failed: {ex.Message}");
                 return;
             }
 
-            if (info is null) return;
+            if (info is null)
+            {
+                TrayLog.Info("Update", $"Startup check: v{_updates.CurrentVersion} is up to date");
+                return;
+            }
             _updateItem.Text = L.MenuUpdateAvailable(info.Version);
 
-            // Don't stack the update dialog on top of first-run onboarding; the menu label is enough.
-            if (_onboarding is not null) return;
+            // Don't stack the update dialog on top of first-run onboarding; offer it once that closes.
+            if (_onboarding is not null)
+            {
+                _deferredOffer = info;
+                TrayLog.Info("Update", $"v{info.Version} found while the setup checklist is open; offering it when it closes");
+                return;
+            }
 
-            var status = new Progress<string>(text => _updateItem.Text = text);
-            try
-            {
-                await _updates.OfferStartupUpdateAsync(info, status);
-            }
-            catch (Exception ex)
-            {
-                MessageDialog.Show(L.UpdErrorTitle, L.UpdShowFailed(ex.Message));
-            }
+            await OfferStartupAsync(info);
             return;
         }
+    }
+
+    private async Task OfferStartupAsync(UpdateInfo info)
+    {
+        var status = new Progress<string>(text => _updateItem.Text = text);
+        try
+        {
+            await _updates.OfferStartupUpdateAsync(info, status);
+        }
+        catch (Exception ex)
+        {
+            TrayLog.Warn("Update", $"Showing the update dialog failed: {ex.Message}");
+            MessageDialog.Show(L.UpdErrorTitle, L.UpdShowFailed(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// The startup offer that onboarding held back (issue #10): show it once the checklist closes, after
+    /// a short pause so "Get started" can bring up the dashboard first.
+    /// </summary>
+    private async Task OfferDeferredUpdateAsync()
+    {
+        if (_deferredOffer is not { } info) return;
+        _deferredOffer = null;
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (_disposed) return;
+        if (_onboarding is not null)
+        {
+            _deferredOffer = info; // reopened meanwhile: wait for that one to close
+            return;
+        }
+        await OfferStartupAsync(info);
+    }
+
+    private static readonly TimeSpan DailyCheckInterval = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Daily re-check (issue #10). Only the menu label changes: a popup in the middle of the day would
+    /// interrupt work, and an update restarts the service. The startup check is the one moment that
+    /// pops the dialog; clicking the relabelled item runs the normal interactive flow.
+    /// </summary>
+    private async Task DailyCheckAsync()
+    {
+        if (_disposed || _updates.IsBusy) return;
+        UpdateInfo? info;
+        try
+        {
+            info = await _updates.CheckAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            TrayLog.Warn("Update", $"Daily update check failed: {ex.Message}");
+            return;
+        }
+        // A flow that started meanwhile owns the menu label.
+        if (_disposed || _updates.IsBusy) return;
+        if (info is null)
+        {
+            TrayLog.Info("Update", $"Daily check: v{_updates.CurrentVersion} is up to date");
+            return;
+        }
+        TrayLog.Info("Update", $"Daily check: v{info.Version} available (menu relabelled)");
+        _updateItem.Text = UpdateCoordinator.AvailableLabel(info);
     }
 
     private async Task CheckForUpdatesAsync()
@@ -377,6 +459,7 @@ public sealed class TrayIconManager : IDisposable
     {
         _disposed = true;
         _unreadTimer.Stop();
+        _updateTimer.Stop();
         MobileHost.WatchingChanged -= OnWatchingChanged;
         MobileHost.ToastRequested -= OnToastRequested;
         _trayIcon.Visible = false;

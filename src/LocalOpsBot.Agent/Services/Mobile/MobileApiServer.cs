@@ -310,7 +310,7 @@ public sealed class MobileApiServer : BackgroundService
         var network = client.GetStream();
         if (kind != PathKind.Lan)
         {
-            await ServeAsync(network, ct);
+            await ServeAsync(network, kind, ct);
             return;
         }
 
@@ -326,10 +326,10 @@ public sealed class MobileApiServer : BackgroundService
                 ClientCertificateRequired = false,
             }, handshake.Token);
         }
-        await ServeAsync(ssl, ct);
+        await ServeAsync(ssl, kind, ct);
     }
 
-    private async Task ServeAsync(Stream stream, CancellationToken ct)
+    private async Task ServeAsync(Stream stream, PathKind kind, CancellationToken ct)
     {
         (HttpRequestHead Head, byte[] Leftover)? request;
         using (var headCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
@@ -360,18 +360,46 @@ public sealed class MobileApiServer : BackgroundService
             }
         }
 
-        var (status, json) = await HandleRestAsync(r.Head, body, ct);
+        // Loopback is where the Cloudflare connector delivers internet traffic (M-17).
+        var viaTunnel = kind == PathKind.Loopback && (_options.Cloudflare.Enabled || CameThroughCloudflare(r.Head));
+        var (status, json) = await HandleRestAsync(r.Head, body, ct, viaTunnel);
         await MiniHttp.WriteResponseAsync(stream, status, json, ct);
     }
 
-    /// <summary>REST routing, separated from sockets so tests can drive it.</summary>
-    public async Task<(int Status, string Json)> HandleRestAsync(HttpRequestHead head, byte[]? body, CancellationToken ct)
+    /// <summary>
+    /// Whether a request carries the headers Cloudflare's edge adds (and <c>cloudflared</c> passes on).
+    /// Only trusted to make an answer smaller, never larger: a local process could send them too.
+    /// </summary>
+    public static bool CameThroughCloudflare(HttpRequestHead head) =>
+        head.Header("Cf-Ray") is { Length: > 0 }
+        || head.Header("Cf-Connecting-Ip") is { Length: > 0 }
+        || head.Header("Cdn-Loop")?.Contains("cloudflare", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
+    /// The unauthenticated identity probe. Over the Cloudflare Tunnel the API is reachable from the
+    /// whole internet, so an anonymous caller there no longer learns the PC name or OS version (#15);
+    /// a paired device's bearer token still gets the full answer. Every field stays present because
+    /// the app's parser requires <c>pcId</c> and <c>pcName</c> (it shows only <c>agentVersion</c>).
+    /// </summary>
+    public PcInfo Info(HttpRequestHead head, bool viaTunnel)
+    {
+        var full = !viaTunnel;
+        if (!full && head.BearerToken() is { Length: > 0 } token)
+            full = _devices.Authenticate(token) is not null;
+        return new PcInfo(MobileProtocol.Schema, MobileProtocol.Protocol, _devices.PcId,
+            full ? Environment.MachineName : "", AgentVersion, full ? Environment.OSVersion.VersionString : "");
+    }
+
+    /// <summary>
+    /// REST routing, separated from sockets so tests can drive it. <paramref name="viaTunnel"/>: the
+    /// request reached the loopback listener through the Cloudflare Tunnel, i.e. from the internet.
+    /// </summary>
+    public async Task<(int Status, string Json)> HandleRestAsync(HttpRequestHead head, byte[]? body, CancellationToken ct, bool viaTunnel = false)
     {
         switch (head.Method, head.Path)
         {
             case ("GET", "/api/v1/info"):
-                return (200, Json(new PcInfo(MobileProtocol.Schema, MobileProtocol.Protocol, _devices.PcId,
-                    Environment.MachineName, AgentVersion, Environment.OSVersion.VersionString)));
+                return (200, Json(Info(head, viaTunnel)));
 
             case ("POST", "/api/v1/pair"):
             {
@@ -495,7 +523,14 @@ public sealed class MobileApiServer : BackgroundService
                 if (!long.TryParse(head.QueryValue("after"), System.Globalization.NumberStyles.None,
                         System.Globalization.CultureInfo.InvariantCulture, out var after))
                     after = 0;
-                try { return (200, Json(await _deviceHub.InboxAsync(device, after, ct))); }
+                try
+                {
+                    // Null: too many linked PCs are already waiting. Any non-2xx makes the poller back off
+                    // and ask again later with the same cursor, so nothing is lost (the inbox keeps 30 min).
+                    return await _deviceHub.InboxAsync(device, after, ct) is { } inbox
+                        ? (200, Json(inbox))
+                        : (503, Error("busy", "Too many linked PCs are waiting; try again shortly."));
+                }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return (200, Json(_deviceHub.Inbox.Read(after, device.DeviceId))); }
             }
 

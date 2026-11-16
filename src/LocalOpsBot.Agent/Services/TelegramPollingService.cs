@@ -91,12 +91,37 @@ public sealed class TelegramPollingService : BackgroundService
             catch (Exception ex)
             {
                 _pollStatus.RecordFailure();
-                _logger.LogError(ex, "Telegram polling failed, backing off {Seconds}s", opts.PollingErrorBackoffSeconds);
+                if (IsTransient(ex, ct))
+                {
+                    // A DNS failure or timeout fixes itself on a later poll; a one-line warning
+                    // keeps a flaky network from burying real errors under stack traces.
+                    _logger.LogWarning(
+                        "Telegram polling failed ({Error}), backing off {Seconds}s",
+                        $"{ex.GetType().Name}: {ex.Message}", opts.PollingErrorBackoffSeconds);
+                }
+                else
+                {
+                    _logger.LogError(ex, "Telegram polling failed, backing off {Seconds}s", opts.PollingErrorBackoffSeconds);
+                }
                 try { await Task.Delay(TimeSpan.FromSeconds(opts.PollingErrorBackoffSeconds), ct); }
                 catch (OperationCanceledException) { break; }
             }
         }
     }
+
+    /// <summary>
+    /// Whether a polling failure is a network or server-side blip that the next poll is
+    /// expected to get past: no route or DNS (HttpRequestException), an HttpClient timeout
+    /// (cancellation while our own token is still live), or a Telegram 429/5xx answer.
+    /// </summary>
+    internal static bool IsTransient(Exception ex, CancellationToken ct) => ex switch
+    {
+        HttpRequestException => true,
+        TelegramApiException api => api.HttpStatusCode == 429 || api.HttpStatusCode >= 500,
+        OperationCanceledException => !ct.IsCancellationRequested,
+        IOException => true,
+        _ => false,
+    };
 
     private async Task ProcessUpdateAsync(TelegramUpdate update, CancellationToken ct)
     {

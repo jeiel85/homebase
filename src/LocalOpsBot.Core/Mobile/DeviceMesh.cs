@@ -156,6 +156,26 @@ public sealed class DeviceStatusBoard
         lock (_gate) _reports.Remove(deviceId);
     }
 
+    /// <summary>
+    /// Drops the reports of devices no longer in <paramref name="pairedIds"/>: revoked in the Tray, or
+    /// replaced by a re-pair of the same phone, so their last state does not linger in memory.
+    /// </summary>
+    public void Retain(IEnumerable<string> pairedIds)
+    {
+        var keep = pairedIds.ToHashSet(StringComparer.Ordinal);
+        lock (_gate)
+        {
+            foreach (var gone in _reports.Keys.Where(id => !keep.Contains(id)).ToList())
+                _reports.Remove(gone);
+        }
+    }
+
+    /// <summary>How many devices have a report kept (for tests and diagnostics).</summary>
+    public int Count
+    {
+        get { lock (_gate) return _reports.Count; }
+    }
+
     /// <summary>Push hashes the device said it delivers to itself (empty when unknown).</summary>
     public IReadOnlyCollection<string> PushHashesOf(string deviceId)
     {

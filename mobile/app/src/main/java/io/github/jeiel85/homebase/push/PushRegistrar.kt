@@ -72,9 +72,13 @@ object PushRegistrar {
     /** The endpoint changed or push was turned off: every PC needs telling again. */
     fun forgetSynced() = synced.clear()
 
-    /** The PC was removed from the app; a later re-pair must register again. */
+    /**
+     * The PC was removed from the app; a later re-pair must register again. Its lock goes too, or one
+     * would stay per PC ever removed — a registration still holding it finishes on its own copy.
+     */
     fun forget(pcId: String) {
         synced.remove(pcId)
+        locks.remove(pcId)
     }
 
     /** Push turned off: remove the subscription from every reachable PC (best effort). */

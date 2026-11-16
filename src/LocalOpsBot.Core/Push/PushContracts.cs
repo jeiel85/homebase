@@ -72,17 +72,71 @@ public static class PushEndpoints
 {
     public const string Kind = "endpoints";
 
-    /// <summary>The plaintext push for one device, signed with that device's token hash.</summary>
+    /// <summary>Longest PC id <see cref="FitToOnePush"/> budgets for (ids are 32 hex characters).</summary>
+    public const int MaxPcIdLength = 64;
+
+    // Size stand-ins for FitToOnePush: the longest PC id, a timestamp with all 7 fraction digits,
+    // and any key (the MAC is 32 bytes whatever the key).
+    private static readonly string BudgetPcId = new('0', MaxPcIdLength);
+    private static readonly DateTimeOffset BudgetTs = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddTicks(1234567);
+    private static readonly byte[] BudgetKey = new byte[32];
+
+    /// <summary>
+    /// The plaintext push for one device, signed with that device's token hash. A list too long for
+    /// one push is cut down by <see cref="FitToOnePush"/> rather than failing the whole update.
+    /// </summary>
     public static byte[] Serialize(string pcId, IReadOnlyList<MobileEndpoint> endpoints, DateTimeOffset ts, string tokenSha256Hex)
     {
-        var data = JsonSerializer.SerializeToUtf8Bytes(new PushEndpointsData(MobileProtocol.Schema, pcId, ts, endpoints), MobileProtocol.Json);
-        var mac = System.Security.Cryptography.HMACSHA256.HashData(Convert.FromHexString(tokenSha256Hex), data);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(
-            new PushEndpointsEnvelope(MobileProtocol.Schema, Kind, pcId, Base64Url.Encode(data), Base64Url.Encode(mac)),
-            MobileProtocol.Json);
+        var fitted = FitToOnePush(endpoints);
+        // An empty list would tell the phone this PC has no paths at all.
+        if (fitted.Count == 0 && endpoints.Count > 0)
+            throw new ArgumentException("No single endpoint fits in one push.", nameof(endpoints));
+        var bytes = Build(pcId, fitted, ts, Convert.FromHexString(tokenSha256Hex));
         if (bytes.Length > WebPushEncryption.MaxPlaintextBytes)
             throw new ArgumentException($"Endpoint list is too long for one push ({bytes.Length} bytes).", nameof(endpoints));
         return bytes;
+    }
+
+    /// <summary>
+    /// The paths that fit in one push (many LAN adapters or long host names can overflow it), in their
+    /// original order. When they don't all fit, the first path of each transport (the preferred one)
+    /// goes in first, then as many of the rest, in order, as still fit. The result does not depend on
+    /// the PC id or the time (both are budgeted at their longest), so a caller can tell in advance
+    /// whether a list will be cut. Returns <paramref name="endpoints"/> itself when everything fits.
+    /// </summary>
+    public static IReadOnlyList<MobileEndpoint> FitToOnePush(IReadOnlyList<MobileEndpoint> endpoints)
+    {
+        if (Fits(endpoints)) return endpoints;
+
+        var firsts = new List<int>();
+        var rest = new List<int>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < endpoints.Count; i++)
+            (seen.Add(endpoints[i].Transport) ? firsts : rest).Add(i);
+
+        var keep = new bool[endpoints.Count];
+        foreach (var i in firsts.Concat(rest))
+        {
+            keep[i] = true;
+            // A path that doesn't fit is skipped; a shorter one later in the list may still fit.
+            if (!Fits(Kept(endpoints, keep))) keep[i] = false;
+        }
+        return Kept(endpoints, keep);
+    }
+
+    private static List<MobileEndpoint> Kept(IReadOnlyList<MobileEndpoint> endpoints, bool[] keep) =>
+        endpoints.Where((_, i) => keep[i]).ToList();
+
+    private static bool Fits(IReadOnlyList<MobileEndpoint> endpoints) =>
+        Build(BudgetPcId, endpoints, BudgetTs, BudgetKey).Length <= WebPushEncryption.MaxPlaintextBytes;
+
+    private static byte[] Build(string pcId, IReadOnlyList<MobileEndpoint> endpoints, DateTimeOffset ts, byte[] key)
+    {
+        var data = JsonSerializer.SerializeToUtf8Bytes(new PushEndpointsData(MobileProtocol.Schema, pcId, ts, endpoints), MobileProtocol.Json);
+        var mac = System.Security.Cryptography.HMACSHA256.HashData(key, data);
+        return JsonSerializer.SerializeToUtf8Bytes(
+            new PushEndpointsEnvelope(MobileProtocol.Schema, Kind, pcId, Base64Url.Encode(data), Base64Url.Encode(mac)),
+            MobileProtocol.Json);
     }
 }
 

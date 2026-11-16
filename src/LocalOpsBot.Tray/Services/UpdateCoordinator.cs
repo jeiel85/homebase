@@ -30,8 +30,17 @@ internal sealed class UpdateCoordinator
 
     public string CurrentVersion => _updater.GetCurrentVersionString();
 
-    /// <summary>Silent check used by the startup background poll; returns the newer release or null.</summary>
+    /// <summary>An update flow (dialog, download or install) is open; a new one would return <see cref="UpdateOutcome.Busy"/>.</summary>
+    public bool IsBusy => _busy;
+
+    /// <summary>Silent check used by the startup and daily background checks; returns the newer release or null.</summary>
     public Task<UpdateInfo?> CheckAsync(CancellationToken ct) => _updater.CheckForUpdateAsync(ct);
+
+    /// <summary>The menu/label text for a release found in the background: "skipped" when the user skipped exactly it.</summary>
+    public static string AvailableLabel(UpdateInfo info) =>
+        ReleaseNotes.ShouldPrompt(info.Version, UpdateVersionMarker.Skipped.Read())
+            ? L.MenuUpdateAvailable(info.Version)
+            : L.UpdSkipped(info.Version);
 
     /// <summary>
     /// Startup path: a newer release was found in the background, so pop the update dialog —
@@ -43,6 +52,7 @@ internal sealed class UpdateCoordinator
         if (_busy) return UpdateOutcome.Busy;
         if (!ReleaseNotes.ShouldPrompt(info.Version, UpdateVersionMarker.Skipped.Read()))
         {
+            TrayLog.Info("Update", $"v{info.Version} available; skipped by the user, not offered");
             status?.Report(L.UpdSkipped(info.Version));
             return UpdateOutcome.Declined;
         }
@@ -52,6 +62,7 @@ internal sealed class UpdateCoordinator
         var countdown = ReleaseNotes.ShouldAutoInstall(info.Version, UpdateVersionMarker.AutoAttempted.Read())
             ? AutoUpdateCountdownSeconds
             : 0;
+        TrayLog.Info("Update", $"Offering v{info.Version} at startup (countdown {countdown} s)");
 
         _busy = true;
         try
@@ -73,7 +84,11 @@ internal sealed class UpdateCoordinator
     /// </summary>
     public async Task<UpdateOutcome> RunInteractiveAsync(IProgress<string>? status = null)
     {
-        if (_busy) return UpdateOutcome.Busy;
+        if (_busy)
+        {
+            ShowBusy();
+            return UpdateOutcome.Busy;
+        }
         _busy = true;
         try
         {
@@ -85,6 +100,7 @@ internal sealed class UpdateCoordinator
             }
             catch (Exception ex)
             {
+                TrayLog.Warn("Update", $"Manual update check failed: {ex.Message}");
                 status?.Report(L.UpdCheckFailed);
                 MessageDialog.Show(L.UpdErrorTitle, L.UpdCheckFailedDetail(ex.Message));
                 return UpdateOutcome.Failed;
@@ -106,24 +122,46 @@ internal sealed class UpdateCoordinator
     }
 
     /// <summary>
+    /// "Check for updates" while another update flow is open used to do nothing visible (issue #10):
+    /// bring that flow's window forward instead, or — while it is still checking and has no window
+    /// yet — say so.
+    /// </summary>
+    private static void ShowBusy()
+    {
+        var open = Application.Current?.Windows.OfType<System.Windows.Window>()
+            .FirstOrDefault(w => (w is UpdateDialog || w is UpdateProgressWindow) && w.IsVisible);
+        if (open is null)
+        {
+            MessageDialog.Show(L.UpdBusyTitle, L.UpdBusyDetail);
+            return;
+        }
+        if (open.WindowState == System.Windows.WindowState.Minimized)
+            open.WindowState = System.Windows.WindowState.Normal;
+        open.Activate();
+    }
+
+    /// <summary>
     /// Shows the release notes with Update / Skip this version / Later and acts on the choice.
     /// <paramref name="autoUpdateSeconds"/> &gt; 0 counts down on the Update button and installs at zero.
     /// </summary>
     private async Task<UpdateOutcome> OfferAsync(UpdateInfo info, IProgress<string>? status, int autoUpdateSeconds)
     {
-        switch (UpdateDialog.Show(info, CurrentVersion, autoUpdateSeconds))
+        // If an unattended install of this very version already stopped somewhere, say where.
+        var choice = UpdateDialog.Show(info, CurrentVersion, autoUpdateSeconds, UpdateAutoOutcome.NoteFor(info.Version));
+        TrayLog.Info("Update", $"Update dialog for v{info.Version}: {choice}");
+        switch (choice)
         {
             case UpdateDialogChoice.AutoUpdate:
                 // Recorded before anything can fail: if this unattended install doesn't take, the next
                 // launch offers the same version again and must wait for a click, not loop.
                 UpdateVersionMarker.AutoAttempted.Write(info.Version);
                 UpdateVersionMarker.Skipped.Write(null);
-                return await DownloadAndApplyAsync(info, status);
+                return await DownloadAndApplyAsync(info, status, unattended: true);
 
             case UpdateDialogChoice.Update:
                 // Choosing to install supersedes an earlier skip of an older version.
                 UpdateVersionMarker.Skipped.Write(null);
-                return await DownloadAndApplyAsync(info, status);
+                return await DownloadAndApplyAsync(info, status, unattended: false);
 
             case UpdateDialogChoice.Skip:
                 UpdateVersionMarker.Skipped.Write(info.Version);
@@ -136,7 +174,12 @@ internal sealed class UpdateCoordinator
         }
     }
 
-    private async Task<UpdateOutcome> DownloadAndApplyAsync(UpdateInfo info, IProgress<string>? status)
+    /// <summary>
+    /// Downloads, verifies and launches the elevated installer. <paramref name="unattended"/> = the
+    /// startup countdown started it, so nobody may be watching: each way it can end is recorded
+    /// (<see cref="UpdateAutoOutcome"/>) for tray.log and the next update popup (issue #18).
+    /// </summary>
+    private async Task<UpdateOutcome> DownloadAndApplyAsync(UpdateInfo info, IProgress<string>? status, bool unattended)
     {
         var window = new UpdateProgressWindow();
         window.SetStatus(L.UpdDownloading);
@@ -158,11 +201,14 @@ internal sealed class UpdateCoordinator
             }
             catch (OperationCanceledException)
             {
+                if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.Cancelled);
                 status?.Report(L.UpdAvailableShort(info.Version));
                 return UpdateOutcome.Cancelled;
             }
             catch (Exception ex)
             {
+                TrayLog.Warn("Update", $"Download of v{info.Version} failed: {ex.Message}");
+                if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.Failed);
                 status?.Report(L.UpdFailed);
                 MessageDialog.Show(L.UpdErrorTitle, L.UpdDownloadFailed(ex.Message));
                 return UpdateOutcome.Failed;
@@ -178,6 +224,10 @@ internal sealed class UpdateCoordinator
             window.RestoreAndActivate();
             status?.Report(L.UpdInstallingShort);
 
+            // Written before the prompt: if nobody answers and the session ends while it waits, the
+            // next launch still knows the install stalled here.
+            if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.AwaitingApproval);
+
             bool started;
             try
             {
@@ -185,6 +235,8 @@ internal sealed class UpdateCoordinator
             }
             catch (Exception ex)
             {
+                TrayLog.Warn("Update", $"Launching the installer for v{info.Version} failed: {ex.Message}");
+                if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.Failed);
                 status?.Report(L.UpdFailed);
                 MessageDialog.Show(L.UpdErrorTitle, L.UpdLaunchFailed(ex.Message));
                 return UpdateOutcome.Failed;
@@ -192,12 +244,17 @@ internal sealed class UpdateCoordinator
 
             if (started)
             {
+                if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.Started);
+                else TrayLog.Info("Update", $"Installer for v{info.Version} started");
                 // Let the dashboard (which cancels its own close) actually close during shutdown.
                 App.IsShuttingDown = true;
                 Application.Current.Shutdown();
                 return UpdateOutcome.Updating;
             }
 
+            // ERROR_CANCELLED: the administrator prompt was declined or dismissed without an answer.
+            if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.NotApproved);
+            else TrayLog.Info("Update", $"Installer for v{info.Version} not approved at the administrator prompt");
             status?.Report(L.UpdAvailableShort(info.Version));
             MessageDialog.Show(L.UpdCancelledTitle, L.UpdCancelledDetail);
             return UpdateOutcome.Cancelled;

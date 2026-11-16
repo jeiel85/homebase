@@ -72,4 +72,19 @@ public class MiniHttpAndBridgeTests
         Assert.DoesNotContain(MobileBridge.OpWatch, MobileBridge.AllowedTrayOps);
         Assert.Contains(MobileBridge.OpSessionReport, MobileBridge.AllowedTrayOps);
     }
+
+    [Fact]
+    public void An_unknown_request_is_answered_unsupported_and_an_unknown_push_is_ignored()
+    {
+        var reply = MobileBridge.UnsupportedResponse(MobileBridge.Message("future.op", new { x = 1 }, id: "r1"));
+        Assert.NotNull(reply);
+        Assert.Equal("{\"op\":\"response\",\"id\":\"r1\",\"ok\":false,\"error\":\"unsupported\"}",
+            reply!.ToJsonString());
+
+        Assert.Null(MobileBridge.UnsupportedResponse(MobileBridge.Message("future.push")));
+        // A non-string id is not an id this side can answer.
+        Assert.Null(MobileBridge.UnsupportedResponse(new System.Text.Json.Nodes.JsonObject { ["op"] = "x", ["id"] = 7 }));
+        Assert.Null(MobileBridge.StringOf(System.Text.Json.Nodes.JsonValue.Create(7)));
+        Assert.Equal("a", MobileBridge.StringOf(System.Text.Json.Nodes.JsonValue.Create("a")));
+    }
 }

@@ -131,6 +131,22 @@ public class EndpointAnnouncerTests
     }
 
     [Fact]
+    public async Task A_list_too_long_for_one_push_is_cut_down_and_sent_once()
+    {
+        // Many LAN adapters used to make every attempt fail and retry every 5 minutes.
+        _current = Enumerable.Range(1, 60)
+            .Select(i => new MobileEndpoint(MobileTransport.Lan, $"10.0.{i}.2", 47820, true, new string('a', 64)))
+            .Append(Tailnet).Append(NewTunnel).ToList();
+        await Tick();
+        Assert.True(await Tick());
+        Assert.Single(_http.Requests);
+
+        _time.Advance(EndpointAnnouncer.RetryAfter);
+        Assert.False(await Tick()); // the phone accepted it: nothing to retry
+        Assert.Single(_http.Requests);
+    }
+
+    [Fact]
     public async Task Nothing_is_sent_without_a_registered_phone()
     {
         foreach (var t in _store.PushTargets()) _store.SetPushSubscription(t.DeviceId, null);

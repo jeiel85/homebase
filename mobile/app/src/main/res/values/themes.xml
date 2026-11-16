@@ -5,4 +5,15 @@
         <item name="android:statusBarColor">@color/carbon</item>
         <item name="android:navigationBarColor">@color/carbon</item>
     </style>
+
+    <!-- The app's own theme choice (Settings → 화면), which values-night doesn't know about: MainActivity
+         sets one before its first frame, and on Android 13+ it is also the launch splash (ThemeSetting).
+         The names are persisted by Android for the splash, so keep them stable. -->
+    <style name="Theme.Homebase.Light">
+        <item name="android:windowBackground">@color/canvas_day</item>
+    </style>
+
+    <style name="Theme.Homebase.Dark">
+        <item name="android:windowBackground">@color/canvas_night</item>
+    </style>
 </resources>

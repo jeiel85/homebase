@@ -140,7 +140,6 @@ object PushNotifier {
 
     /** Removes a PC's channels when it is deleted from the app. */
     fun forgetPc(context: Context, pcId: String) {
-        if (Build.VERSION.SDK_INT < 26) return
         context.getSystemService(NotificationManager::class.java).deleteNotificationChannelGroup(groupId(pcId))
     }
 

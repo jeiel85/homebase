@@ -13,6 +13,7 @@ public sealed class CommandLogRepository : ICommandLogRepository
 
     public async Task<long> InsertAsync(Models.CommandLogEntry entry, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO command_log (chat_id, user_id, command, args_json, raw_text, status, error, received_at, completed_at)
@@ -34,6 +35,7 @@ public sealed class CommandLogRepository : ICommandLogRepository
 
     public async Task MarkCompletedAsync(long id, string status, string? error, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             UPDATE command_log SET status = @status, error = @error, completed_at = datetime('now')

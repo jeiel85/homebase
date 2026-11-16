@@ -82,8 +82,10 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     val history by PushHistory.state.collectAsState()
     // What counted as read when the screen opened; null until the file is loaded.
     var seenBefore by remember { mutableStateOf<Long?>(null) }
+    // The history file could not be read and started over (said once, #41).
+    var restarted by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { PushHistory.ensureLoaded(context) }
+        restarted = withContext(Dispatchers.IO) { PushHistory.takeRestartNotice(context) }
         seenBefore = PushHistory.state.value.lastSeenAt
     }
     // Opening the center reads everything — also what arrives while it stays open.
@@ -147,6 +149,16 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 14.dp),
         ) {
+            if (restarted) {
+                item {
+                    Text(
+                        "이전 알림 이력을 읽지 못해 새로 시작했습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = hb.inkSoft,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
+            }
             if (seenBefore != null && entries.isEmpty()) {
                 item { EmptyCenter(pushOn, onSettings) }
             }

@@ -83,6 +83,26 @@ jobs:
           python3 -c "import json; d=json.load(open('dist/update.json')); assert d['versionCode']>0 and len(d['sha256'])==64 and d['apkUrl'].startswith('https://'), d"
           cat dist/update.json
 
+      # Pairing links open the app only while jeiel85.github.io's assetlinks.json lists this
+      # certificate. That file lives in another repository, so check it here: a removed or
+      # mistyped entry would otherwise silently turn pairing links back into the browser page.
+      - name: App Links list the release certificate
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 https://jeiel85.github.io/.well-known/assetlinks.json > assetlinks.json
+          python3 - <<'PY'
+          import json, os
+          want = os.environ["HOMEBASE_RELEASE_CERT_SHA256"].lower()
+          found = [
+              fp.replace(":", "").lower()
+              for entry in json.load(open("assetlinks.json"))
+              if entry.get("target", {}).get("package_name") == "io.github.jeiel85.homebase"
+              for fp in entry["target"].get("sha256_cert_fingerprints", [])
+          ]
+          assert want in found, f"release certificate missing from assetlinks.json: {found}"
+          print("assetlinks.json lists the release certificate")
+          PY
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-release
@@ -100,6 +120,10 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '9.0'
+
+      # Same gate as dotnet-ci.yml: nothing is published to the auto-updater unless the tests pass.
+      - name: Test
+        run: dotnet test tests/LocalOpsBot.Tests/LocalOpsBot.Tests.csproj -c Release
 
       # Single source of truth for the version: the git tag. Stamped into the assemblies
       # (so UpdateService.CurrentVersion is correct and auto-update compares properly),

@@ -37,6 +37,19 @@ Play 빌드는 CI가 아니라 관리자 PC에서 만듭니다. 업로드 키는
 
    Play 빌드의 병합 매니페스트에 `REQUEST_INSTALL_PACKAGES`·`UpdateCheckJobService`가 없어야 합니다(Mobile CI가 PR마다 검사).
 
+6. 네이티브 디버그 기호 — 앱 코드는 Kotlin뿐이지만 의존성(Compose 등)에 네이티브 라이브러리(`.so`)가 들어 있어,
+   기호가 없으면 Play Console이 출시마다 "네이티브 코드 포함, 디버그 기호 없음"을 경고하고 네이티브 비정상 종료·ANR을
+   읽을 수 없습니다. release 빌드는 `ndk.debugSymbolLevel = "SYMBOL_TABLE"`(`mobile/app/build.gradle.kts`)이라
+   AAB 안(`BUNDLE-METADATA/com.android.tools.build.debugsymbols/`)에 기호 표가 함께 들어가고, 업로드하면 Play가 알아서 씁니다.
+   기호를 뽑는 데 **NDK가 필요합니다**(Android Studio → SDK Manager → SDK Tools → NDK (Side by side)). NDK가 없으면 빌드는
+   되지만 `Unable to extract native debug metadata` 경고가 나고 기호가 빠집니다. 확인:
+
+   ```bash
+   unzip -l mobile/app/build/outputs/bundle/playRelease/app-play-release.aab | grep debugsymbols
+   ```
+
+   목록이 비어 있지 않으면 됩니다. 비어 있으면 NDK를 설치하고 2번부터 다시 합니다.
+
 ## 업로드
 
 Play Console(개발자 계정 EL Studio) → Homebase → 테스트 및 출시 → 테스트 트랙(처음에는 내부 테스트) → 새 버전 만들기 →

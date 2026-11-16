@@ -81,7 +81,8 @@ public partial class DashboardWindow : ThemedWindow
                 var readiness = await Task.Run(_readiness.Probe);
                 var forwarding = await Task.Run(SafeForwardingEnabled);
                 var phone = await Task.Run(SafePhoneEnabled);
-                ApplyConnections(readiness, forwarding, phone);
+                var autostartOff = await Task.Run(TrayAutostart.IsDisabled);
+                ApplyConnections(readiness, forwarding, phone, autostartOff);
             }
         }
         catch
@@ -291,7 +292,7 @@ public partial class DashboardWindow : ThemedWindow
             DiskPanel.Children.Add(new TextBlock { Text = "—", Style = (Style)FindResource("Type.Micro") });
     }
 
-    private void ApplyConnections(ReadinessSnapshot r, bool forwarding, bool phone)
+    private void ApplyConnections(ReadinessSnapshot r, bool forwarding, bool phone, bool autostartOff)
     {
         if (r is { TokenConfigured: true, ChatConfigured: true, PrimaryChatId: long chat })
         {
@@ -304,8 +305,18 @@ public partial class DashboardWindow : ThemedWindow
             TelegramText.Text = L.TelegramNotSetUp;
         }
 
-        SetChip(ForwardingChip, ForwardingChipText, forwarding ? "Brush.StatusOk" : "Brush.Hairline", forwarding ? L.ChipOn : L.ChipOff);
-        ForwardingText.Text = forwarding ? L.ForwardingOn : L.ForwardingOff;
+        // Forwarding runs in this tray, so with its sign-in autostart turned off in Task Manager it
+        // silently stops after the next sign-in (issue #4): say so here, where the user looks.
+        if (forwarding && autostartOff)
+        {
+            SetChip(ForwardingChip, ForwardingChipText, "Brush.StatusWarn", L.ChipCheck);
+            ForwardingText.Text = L.ForwardingOnAutostartOff;
+        }
+        else
+        {
+            SetChip(ForwardingChip, ForwardingChipText, forwarding ? "Brush.StatusOk" : "Brush.Hairline", forwarding ? L.ChipOn : L.ChipOff);
+            ForwardingText.Text = forwarding ? L.ForwardingOn : L.ForwardingOff;
+        }
 
         SetChip(PhoneChip, PhoneChipText, phone ? "Brush.StatusOk" : "Brush.Hairline", phone ? L.ChipOn : L.ChipOff);
         PhoneText.Text = phone ? L.PhoneOn : L.PhoneOff;

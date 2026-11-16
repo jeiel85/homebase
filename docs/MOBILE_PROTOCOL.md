@@ -50,7 +50,7 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 
 | 메서드 | 경로 | 인증 | 응답 |
 |---|---|---|---|
-| GET | `/api/v1/info` | 없음 | `{schema, protocol, pcId, pcName, agentVersion, os}` |
+| GET | `/api/v1/info` | 없음 | `{schema, protocol, pcId, pcName, agentVersion, os}`. Cloudflare 터널로 온 요청은 페어링된 기기의 `Authorization: Bearer <token>`이 없으면 `pcName`·`os`가 `""`다(M-39) |
 | POST | `/api/v1/pair` | 본문의 `code` | 200 `{schema, deviceId, token, pcId, pcName}` · 400 `invalid_code` · 410 `code_expired` · 429 `locked` |
 | GET | `/api/v1/endpoints` | `Authorization: Bearer <token>` | 200 `{schema, endpoints}`([`endpoints.v1.json`](mobile-protocol/endpoints.v1.json)) · 401 |
 | GET | `/api/v1/snapshot` | `Authorization: Bearer <token>` | 200 `LiveSnapshot` · 401 `unauthorized` |
@@ -155,7 +155,7 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 | `work[]` | 작업 탭(M-26): `{kind, app, title, detail?, lastActivity?, foreground}`. `kind`는 `agent`(Claude Code·Codex 세션, `detail`=폴더) · `editor`(코드 편집기, `detail`=프로젝트) · `document`(Office·한글·PDF 등) · `browser`(브라우저 창의 활성 탭). 순서는 agent(최근 활동순) → 전경 창 → editor → document → browser, 최대 30개. v0.23.0 전 PC는 보내지 않는다 |
 | `hardware` | 하드웨어 패널(M-34). v0.29.0 전 PC는 보내지 않는다. 읽지 못한 값은 0이 아니라 빠진다(null) |
 | `hardware.cpuName` · `cpuTempC` · `boardTempC` | CPU 모델명(레지스트리), CPU 패키지 온도(LibreHardwareMonitor 센서가 있을 때), 보드 온도(가장 뜨거운 보드·ACPI 센서). 온도 백엔드는 `/status`와 같은 `temperature` 설정을 따른다 |
-| `hardware.gpus[]` | `{name, vendor?, integrated, loadPct?, tempC?, tempMaxC?, vramUsedBytes?, vramTotalBytes?, sharedUsedBytes?, sharedTotalBytes?, powerW?, powerLimitW?, powerPct?, fanPct?, fanRpm?, clockMhz?, memClockMhz?, source?}`. 주 GPU(외장 → VRAM 큰 순)가 먼저다. `windows`(D3DKMT·GPU 성능 카운터, 제조사 무관)와 `nvidia-smi`(전력·클럭·팬)를 이름으로 합치고 `source`에 `nvidia-smi+windows`처럼 적는다. `shared*`는 GPU가 쓰는 시스템 메모리(내장 GPU의 주 메모리), `powerPct`는 보드 전력 한도 대비 비율 |
+| `hardware.gpus[]` | `{name, vendor?, integrated, loadPct?, tempC?, tempMaxC?, vramUsedBytes?, vramTotalBytes?, sharedUsedBytes?, sharedTotalBytes?, powerW?, powerLimitW?, powerPct?, fanPct?, fanRpm?, clockMhz?, memClockMhz?, source?}`. 주 GPU(외장 → VRAM 큰 순)가 먼저다. `windows`(D3DKMT·GPU 성능 카운터, 제조사 무관)와 `nvidia-smi`(전력·클럭·팬)를 이름으로 합치고 `source`에 `nvidia-smi+windows`처럼 적는다. `shared*`는 GPU가 쓰는 시스템 메모리(내장 GPU의 주 메모리), `powerPct`는 보드 전력 한도 대비 비율. PC 설정 `mobile.nvidiaSmi=false`면 `nvidia-smi`를 쓰지 않아 `windows` 값만 온다 |
 | `hardware.disks[]` | `{name, totalBytes, usedBytes}` — 2 GB 넘는 고정 드라이브, 최대 8개, `name`은 드라이브 문자(`C:`) |
 | `hardware.ping` | `{host, lastMs?, avgMs?, lossPct, samples}` — 보는 동안 2초마다 `mobile.pingHost`(기본 `1.1.1.1`, 빈 값이면 끔)에 ICMP. 최근 30회(1분)의 평균과 손실률, `samples`는 지금까지 모인 횟수 |
 

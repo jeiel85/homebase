@@ -32,6 +32,8 @@ public partial class SettingsWindow : ThemedWindow
         UpdateVersionText.Text = L.UpdCurrent(_updates.CurrentVersion);
 
         Loaded += (_, _) => { RefreshTelegram(); LoadForwardingState(); LoadMonitors(); };
+        // Minimized is out of view too: stop polling the Agent while nobody can see the tab (M-13).
+        StateChanged += (_, _) => SyncPhonePanel();
         Closed += (_, _) => PhonePanel.Stop();
     }
 
@@ -49,7 +51,12 @@ public partial class SettingsWindow : ThemedWindow
     private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
-        if (Tabs.SelectedItem == PhoneTab) PhonePanel.Show();
+        SyncPhonePanel();
+    }
+
+    private void SyncPhonePanel()
+    {
+        if (Tabs.SelectedItem == PhoneTab && WindowState != WindowState.Minimized) PhonePanel.Show();
         else PhonePanel.Hide();
     }
 
@@ -180,6 +187,7 @@ public partial class SettingsWindow : ThemedWindow
         ForwardingEnabledCheckBox.IsChecked = _forwardingPersisted;
         SetChip(FwChip, FwChipText, _forwardingPersisted ? "Brush.StatusOk" : "Brush.Hairline", _forwardingPersisted ? L.ChipOn : L.ChipOff);
         FwCurrentText.Text = L.FwCurrent(_forwardingPersisted);
+        FwAutostartWarning.Visibility = _forwardingPersisted && TrayAutostart.IsDisabled() ? Visibility.Visible : Visibility.Collapsed;
         ApplyForwardingButton.IsEnabled = false;
         UpdateAppSelectionUi();
     }

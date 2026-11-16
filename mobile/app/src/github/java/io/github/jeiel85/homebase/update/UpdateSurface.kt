@@ -39,11 +39,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.jeiel85.homebase.BuildConfig
+import io.github.jeiel85.homebase.push.PushHistoryRules
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.SettingsSwitchRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -103,6 +108,16 @@ internal object UpdateSurface {
                 UpdateCheckScheduler.sync(context)
             },
         )
+        // 백그라운드 확인이 실제로 도는지 보이게 한다 — 배터리 정책이 잡을 미루거나 건너뛰는 기기가 있다.
+        if (enabled) {
+            val lastChecked = remember { preferences.lastCheckedAt() }
+            Text(
+                text = lastCheckLine(lastChecked, System.currentTimeMillis()),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
         // 알림 권한이 없으면 확인은 돌아도 알림이 뜨지 않는다(목록 위 배너만 남는다). 그 사실을
         // 이 자리에서 말하고 고칠 길을 준다. 처음엔 권한을 묻고, 이미 거부돼 다시 물을 수 없으면
         // (두 번째 누름) 앱 알림 설정을 연다.
@@ -126,6 +141,25 @@ internal object UpdateSurface {
     }
 
     /**
+     * "마지막 확인: 오늘 14:05". 성공한 확인만 기록된다([UpdatePreferences.lastCheckedAt]). 하루 1회
+     * 확인이 며칠째 없으면 그 이유일 수 있는 것을 덧붙인다.
+     */
+    private fun lastCheckLine(at: Long, now: Long): String {
+        if (at <= 0L) return "마지막 확인: 아직 없음"
+        val zone = ZoneId.systemDefault()
+        val time = DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(at).atZone(zone))
+        val line = "마지막 확인: ${PushHistoryRules.dayLabel(at, now, zone)} $time"
+        return if (now - at > STALE_CHECK_MILLIS) {
+            "$line · 며칠째 확인하지 못했습니다. 배터리 최적화가 백그라운드 확인을 막고 있을 수 있습니다."
+        } else {
+            line
+        }
+    }
+
+    /** 하루 1회 확인이 이만큼 없으면 "막혀 있을 수 있다"고 덧붙인다(잡 주기 12시간, 최악 36시간의 두 배). */
+    private val STALE_CHECK_MILLIS = TimeUnit.DAYS.toMillis(3)
+
+    /**
      * 노트 목록 위의 한 줄짜리 알림. 새 버전이 없으면 **아무것도 그리지 않는다.**
      *
      * Input : 없음
@@ -143,6 +177,8 @@ internal object UpdateSurface {
         val preferences = remember(context) { UpdatePreferences(context) }
         var offered by remember { mutableStateOf<UpdateManifest?>(null) }
         var dialogOpen by remember { mutableStateOf(false) }
+        // 설치 권한을 주고 돌아왔는데 대화상자가 사라졌으면(앱이 다시 시작됨) 받기를 바로 이어 간다.
+        var resumeDownload by remember { mutableStateOf(false) }
         val openRequested = openRequest
         val epoch = refreshEpoch
 
@@ -164,6 +200,24 @@ internal object UpdateSurface {
             if (openRequested) {
                 if (offered != null) dialogOpen = true
                 openRequest = false
+            }
+            // "업데이트"를 눌렀다가 '알 수 없는 앱 설치' 권한을 주러 설정에 다녀왔다. 권한을 바꾸면 Android가
+            // 앱 프로세스를 다시 시작하는 기기가 있어 대화상자와 그 결과 콜백이 사라진다 — 사용자가 다시
+            // 누르지 않아도 그 버전을 이어서 받는다. 권한이 그대로 없거나 오래된 요청이면 지우기만 한다.
+            val current = offered
+            if (current != null && preferences.pendingInstallVersionCode() != 0) {
+                val resume = UpdateDecision.shouldResumeInstall(
+                    pendingVersionCode = preferences.pendingInstallVersionCode(),
+                    pendingAt = preferences.pendingInstallAt(),
+                    offeredVersionCode = current.versionCode,
+                    now = System.currentTimeMillis(),
+                    canInstall = context.packageManager.canRequestPackageInstalls(),
+                )
+                preferences.clearPendingInstall()
+                if (resume) {
+                    resumeDownload = true
+                    dialogOpen = true
+                }
             }
         }
 
@@ -190,12 +244,17 @@ internal object UpdateSurface {
         if (dialogOpen) {
             UpdateDialog(
                 manifest = manifest,
-                onDismiss = { dialogOpen = false },
+                startNow = resumeDownload,
+                onDismiss = {
+                    dialogOpen = false
+                    resumeDownload = false
+                },
                 onSkip = {
                     preferences.setSkippedVersionCode(manifest.versionCode)
                     UpdateNotifier.cancel(context)
                     offered = null
                     dialogOpen = false
+                    resumeDownload = false
                 },
             )
         }
@@ -234,13 +293,18 @@ internal object UpdateSurface {
         refreshEpoch++
         return when (result) {
             is UpdateRefresh.ManualResult.Offer -> "새 버전 ${result.manifest.versionName}이 있습니다"
+            // "최신 버전입니다"는 사실이 아니다 — 새 버전이 있지만 이 휴대폰에는 설치할 수 없다.
+            is UpdateRefresh.ManualResult.NeedsNewerAndroid ->
+                "새 버전 ${result.manifest.versionName}은 Android API ${result.manifest.minSdk} 이상이 필요해 " +
+                    "이 휴대폰(API ${Build.VERSION.SDK_INT})에는 설치할 수 없습니다"
             UpdateRefresh.ManualResult.UpToDate -> "최신 버전입니다 (${BuildConfig.VERSION_NAME})"
             UpdateRefresh.ManualResult.Failed -> "업데이트를 확인하지 못했습니다 — 네트워크를 확인하세요"
             UpdateRefresh.ManualResult.Disabled -> null
         }
     }
 
-    private enum class DownloadFlowState { Offer, NeedsInstallPermission, Downloading, Failed }
+    /** [WrongSigner]: 이 설치본이 릴리스 키로 서명되지 않아(디버그 빌드 등) 업데이트를 덮어 설치할 수 없다. */
+    private enum class DownloadFlowState { Offer, WrongSigner, NeedsInstallPermission, Downloading, Failed }
 
     // 프로세스 전체에서 하나만 도는 다운로드/설치를 보장하는 재진입 가드. `UpdateDialog`가
     // 닫혔다 다시 열려도(이론상으로도) 같은 캐시 파일 경로(`DOWNLOAD_FILE_NAME`)를 두 흐름이
@@ -248,20 +312,35 @@ internal object UpdateSurface {
     // 이 가드는 그 차단에 기대지 않는 두 번째 방어선이다.
     private val downloadInProgress = AtomicBoolean(false)
 
+    /**
+     * [startNow]: 열리자마자 받기를 시작한다 — 설치 권한을 주고 돌아왔는데 앱이 다시 시작돼
+     * 이전 대화상자가 사라진 경우([Banner] 참조).
+     */
     @Composable
     private fun UpdateDialog(
         manifest: UpdateManifest,
+        startNow: Boolean,
         onDismiss: () -> Unit,
         onSkip: () -> Unit,
     ) {
         val context = LocalContext.current
+        val preferences = remember(context) { UpdatePreferences(context) }
         val size = remember(manifest) { Formatter.formatShortFileSize(context, manifest.apkSizeBytes) }
-        var flowState by remember(manifest) { mutableStateOf(DownloadFlowState.Offer) }
+        // 다른 키로 서명된 설치본이면 받기 전에 그 사실부터 말한다 — 받아 봐야 시스템이 설치를 거부한다.
+        var flowState by remember(manifest) {
+            mutableStateOf(if (UpdateSigner.canUpdateInPlace(context)) DownloadFlowState.Offer else DownloadFlowState.WrongSigner)
+        }
         // LaunchedEffect의 재실행 열쇠다. 0은 "아직 시작 안 함"이고, 그 뒤로는 시도할 때마다
         // 하나씩 올린다 — "다시 시도"를 눌러도 같은 값이면 LaunchedEffect가 다시 돌지 않는다.
         var downloadEpoch by remember(manifest) { mutableIntStateOf(0) }
 
         fun startDownload() {
+            // 설정에 다녀온 뒤의 "이어서 받기" 표시는 어느 길로 왔든 여기서 끝난다.
+            preferences.clearPendingInstall()
+            if (!UpdateSigner.canUpdateInPlace(context)) {
+                flowState = DownloadFlowState.WrongSigner
+                return
+            }
             // compareAndSet이 false를 반환하면 이미 다른 흐름이 돌고 있다는 뜻 — 조용히
             // 무시한다. 정상 경로에서는 canDismiss가 그 상태로의 재진입 자체를 막으므로
             // 여기 걸릴 일이 없어야 하지만, 그 가정이 깨지더라도 파일 경합만은 막는다.
@@ -284,6 +363,12 @@ internal object UpdateSurface {
             // Settings 화면은 결과 코드로 승인 여부를 알려주지 않는다. 돌아온 뒤 PackageManager에
             // 직접 다시 물어야 한다.
             startDownload()
+        }
+
+        // 앱이 다시 시작된 뒤 [Banner]가 이어 달라고 연 경우. 위 콜백도 같이 올 수 있지만
+        // `downloadInProgress`가 두 번째 시작을 막는다.
+        LaunchedEffect(Unit) {
+            if (startNow) startDownload()
         }
 
         LaunchedEffect(downloadEpoch) {
@@ -341,6 +426,17 @@ internal object UpdateSurface {
                             Text("이 버전 건너뛰기")
                         }
                     }
+                    DownloadFlowState.WrongSigner -> Column {
+                        Text(
+                            text = "새 버전 ${manifest.versionName}이 있지만, 지금 설치된 앱은 릴리스 키가 아닌 다른 키" +
+                                "(개발용 빌드 등)로 서명되어 있어 그 위에 업데이트를 설치할 수 없습니다. " +
+                                "이 앱을 삭제한 뒤 릴리스 페이지의 APK를 새로 설치하세요. 삭제하면 연결한 PC는 다시 연결해야 합니다.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        TextButton(onClick = onSkip) {
+                            Text("이 버전 건너뛰기")
+                        }
+                    }
                     DownloadFlowState.NeedsInstallPermission -> Text(
                         text = "업데이트를 설치하려면 이 앱에 '알 수 없는 앱 설치' 권한이 필요합니다. 설정에서 허용한 뒤 돌아오세요.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -377,8 +473,14 @@ internal object UpdateSurface {
                     DownloadFlowState.Offer -> TextButton(onClick = ::startDownload) {
                         Text("업데이트")
                     }
+                    // 릴리스 페이지에 APK가 붙어 있다. 설치는 이 앱을 지운 뒤 사용자가 한다.
+                    DownloadFlowState.WrongSigner -> TextButton(onClick = { context.open(manifest.releaseNotesUrl) }) {
+                        Text("릴리스 페이지 열기")
+                    }
                     DownloadFlowState.NeedsInstallPermission -> TextButton(
                         onClick = {
+                            // 권한을 바꾸면 앱이 다시 시작되는 기기가 있다 — 돌아온 뒤 이어 받을 수 있게 남겨 둔다.
+                            preferences.setPendingInstall(manifest.versionCode, System.currentTimeMillis())
                             installPermissionLauncher.launch(
                                 Intent(
                                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,

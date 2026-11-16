@@ -8,6 +8,8 @@
     <ProjectReference Include="..\LocalOpsBot.Core\LocalOpsBot.Core.csproj" />
     <ProjectReference Include="..\LocalOpsBot.Infrastructure\LocalOpsBot.Infrastructure.csproj" />
     <ProjectReference Include="..\LocalOpsBot.Data\LocalOpsBot.Data.csproj" />
+    <!-- Used directly (MessageSensitivity); explicit so the build survives Core dropping its reference. -->
+    <ProjectReference Include="..\LocalOpsBot.Protocol\LocalOpsBot.Protocol.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="LocalOpsBot.Tests" />

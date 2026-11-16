@@ -104,6 +104,23 @@ public class ToastBundlerTests
         _time.Advance(TimeSpan.FromHours(24));
         Assert.NotNull(bundler.Add(Toast("app9", "x")));
     }
+
+    [Fact]
+    public void Drain_hands_over_held_bundles_before_their_window_ends()
+    {
+        var bundler = new ToastBundler(TimeSpan.FromSeconds(60), 100, _time);
+        bundler.Add(Toast("KakaoTalk", "sent at once"));
+        bundler.Add(Toast("KakaoTalk", "held 1"));
+        bundler.Add(Toast("KakaoTalk", "held 2"));
+        bundler.Add(Toast("Outlook", "sent at once"));
+        Assert.Empty(bundler.Flush()); // windows still open
+
+        var batch = Assert.Single(bundler.Drain());
+        Assert.Equal("KakaoTalk", batch.SourceApp);
+        Assert.Equal(2, batch.Count);
+        Assert.False(bundler.HasPending);
+        Assert.Empty(bundler.Drain());
+    }
 }
 
 public class NotificationForwardingServiceTests
@@ -163,6 +180,21 @@ public class NotificationForwardingServiceTests
         Assert.Equal("Slack: 2 notifications", bundle.Title);
         Assert.Equal("b: hello\nc: hello", bundle.Body);
         Assert.Equal("2", bundle.Metadata!["count"]);
+    }
+
+    [Fact]
+    public async Task Toasts_held_in_a_bundle_are_sent_when_the_service_stops()
+    {
+        var service = Create();
+        await service.AcceptAsync(Toast("Slack", "a"));
+        await service.AcceptAsync(Toast("Slack", "b"));
+        await service.AcceptAsync(Toast("Slack", "c"));
+        Assert.Single(_router.Sent); // b and c are held for the bundle window
+
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, _router.Sent.Count);
+        Assert.Equal("2", _router.Sent[1].Metadata!["count"]);
     }
 
     private sealed class RecordingRouter : IOutboundRouter

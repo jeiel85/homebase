@@ -1,5 +1,6 @@
 package io.github.jeiel85.homebase.update
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,6 +91,101 @@ class UpdateDecisionTest {
             UpdateDecision.shouldOffer(manifest(versionCode = 145, minSdk = 26), installedVersionCode = 144, skippedVersionCode = 0, deviceSdk = 26)
         )
     }
+
+    @Test
+    fun shouldPostNotification_postsANewVersionOnceWhenItCanBeSeen() {
+        assertTrue(post())
+        // 이미 알린 버전은 다시 울리지 않는다.
+        assertFalse(post(notified = 1800))
+    }
+
+    @Test
+    fun shouldPostNotification_respectsAStopOrATurnOffDuringTheCheck() {
+        // GET 하는 사이 잡이 멈췄거나 사용자가 "업데이트 확인"을 껐다 — 알리면 그 선택을 되돌린다.
+        assertFalse(post(stopped = true))
+        assertFalse(post(enabled = false))
+    }
+
+    @Test
+    fun shouldPostNotification_skipsAChannelTheUserTurnedOff() {
+        // hb.app.update가 IMPORTANCE_NONE이면 Android가 조용히 버린다. 게시를 성공으로 치면 그 버전을
+        // "알렸다"고 기억해, 채널을 다시 켜도 영영 알리지 않는다.
+        assertFalse(post(visible = false))
+    }
+
+    @Test
+    fun shouldPostNotification_looksAtTheChannelOnlyWhenEverythingElseSaysYes() {
+        // 채널 확인은 채널을 만드는 부수 효과가 있다 — 끈 사용자에게 채널을 새로 만들지 않는다.
+        var asked = 0
+        val countAsk = { asked++; true }
+        UpdateDecision.shouldPostNotification(stopped = true, enabled = true, offeredVersionCode = 1800, notifiedVersionCode = 0, notificationVisible = countAsk)
+        UpdateDecision.shouldPostNotification(stopped = false, enabled = false, offeredVersionCode = 1800, notifiedVersionCode = 0, notificationVisible = countAsk)
+        UpdateDecision.shouldPostNotification(stopped = false, enabled = true, offeredVersionCode = 1800, notifiedVersionCode = 1800, notificationVisible = countAsk)
+        assertEquals(0, asked)
+    }
+
+    @Test
+    fun isManualCheckFresh_reusesAResultForAMinute() {
+        assertTrue(UpdateDecision.isManualCheckFresh(lastCheckedAt = NOW - 1_000, now = NOW))
+        assertFalse(UpdateDecision.isManualCheckFresh(lastCheckedAt = NOW - UpdateDecision.MANUAL_CHECK_MIN_INTERVAL_MILLIS, now = NOW))
+        // 확인한 적 없음, 또는 시계가 되돌아가 미래 시각 — 다시 묻는다.
+        assertFalse(UpdateDecision.isManualCheckFresh(lastCheckedAt = 0L, now = NOW))
+        assertFalse(UpdateDecision.isManualCheckFresh(lastCheckedAt = NOW + 1_000, now = NOW))
+    }
+
+    @Test
+    fun shouldResumeInstall_carriesOnRightAfterThePermissionWasGranted() {
+        assertTrue(resume())
+        // 권한을 주지 않고 돌아왔다.
+        assertFalse(resume(canInstall = false))
+        // 설정에 다녀온 버전과 지금 알리는 버전이 다르다.
+        assertFalse(resume(offered = 1801))
+        // 표시가 없다.
+        assertFalse(resume(pending = 0))
+        // 오래된 요청 — 사용자가 고르지 않은 때에 받기를 시작하지 않는다.
+        assertFalse(resume(at = NOW - UpdateDecision.RESUME_INSTALL_WINDOW_MILLIS - 1))
+        assertFalse(resume(at = NOW + 60_000))
+    }
+
+    @Test
+    fun canUpdateInPlace_tellsADebugSignedInstallApart() {
+        val release = "4d9cbd4d68cd2ee792fd1f506cbfae9c2313186b668a5ca34d9020f5d23ef865"
+        assertTrue(UpdateDecision.canUpdateInPlace(listOf(release), release))
+        assertTrue(UpdateDecision.canUpdateInPlace(listOf(release.uppercase()), release))
+        // 디버그 키로 서명된 설치본: 릴리스 APK는 그 위에 설치되지 않는다.
+        assertFalse(UpdateDecision.canUpdateInPlace(listOf("ab".repeat(32)), release))
+        // 키를 교체한 이력 안에 릴리스 키가 있으면 된다.
+        assertTrue(UpdateDecision.canUpdateInPlace(listOf("ab".repeat(32), release), release))
+        // 서명을 읽지 못했거나(빈 목록) 검사하지 않는 빌드(빈 기대값)는 막지 않는다.
+        assertTrue(UpdateDecision.canUpdateInPlace(emptyList(), release))
+        assertTrue(UpdateDecision.canUpdateInPlace(listOf("ab".repeat(32)), ""))
+    }
+
+    private fun post(
+        stopped: Boolean = false,
+        enabled: Boolean = true,
+        notified: Int = 0,
+        visible: Boolean = true,
+    ) = UpdateDecision.shouldPostNotification(
+        stopped = stopped,
+        enabled = enabled,
+        offeredVersionCode = 1800,
+        notifiedVersionCode = notified,
+        notificationVisible = { visible },
+    )
+
+    private fun resume(
+        pending: Int = 1800,
+        at: Long = NOW - 30_000,
+        offered: Int = 1800,
+        canInstall: Boolean = true,
+    ) = UpdateDecision.shouldResumeInstall(
+        pendingVersionCode = pending,
+        pendingAt = at,
+        offeredVersionCode = offered,
+        now = NOW,
+        canInstall = canInstall,
+    )
 
     private fun manifest(versionCode: Int, minSdk: Int = 26) = UpdateManifest(
         versionCode = versionCode,

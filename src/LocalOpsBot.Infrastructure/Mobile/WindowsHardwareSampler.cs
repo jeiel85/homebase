@@ -26,6 +26,7 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
     private const long MinDiskBytes = 2L * 1024 * 1024 * 1024;
 
     private readonly string? _pingHost;
+    private readonly bool _nvidiaSmi;
     private readonly ITemperatureCollector? _temperature;
     private readonly ILogger<WindowsHardwareSampler> _logger;
     private readonly string? _cpuName = ReadCpuName();
@@ -39,6 +40,8 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
     private volatile IReadOnlyList<DiskUsage> _disks = [];
     private volatile PingStats? _ping;
     private volatile Temps? _temps;
+    /// <summary>nvidia-smi has failed and that was logged; kept across watch sessions so it is logged once.</summary>
+    private volatile bool _nvidiaFailing;
 
     private sealed record Temps(double? Cpu, double? Board);
 
@@ -46,6 +49,7 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
     {
         var host = options.Value.PingHost?.Trim();
         _pingHost = string.IsNullOrEmpty(host) ? null : host;
+        _nvidiaSmi = options.Value.NvidiaSmi;
         _temperature = temperature;
         _logger = logger;
     }
@@ -76,7 +80,7 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
             var cts = new CancellationTokenSource();
             _cts = cts;
             _ = Task.Run(() => DeviceLoopAsync(cts.Token));
-            _ = Task.Run(() => NvidiaLoopAsync(cts.Token));
+            if (_nvidiaSmi) _ = Task.Run(() => NvidiaLoopAsync(cts.Token)); // mobile:nvidiaSmi
             if (_pingHost is not null) _ = Task.Run(() => PingLoopAsync(_pingHost, cts.Token));
             _running = true;
         }
@@ -168,7 +172,8 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
 
     /// <summary>
     /// Keeps one <c>nvidia-smi -lms 1000</c> running and reads one line per GPU per second. A PC without
-    /// nvidia-smi ends the loop at once; a failing one is retried every 30 s.
+    /// nvidia-smi ends the loop at once; a failing one is retried every 30 s. A failure (a driver update
+    /// can take minutes) is logged once as a warning, and its end once as information.
     /// </summary>
     private async Task NvidiaLoopAsync(CancellationToken ct)
     {
@@ -176,6 +181,7 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
         {
             while (!ct.IsCancellationRequested)
             {
+                Exception? error = null;
                 try
                 {
                     var names = GpuSources.ParseNvidiaNames(await RunOnceAsync("--query-gpu=index,name --format=csv,noheader", ct).ConfigureAwait(false));
@@ -191,6 +197,11 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
                         cards[row.Index] = row.Gpu;
                         _nvidia = cards.Values.ToList();
                         Interlocked.Exchange(ref _nvidiaAt, Stopwatch.GetTimestamp());
+                        if (_nvidiaFailing)
+                        {
+                            _nvidiaFailing = false;
+                            _logger.LogInformation("nvidia-smi works again; NVIDIA power and clock readings are back.");
+                        }
                     }
                 }
                 catch (Win32Exception)
@@ -199,9 +210,19 @@ public sealed class WindowsHardwareSampler : IHardwareSampler, IDisposable
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
-                    _logger.LogDebug(ex, "nvidia-smi stopped; trying again in 30 s.");
+                    error = ex;
                 }
                 if (ct.IsCancellationRequested) break; // killed by Stop: not a failure to retry
+                if (!_nvidiaFailing)
+                {
+                    _nvidiaFailing = true;
+                    _logger.LogWarning("nvidia-smi stopped ({Error}); NVIDIA power and clock readings are left out, retrying every 30 s.",
+                        error?.Message ?? "it exited");
+                }
+                else
+                {
+                    _logger.LogDebug(error, "nvidia-smi still not running; trying again in 30 s.");
+                }
                 _nvidia = null;
                 await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
             }

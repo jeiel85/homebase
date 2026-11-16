@@ -92,8 +92,11 @@ builder.Services.AddLocalOpsTelegram(builder.Configuration);
 builder.Services.AddLocalOpsLlm();
 builder.Services.AddLocalOpsWindowsCollectors();
 builder.Services.AddLocalOpsData(builder.Configuration);
-builder.Services.AddSingleton<IAlertDispatcher, AlertDispatcher>();
+builder.Services.AddSingleton<AlertDispatcher>();
+builder.Services.AddSingleton<IAlertDispatcher>(sp => sp.GetRequiredService<AlertDispatcher>());
 builder.Services.AddHostedService<DatabaseMigrationService>();
+// The dispatcher's background loop re-sends alerts that failed on a passing error (#2).
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AlertDispatcher>());
 builder.Services.AddHostedService<NotificationHistoryMaintenance>();
 builder.Services.AddHostedService<TelegramPollingService>();
 builder.Services.AddHostedService<BootNotificationService>();

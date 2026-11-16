@@ -95,7 +95,7 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
     fun enable(distributor: String) {
         enablePush(context, distributor)
         if (Build.VERSION.SDK_INT >= 33 && !PushNotifier.canNotify(context)) {
-            NotificationAsk.asked = true
+            NotificationAsk.markAsked(context)
             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         view = readView(context, store)
@@ -160,8 +160,8 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
     if (on && !view.canNotify) {
         Text("Android 알림 권한이 꺼져 있어 푸시를 표시하지 못합니다.", style = MaterialTheme.typography.bodySmall, color = hb.danger)
         TextButton(onClick = {
-            if (Build.VERSION.SDK_INT >= 33 && !NotificationAsk.asked) {
-                NotificationAsk.asked = true
+            if (Build.VERSION.SDK_INT >= 33 && !NotificationAsk.asked(context)) {
+                NotificationAsk.markAsked(context)
                 permission.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 openNotificationSettings(context)
@@ -207,12 +207,22 @@ fun PushSettings(store: PcStore, api: HomebaseApi, pcCount: Int) {
 }
 
 /**
- * Whether this app process already showed the notification-permission prompt. One flag for both
+ * Whether the app already showed the notification-permission prompt. One flag for both
  * [PushAutoSetup] and the settings row, so a denial in one is not followed by a second prompt
  * from the other; after that the settings row sends the user to Android's settings instead.
+ * Kept in preferences, so an app restarted after Android ended it in the background doesn't ask again.
  */
 private object NotificationAsk {
-    @Volatile var asked = false
+    private const val PREFS = "homebase_app"
+    private const val KEY_ASKED = "notification_permission_asked"
+
+    fun asked(context: Context): Boolean = prefs(context).getBoolean(KEY_ASKED, false)
+
+    fun markAsked(context: Context) {
+        prefs(context).edit().putBoolean(KEY_ASKED, true).apply()
+    }
+
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
 
 private fun enablePush(context: Context, distributor: String) {
@@ -247,9 +257,9 @@ fun PushAutoSetup(store: PcStore) {
                     PushState(context).apply { clear(); lastError = "배포자 앱이 제거되었습니다" }
                 }
                 if (pcCount > 0 && (justEnabled || v.endpoint != null) && Build.VERSION.SDK_INT >= 33 &&
-                    !PushNotifier.canNotify(context) && !NotificationAsk.asked
+                    !PushNotifier.canNotify(context) && !NotificationAsk.asked(context)
                 ) {
-                    NotificationAsk.asked = true
+                    NotificationAsk.markAsked(context)
                     permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 delay(2_000)

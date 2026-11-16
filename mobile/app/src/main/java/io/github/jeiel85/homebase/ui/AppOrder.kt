@@ -2,6 +2,7 @@ package io.github.jeiel85.homebase.ui
 
 import android.content.Context
 import io.github.jeiel85.homebase.net.AppEntry
+import io.github.jeiel85.homebase.net.ProcessEntry
 import kotlin.math.floor
 import kotlin.math.ln
 
@@ -36,6 +37,20 @@ object AppSortSetting {
 }
 
 /**
+ * Each PC's [AppOrder] for the 앱 tab and for the 프로세스 tab, kept in memory for this app process
+ * (like [LastSeen]): leaving a PC's screen and opening it again shows the order it had, not one
+ * ranked from a single second. Composition (main thread) only.
+ */
+internal object AppOrders {
+    private val byPcApps = HashMap<String, AppOrder>()
+    private val byPcProcesses = HashMap<String, AppOrder>()
+
+    fun apps(pcId: String): AppOrder = byPcApps.getOrPut(pcId) { AppOrder() }
+
+    fun processes(pcId: String): AppOrder = byPcProcesses.getOrPut(pcId) { AppOrder() }
+}
+
+/**
  * Turns the PC's per-second app list into an order a person can read.
  *
  * The PC ranks by the CPU of the last second, and idle apps trade places on noise (0.1 % vs 0.2 %),
@@ -51,23 +66,30 @@ object AppSortSetting {
  * - **New apps go where they rank at once, closed apps leave at once.** Waiting for the next
  *   re-rank would show a list that is wrong about what is open.
  *
- * Changing the sort re-ranks immediately. One instance per PC screen; not thread-safe.
+ * Changing the sort re-ranks immediately. One instance per PC and list ([AppOrders]), kept while
+ * the app runs so a screen opened again a moment later starts from the order it showed; after
+ * [staleMillis] without a sample it starts over. Not thread-safe (composition only).
  */
 internal class AppOrder(
     private val reRankMillis: Long = 10_000,
     private val alpha: Double = 0.2,
+    private val staleMillis: Long = STALE_MILLIS,
 ) {
     private val smoothedCpu = HashMap<Int, Double>()
     private val band = HashMap<Int, Int>()
     private var order: List<Int> = emptyList()
     private var rankedSort: AppSort? = null
     private var rankedAt = 0L
+    private var arrangedAt: Long? = null
 
     /**
      * Input : one snapshot's apps, the chosen sort, a monotonic clock in millis
      * Output: the same apps in display order
      */
     fun arrange(apps: List<AppEntry>, sort: AppSort, nowMillis: Long): List<AppEntry> {
+        // Back after a long gap (or a clock that went backwards): averages that old would mislead, so start over.
+        arrangedAt?.let { if (nowMillis - it > staleMillis || nowMillis < it) reset() }
+        arrangedAt = nowMillis
         val byPid = apps.associateBy { it.pid }
         smoothedCpu.keys.retainAll(byPid.keys)
         band.keys.retainAll(byPid.keys)
@@ -89,6 +111,27 @@ internal class AppOrder(
             insertNew(order.filter { it in byPid }, apps, byPid, comparator(sort, previous))
         }
         return order.map(byPid::getValue)
+    }
+
+    /**
+     * The 프로세스 tab in the same steady order as the CPU sort of the 앱 tab (use its own instance).
+     * The PC sends its top 30 by the last second's CPU, so a row at the bottom can still come and go;
+     * the rows that stay keep their places between re-ranks.
+     */
+    fun arrangeProcesses(processes: List<ProcessEntry>, nowMillis: Long): List<ProcessEntry> {
+        val byPid = processes.associateBy { it.pid }
+        val asApps = processes.map {
+            AppEntry(pid = it.pid, process = it.name, foreground = false, windows = emptyList(), usage = it.usage, children = emptyList())
+        }
+        return arrange(asApps, AppSort.Cpu, nowMillis).map { byPid.getValue(it.pid) }
+    }
+
+    private fun reset() {
+        smoothedCpu.clear()
+        band.clear()
+        order = emptyList()
+        rankedSort = null
+        rankedAt = 0L
     }
 
     /** Keeps [kept] as it is and places each app not in it before the first kept app it outranks. */
@@ -138,6 +181,9 @@ internal class AppOrder(
     internal companion object {
         /** How far past a band edge a value must go before the app changes band (30 %). */
         const val MARGIN = 1.3
+
+        /** A gap without samples after which the kept order and averages are dropped (2 minutes). */
+        const val STALE_MILLIS = 120_000L
 
         private val CPU_EDGES = doubleArrayOf(1.0, 5.0, 15.0, 40.0)
 

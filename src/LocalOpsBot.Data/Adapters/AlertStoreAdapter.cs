@@ -18,6 +18,9 @@ public sealed class AlertStoreAdapter : IAlertStore
     public Task<bool> ExistsRecentDedupKeyAsync(string dedupKey, TimeSpan window, CancellationToken ct)
         => _inner.ExistsRecentDedupKeyAsync(dedupKey, window, ct);
 
+    public Task MarkSentAsync(string alertId, DateTimeOffset sentAt, CancellationToken ct)
+        => _inner.MarkSentAsync(alertId, sentAt, ct);
+
     public async Task<IReadOnlyList<AlertLogItem>> GetRecentAsync(int count, CancellationToken ct)
     {
         var entries = await _inner.GetRecentAsync(count, ct);

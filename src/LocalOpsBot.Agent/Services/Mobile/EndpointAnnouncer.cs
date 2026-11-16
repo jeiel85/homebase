@@ -1,4 +1,5 @@
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using LocalOpsBot.Infrastructure.Push;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,8 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// adapter doesn't burn the push quota (ntfy.sh: 250/day per phone).</item>
 /// <item>Tracked per phone; a phone that didn't accept the push is retried after <see cref="RetryAfter"/>.
 /// A phone that registers push later gets one push even though it has just fetched the list itself.</item>
+/// <item>A list too long for one push is cut down (<see cref="PushEndpoints.FitToOnePush"/>); that is
+/// logged once per list, not on every retry.</item>
 /// </list>
 /// </summary>
 public sealed class EndpointAnnouncer : BackgroundService
@@ -33,6 +36,8 @@ public sealed class EndpointAnnouncer : BackgroundService
     /// <summary>Device id → the path list that phone last accepted (memory only: a restart announces again).</summary>
     private readonly Dictionary<string, HashSet<MobileEndpoint>> _announced = new(StringComparer.Ordinal);
     private DateTimeOffset _nextAttempt = DateTimeOffset.MinValue;
+    /// <summary>The last list reported as cut down, so a retry does not log it again.</summary>
+    private HashSet<MobileEndpoint>? _reportedCut;
 
     public EndpointAnnouncer(
         Func<IReadOnlyList<MobileEndpoint>> endpoints,
@@ -83,11 +88,22 @@ public sealed class EndpointAnnouncer : BackgroundService
         var due = targets.Where(id => !_announced.TryGetValue(id, out var told) || !current.IsSubsetOf(told)).ToList();
         if (due.Count == 0 || _time.GetUtcNow() < _nextAttempt) return false;
 
-        var delivered = await _push.SendEndpointsAsync(current.ToList(), due, ct);
+        var all = current.ToList();
+        var paths = PushEndpoints.FitToOnePush(all);
+        if (paths.Count < all.Count && (_reportedCut is null || !_reportedCut.SetEquals(current)))
+        {
+            _reportedCut = current;
+            _logger.LogWarning(
+                "The mobile path list is too long for one push; sending {Sent} of {Total} paths (the first of each kind first). Left out: {Hosts}.",
+                paths.Count, all.Count, string.Join(", ", all.Except(paths).Select(e => $"{e.Transport}:{e.Host}")));
+        }
+
+        var delivered = await _push.SendEndpointsAsync(paths, due, ct);
+        // The whole list counts as told, so a cut-down list is not pushed again until it changes.
         foreach (var id in delivered) _announced[id] = current;
         if (delivered.Count > 0)
             _logger.LogInformation("Sent the current mobile paths to {Count} phone(s): {Hosts}.",
-                delivered.Count, string.Join(", ", current.Select(e => $"{e.Transport}:{e.Host}")));
+                delivered.Count, string.Join(", ", paths.Select(e => $"{e.Transport}:{e.Host}")));
 
         var missed = due.Count - delivered.Count;
         if (missed > 0)

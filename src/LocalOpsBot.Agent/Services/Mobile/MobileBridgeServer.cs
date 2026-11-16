@@ -1,7 +1,5 @@
 using System.IO.Pipes;
 using System.Runtime.Versioning;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LocalOpsBot.Core.Delivery;
@@ -18,14 +16,18 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// <summary>
 /// Agent side of <c>\\.\pipe\Homebase.MobileBridge</c>. The Tray reports windows/Claude sessions
 /// (only after the Agent says a phone is watching) and asks for pairing QR offers and the device
-/// list. ACL: SYSTEM, Administrators and the configured user (else INTERACTIVE) — narrower than the
-/// notification pipe's Authenticated Users (Device Hub R-04). Unknown ops close the connection.
+/// list. ACL: SYSTEM, Administrators and the configured user (else INTERACTIVE), the same as the
+/// notification pipe (<see cref="TrayPipeSecurity"/>, Device Hub R-04). A request with an op this
+/// Agent does not know is answered <c>unsupported</c> and the connection stays open (#45).
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class MobileBridgeServer : BackgroundService
 {
     private const int MaxInstances = 4;
     private const int PipeBufferBytes = 64 * 1024;
+
+    /// <summary>Distinct unsupported ops logged per connection; the rest are answered silently.</summary>
+    private const int MaxUnsupportedOpsLogged = 16;
 
     private readonly LiveSnapshotHub _hub;
     private readonly MobileApiServer _api;
@@ -126,6 +128,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private async Task ServeAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
         var conn = new Connection(pipe);
+        var unsupportedLogged = new HashSet<string>(StringComparer.Ordinal);
         lock (_gate) _connections.Add(conn);
         try
         {
@@ -134,13 +137,17 @@ public sealed class MobileBridgeServer : BackgroundService
             {
                 var msg = await MobileBridge.ReadFrameAsync(pipe, ct);
                 if (msg is null) break;
-                var op = (string?)msg["op"];
+                var op = MobileBridge.StringOf(msg["op"]);
                 if (op is null || !MobileBridge.AllowedTrayOps.Contains(op))
                 {
-                    _logger.LogWarning("Mobile bridge: rejected op '{Op}'; closing the connection.", op);
-                    break;
+                    // A newer Tray (installing, or a dev build) may send ops this Agent doesn't know.
+                    // Dropping the connection made the Tray reconnect in a loop (#45): answer instead.
+                    if (unsupportedLogged.Count < MaxUnsupportedOpsLogged && unsupportedLogged.Add(op ?? ""))
+                        _logger.LogWarning("Mobile bridge: unsupported op '{Op}'; answered '{Error}'.", op, MobileBridge.ErrorUnsupported);
+                    if (MobileBridge.UnsupportedResponse(msg) is { } reply) await SendAsync(conn, reply, ct);
+                    continue;
                 }
-                await HandleAsync(conn, op, (string?)msg["id"], msg["payload"], ct);
+                await HandleAsync(conn, op, MobileBridge.StringOf(msg["id"]), msg["payload"], ct);
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or OperationCanceledException)
@@ -277,27 +284,7 @@ public sealed class MobileBridgeServer : BackgroundService
         finally { conn.WriteLock.Release(); }
     }
 
-    private PipeSecurity BuildSecurity()
-    {
-        var security = new PipeSecurity();
-        void Allow(SecurityIdentifier sid) => security.AddAccessRule(
-            new PipeAccessRule(sid, PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
-
-        // The server's own identity needs CreateNewInstance to open the 2nd..Nth instance; without
-        // it the pipe works for exactly one client and then every new instance is access-denied.
-        var self = WindowsIdentity.GetCurrent().User!;
-        security.AddAccessRule(new PipeAccessRule(self, PipeAccessRights.FullControl, AccessControlType.Allow));
-        Allow(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
-        Allow(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
-        SecurityIdentifier? user = null;
-        if (!string.IsNullOrWhiteSpace(_options.UserSid))
-        {
-            try { user = new SecurityIdentifier(_options.UserSid); }
-            catch (ArgumentException) { _logger.LogWarning("mobile:userSid '{Sid}' is not a valid SID; using INTERACTIVE.", _options.UserSid); }
-        }
-        Allow(user ?? new SecurityIdentifier(WellKnownSidType.InteractiveSid, null));
-        return security;
-    }
+    private PipeSecurity BuildSecurity() => TrayPipeSecurity.Build(_options.UserSid, _logger);
 
     public override void Dispose()
     {

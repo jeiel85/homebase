@@ -7,14 +7,14 @@ namespace LocalOpsBot.Tray.Services;
 /// A tiny append-only file logger (no Serilog dependency in the tray). It exists to make the
 /// notification-forwarding pipeline observable: it runs headless in the tray process, so without
 /// this its <see cref="ILogger"/> calls (access status, poll failures, blocks) went to a NullLogger
-/// and could not be diagnosed. Writes timestamped lines to ProgramData\Homebase\logs.
+/// and could not be diagnosed. Writes timestamped lines to ProgramData\Homebase\logs, size-capped
+/// and rolled by <see cref="RollingLogFile"/>.
 /// </summary>
 internal sealed class FileLogger<T> : ILogger<T>
 {
-    private static readonly object Gate = new();
-    private readonly string _path;
+    private readonly RollingLogFile _file;
 
-    public FileLogger(string path) => _path = path;
+    public FileLogger(string path) => _file = RollingLogFile.For(path);
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -25,10 +25,6 @@ internal sealed class FileLogger<T> : ILogger<T>
     {
         var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{logLevel}] {typeof(T).Name}: {formatter(state, exception)}";
         if (exception is not null) line += Environment.NewLine + exception;
-        lock (Gate)
-        {
-            try { File.AppendAllText(_path, line + Environment.NewLine); }
-            catch { /* logging must never throw into the caller */ }
-        }
+        _file.Append(line);
     }
 }

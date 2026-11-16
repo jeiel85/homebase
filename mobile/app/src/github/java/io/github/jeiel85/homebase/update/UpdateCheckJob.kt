@@ -56,13 +56,20 @@ class UpdateCheckJobService : JobService() {
          *
          * GET 뒤에 설정과 [isStopped]를 다시 본다: 확인하는 사이 사용자가 "업데이트 확인"을 껐다면
          * `UpdateCheckScheduler.sync`가 이미 잡과 알림을 지웠고, 여기서 알림을 띄우면 그 선택을 되돌린다.
+         * 그 판단은 [UpdateDecision.shouldPostNotification] 하나에 모아 단위 테스트로 고정한다.
          */
         fun runCheck(context: Context, isStopped: () -> Boolean = { false }) {
             val preferences = UpdatePreferences(context)
             val manifest = UpdateRefresh.run(preferences) ?: return
-            if (isStopped() || !preferences.isEnabled()) return
-            if (!UpdateDecision.shouldNotify(manifest.versionCode, preferences.notifiedVersionCode())) return
-            if (UpdateNotifier.show(context, manifest)) {
+            val post = UpdateDecision.shouldPostNotification(
+                stopped = isStopped(),
+                enabled = preferences.isEnabled(),
+                offeredVersionCode = manifest.versionCode,
+                notifiedVersionCode = preferences.notifiedVersionCode(),
+                notificationVisible = { UpdateNotifier.canShow(context) },
+            )
+            // show()가 다시 확인한다 — 판단과 게시 사이에 권한이 회수될 수 있다.
+            if (post && UpdateNotifier.show(context, manifest)) {
                 preferences.setNotifiedVersionCode(manifest.versionCode)
             }
         }

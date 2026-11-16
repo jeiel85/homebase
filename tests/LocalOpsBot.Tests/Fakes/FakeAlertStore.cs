@@ -19,6 +19,13 @@ public sealed class FakeAlertStore : IAlertStore
         return Task.FromResult(exists);
     }
 
+    public Task MarkSentAsync(string alertId, DateTimeOffset sentAt, CancellationToken ct)
+    {
+        var i = _items.FindIndex(x => x.AlertId == alertId && x.Status == "Failed");
+        if (i >= 0) _items[i] = _items[i] with { Status = "Sent", SentAt = sentAt };
+        return Task.CompletedTask;
+    }
+
     public Task<IReadOnlyList<AlertLogItem>> GetRecentAsync(int count, CancellationToken ct)
     {
         var result = _items.OrderByDescending(i => i.CreatedAt).Take(count).ToList();

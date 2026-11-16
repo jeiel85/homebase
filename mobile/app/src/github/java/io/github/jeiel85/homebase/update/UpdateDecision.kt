@@ -70,4 +70,80 @@ internal object UpdateDecision {
      */
     fun shouldNotify(offeredVersionCode: Int, notifiedVersionCode: Int): Boolean =
         offeredVersionCode != notifiedVersionCode
+
+    /**
+     * Input : 백그라운드 확인(GET)이 끝난 **뒤의** 상태 — 잡이 중단됐는지, "업데이트 확인"이 아직
+     *         켜져 있는지, 알릴 versionCode, 이미 알린 versionCode, 그리고 알림이 실제로 보일 수 있는지
+     *         (권한·앱 알림이 켜져 있고 `hb.app.update` 채널이 IMPORTANCE_NONE이 아닌지)
+     * Output: 지금 알림을 게시해도 되는지. 게시에 성공했을 때만 그 버전을 "알렸다"로 기록한다.
+     *
+     * 핵심 로직: 확인하는 사이 사용자가 설정을 껐거나 잡이 멈췄으면 게시하지 않는다 — 그 선택을
+     * 되돌리게 된다. 채널이 꺼져 있으면 Android가 예외 없이 조용히 버리므로, 게시를 성공으로 치면
+     * 그 버전을 "알렸다"고 기억해 채널을 다시 켜도 영영 알리지 않는다. 그래서 보일 수 없을 때도 false다.
+     * [notificationVisible]은 앞 조건을 모두 통과했을 때만 부른다(채널 생성 같은 부수 효과가 있다).
+     */
+    fun shouldPostNotification(
+        stopped: Boolean,
+        enabled: Boolean,
+        offeredVersionCode: Int,
+        notifiedVersionCode: Int,
+        notificationVisible: () -> Boolean,
+    ): Boolean =
+        !stopped && enabled && shouldNotify(offeredVersionCode, notifiedVersionCode) && notificationVisible()
+
+    /** 당겨서 새로고침을 연달아 해도 GitHub에 다시 묻지 않는 간격. */
+    val MANUAL_CHECK_MIN_INTERVAL_MILLIS: Long = TimeUnit.SECONDS.toMillis(60)
+
+    /**
+     * Input : 마지막으로 확인에 성공한 시각, 현재 시각, 최소 간격
+     * Output: 직접 확인([UpdateRefresh.runNow])이 네트워크 없이 방금 받은 결과를 다시 써도 되는지
+     *
+     * 핵심 로직: 반복해서 당기는 것이 그대로 외부 요청이 되지 않게 한다. 시각이 미래면(시계가
+     * 되돌아감) 신선하다고 보지 않는다 — [shouldCheckNow]와 같은 이유로, 갇히느니 한 번 더 묻는다.
+     */
+    fun isManualCheckFresh(
+        lastCheckedAt: Long,
+        now: Long,
+        interval: Long = MANUAL_CHECK_MIN_INTERVAL_MILLIS,
+    ): Boolean = lastCheckedAt in 1L..now && now - lastCheckedAt < interval
+
+    /** 설치 권한을 주러 설정에 다녀오는 동안의 "이어서 설치" 요청이 유효한 시간. */
+    val RESUME_INSTALL_WINDOW_MILLIS: Long = TimeUnit.MINUTES.toMillis(10)
+
+    /**
+     * Input : "업데이트"를 눌렀다가 권한 때문에 설정으로 보낸 versionCode와 그 시각, 지금 배너가 알리는
+     *         versionCode, 현재 시각, 지금 설치 권한이 있는지
+     * Output: 사용자가 다시 누르지 않아도 받기를 이어 가야 하는지
+     *
+     * 핵심 로직: 권한을 바꾸면 앱 프로세스를 다시 시작하는 기기가 있어 대화상자가 사라진다. 그때도
+     * 사용자가 요청한 그 버전을 이어서 받는다. 오래된 요청(다음 날 앱을 열었을 때)이나 다른 버전은
+     * 이어 가지 않는다 — 사용자가 고르지 않은 시점에 받기를 시작하지 않기 위해서다.
+     */
+    fun shouldResumeInstall(
+        pendingVersionCode: Int,
+        pendingAt: Long,
+        offeredVersionCode: Int,
+        now: Long,
+        canInstall: Boolean,
+        window: Long = RESUME_INSTALL_WINDOW_MILLIS,
+    ): Boolean =
+        canInstall &&
+            pendingVersionCode != 0 &&
+            pendingVersionCode == offeredVersionCode &&
+            pendingAt in 1L..now &&
+            now - pendingAt <= window
+
+    /**
+     * Input : 설치된 앱 서명 인증서들의 SHA-256(16진수), 업데이트 APK를 서명하는 인증서의 SHA-256
+     *         (`BuildConfig.UPDATE_SIGNER_SHA256`, DECISIONS M-12 — 비어 있으면 검사하지 않음)
+     * Output: 이 설치본 위에 업데이트를 덮어 설치할 수 있는지
+     *
+     * 핵심 로직: 다른 키(디버그 키 등)로 서명된 설치본은 릴리스 APK로 업데이트할 수 없다 — 시스템이
+     * 설치 확인까지 다 띄운 뒤에 거부한다. 미리 알면 받기 전에 안내할 수 있다. 서명을 읽지 못했으면
+     * (빈 목록) 막지 않는다 — 잘못된 사전 검사로 정상 업데이트를 막는 쪽이 더 나쁘다.
+     */
+    fun canUpdateInPlace(installedSignerSha256: List<String>, updateSignerSha256: String): Boolean =
+        updateSignerSha256.isBlank() ||
+            installedSignerSha256.isEmpty() ||
+            installedSignerSha256.any { it.equals(updateSignerSha256, ignoreCase = true) }
 }

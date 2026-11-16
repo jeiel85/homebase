@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Management;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -10,13 +11,22 @@ namespace LocalOpsBot.Infrastructure.Mobile;
 /// <summary>
 /// Cheap per-tick process sampling: one Toolhelp snapshot for names/parents, then per process a
 /// PROCESS_QUERY_LIMITED_INFORMATION handle for times, I/O and working set. No WMI, no
-/// performance counters (both cost far more per call). Rates are deltas against the previous tick.
+/// performance counters per tick (both cost far more per call); the one WMI read, which adapters are
+/// hardware, runs in the background every few minutes. Rates are deltas against the previous tick.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsResourceSampler : IResourceSampler, IDisposable
 {
+    private static readonly TimeSpan HardwareNicsMaxAge = TimeSpan.FromMinutes(5);
+
     private readonly EtwNetworkTracker _net;
+    private readonly ILogger _logger;
     private readonly object _gate = new();
+    /// <summary>Interface GUID → whether Windows marks the adapter as hardware; null until first read.</summary>
+    private volatile IReadOnlyDictionary<string, bool>? _hardwareNics;
+    private long _hardwareNicsReadAt;   // Stopwatch timestamp of the last read started; 0 = never
+    private int _hardwareNicsReading;   // 1 while a background read runs
+    private bool _hardwareNicsFailed;
     private Dictionary<int, Prev> _prev = new();
     private Dictionary<int, (long Rx, long Tx)> _prevNet = new();
     private long _prevTick;
@@ -28,6 +38,7 @@ public sealed class WindowsResourceSampler : IResourceSampler, IDisposable
     public WindowsResourceSampler(ILogger<WindowsResourceSampler> logger)
     {
         _net = new EtwNetworkTracker(logger);
+        _logger = logger;
     }
 
     public bool NetPerProcess => _net.IsRunning;
@@ -134,12 +145,14 @@ public sealed class WindowsResourceSampler : IResourceSampler, IDisposable
         GlobalMemoryStatusEx(ref mem);
 
         long rx = 0, tx = 0;
+        var hardwareNics = HardwareNics();
         try
         {
             foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
             {
+                bool? hardware = hardwareNics is not null && hardwareNics.TryGetValue(nic.Id, out var isHardware) ? (bool?)isHardware : null;
                 if (nic.OperationalStatus != OperationalStatus.Up ||
-                    !CountsTowardTotals(nic.NetworkInterfaceType, nic.Name, nic.Description)) continue;
+                    !CountsTowardTotals(nic.NetworkInterfaceType, nic.Name, nic.Description, hardware)) continue;
                 var s = nic.GetIPStatistics();
                 rx += s.BytesReceived;
                 tx += s.BytesSent;
@@ -173,14 +186,71 @@ public sealed class WindowsResourceSampler : IResourceSampler, IDisposable
     /// Traffic of a VM switch, WSL, a VPN or Tailscale also crosses the physical adapter, so counting
     /// those adapters too would show it twice. Adapted from PhoneBox (MIT, see THIRD-PARTY-NOTICES.txt).
     /// </summary>
-    internal static bool CountsTowardTotals(NetworkInterfaceType type, string name, string description)
+    /// <param name="hardware">
+    /// Whether Windows marks the adapter as hardware (<c>MSFT_NetAdapter.HardwareInterface</c>), when
+    /// known. A software adapter never counts, so a VPN or virtual switch whose name the list below
+    /// does not know yet is still left out. The names still apply to hardware adapters: some virtual
+    /// drivers (OpenVPN's TAP among them) register as hardware.
+    /// </param>
+    internal static bool CountsTowardTotals(NetworkInterfaceType type, string name, string description, bool? hardware = null)
     {
         if (type is not (NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.GigabitEthernet)) return false;
+        if (hardware == false) return false;
         var text = description + " " + name;
         if (text.Contains("TAP", StringComparison.Ordinal)) return false; // OpenVPN's TAP-Windows ("TAP" in capitals, not "tap")
         foreach (var mark in VirtualAdapterMarks)
             if (text.Contains(mark, StringComparison.OrdinalIgnoreCase)) return false;
         return true;
+    }
+
+    /// <summary>
+    /// Which adapters Windows marks as hardware, by interface GUID (<see cref="NetworkInterface.Id"/>),
+    /// or null while that is unknown. WMI is far too slow for every tick, so it is read in the
+    /// background at most every few minutes and the last answer is used meanwhile; without one (or
+    /// when WMI can't answer, or for an adapter it doesn't list) the name rules decide alone.
+    /// </summary>
+    private IReadOnlyDictionary<string, bool>? HardwareNics()
+    {
+        var at = Interlocked.Read(ref _hardwareNicsReadAt);
+        if ((at == 0 || Stopwatch.GetElapsedTime(at) >= HardwareNicsMaxAge)
+            && Interlocked.CompareExchange(ref _hardwareNicsReading, 1, 0) == 0)
+        {
+            Interlocked.Exchange(ref _hardwareNicsReadAt, Stopwatch.GetTimestamp());
+            _ = Task.Run(() => ReadHardwareNics());
+        }
+        return _hardwareNics;
+    }
+
+    private void ReadHardwareNics()
+    {
+        try
+        {
+            var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            using var searcher = new ManagementObjectSearcher(@"root\StandardCimv2",
+                "SELECT InterfaceGuid, HardwareInterface FROM MSFT_NetAdapter");
+            using var results = searcher.Get();
+            foreach (var mo in results)
+            {
+                using (mo)
+                {
+                    if (mo["InterfaceGuid"] is string guid && mo["HardwareInterface"] is bool isHardware)
+                        map[guid] = isHardware;
+                }
+            }
+            _hardwareNics = map;
+            _hardwareNicsFailed = false;
+        }
+        catch (Exception ex)
+        {
+            // Missing class on an older or trimmed Windows, or WMI not answering: names alone decide.
+            if (!_hardwareNicsFailed)
+                _logger.LogInformation("Adapter hardware flags are unavailable ({Message}); network totals go by adapter names only.", ex.Message);
+            _hardwareNicsFailed = true;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _hardwareNicsReading, 0);
+        }
     }
 
     private static IEnumerable<(int Pid, int ParentPid, string Name)> EnumerateProcesses()

@@ -16,6 +16,9 @@ namespace LocalOpsBot.Infrastructure.Push;
 /// <list type="bullet">
 /// <item>429: the endpoint is skipped until its <c>Retry-After</c> (default 60 s, at most 1 h) passes.</item>
 /// <item>404/410: the endpoint no longer exists; the subscription is dropped (the app re-registers on its next connect).</item>
+/// <item>507 (ntfy): nobody is subscribed to the topic — the phone's distributor is not connected. The
+/// endpoint is kept but paused for <see cref="NotSubscribedPause"/>, reported as
+/// <see cref="OutboundFailureKind.EndpointOffline"/>, and logged once until a push to it succeeds again.</item>
 /// <item>Success when at least one phone accepted the message.</item>
 /// <item>A phone that muted the category (DECISIONS M-25) is skipped. When every phone muted it, that
 /// is a success with nothing sent: the user chose not to receive it, so it must not fall back to Telegram.</item>
@@ -27,12 +30,19 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
     private static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(1);
 
+    /// <summary>How long an endpoint whose phone is not subscribed (HTTP 507) is skipped before it is tried again.</summary>
+    internal static readonly TimeSpan NotSubscribedPause = TimeSpan.FromMinutes(5);
+
+    /// <summary>ntfy's "no subscriber on this topic" (507 Insufficient Storage) for UnifiedPush topics.</summary>
+    private const int NotSubscribedStatus = 507;
+
     private readonly IMobileDeviceStore _devices;
     private readonly HttpClient _http;
     private readonly TimeProvider _time;
     private readonly string _pcName;
     private readonly ILogger _logger;
-    private readonly Dictionary<string, DateTimeOffset> _blockedUntil = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (DateTimeOffset Until, OutboundFailureKind Kind, string Reason)> _blockedUntil = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _notSubscribed = new(StringComparer.Ordinal);
     private readonly object _gate = new();
 
     public UnifiedPushOutboundChannel(
@@ -139,11 +149,11 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         var now = _time.GetUtcNow();
         lock (_gate)
         {
-            if (_blockedUntil.TryGetValue(endpoint, out var until))
+            if (_blockedUntil.TryGetValue(endpoint, out var block))
             {
-                if (now < until)
-                    return (false, OutboundFailureKind.RateLimited,
-                        $"rate limited for {(int)Math.Ceiling((until - now).TotalSeconds)}s more");
+                if (now < block.Until)
+                    return (false, block.Kind,
+                        $"{block.Reason}, paused for {(int)Math.Ceiling((block.Until - now).TotalSeconds)}s more");
                 _blockedUntil.Remove(endpoint);
             }
         }
@@ -188,14 +198,40 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         using (response)
         {
             var status = (int)response.StatusCode;
-            if (response.IsSuccessStatusCode) return (true, OutboundFailureKind.None, null);
+            if (response.IsSuccessStatusCode)
+            {
+                bool wasNotSubscribed;
+                lock (_gate) wasNotSubscribed = _notSubscribed.Remove(endpoint);
+                if (wasNotSubscribed)
+                    _logger.LogInformation("Push to {Device} works again (the phone is subscribed)", target.DeviceName);
+                return (true, OutboundFailureKind.None, null);
+            }
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
                 var wait = RetryAfter(response, _time.GetUtcNow());
-                lock (_gate) _blockedUntil[endpoint] = _time.GetUtcNow() + wait;
+                lock (_gate) _blockedUntil[endpoint] = (_time.GetUtcNow() + wait, OutboundFailureKind.RateLimited, "rate limited");
                 _logger.LogWarning("Push endpoint rate limited (429); pausing it for {Seconds}s", (int)wait.TotalSeconds);
                 return (false, OutboundFailureKind.RateLimited, $"HTTP 429, retry after {(int)wait.TotalSeconds}s");
+            }
+
+            if (status == NotSubscribedStatus)
+            {
+                // The push server has nobody to hand the message to: the phone is off, or its UnifiedPush
+                // distributor (ntfy app) lost its subscription. Hammering does not help (#18), so the
+                // endpoint pauses, and the cause is said once in plain words rather than as a bare status.
+                bool firstTime;
+                lock (_gate)
+                {
+                    _blockedUntil[endpoint] = (_time.GetUtcNow() + NotSubscribedPause, OutboundFailureKind.EndpointOffline, "phone not subscribed");
+                    firstTime = _notSubscribed.Add(endpoint);
+                }
+                if (firstTime)
+                    _logger.LogWarning(
+                        "Push to {Device}: the phone is not subscribed at {Host} (HTTP 507). Check that the phone is on and its " +
+                        "UnifiedPush distributor app is running; pushes to it are retried every {Minutes} min.",
+                        target.DeviceName, request.RequestUri?.Host, (int)NotSubscribedPause.TotalMinutes);
+                return (false, OutboundFailureKind.EndpointOffline, "phone not subscribed (HTTP 507)");
             }
 
             if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
@@ -268,9 +304,10 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
     {
         OutboundFailureKind.RateLimited => 0,
         OutboundFailureKind.Transient => 1,
-        OutboundFailureKind.Expired => 2,
-        OutboundFailureKind.Unauthorized => 3,
-        OutboundFailureKind.Permanent => 4,
-        _ => 5,
+        OutboundFailureKind.EndpointOffline => 2,
+        OutboundFailureKind.Expired => 3,
+        OutboundFailureKind.Unauthorized => 4,
+        OutboundFailureKind.Permanent => 5,
+        _ => 6,
     };
 }

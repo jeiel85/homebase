@@ -33,7 +33,7 @@ internal sealed class UpdateVersionMarker
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Couldn't read {_fileName}: {ex.Message}");
+            TrayLog.Warn("Update", $"Couldn't read {_fileName}: {ex.Message}");
             return null;
         }
     }
@@ -56,7 +56,7 @@ internal sealed class UpdateVersionMarker
         {
             // Losing a marker only means the dialog asks again (skip) or counts down once more
             // (auto-attempt) at the next launch — annoying, not harmful.
-            System.Diagnostics.Debug.WriteLine($"Couldn't save {_fileName}: {ex.Message}");
+            TrayLog.Warn("Update", $"Couldn't save {_fileName}: {ex.Message}");
         }
     }
 }

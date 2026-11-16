@@ -42,6 +42,7 @@ public static class L
     public static string ChipOptional => T("OPTIONAL", "선택");
     public static string ChipOn => T("ON", "켜짐");
     public static string ChipOff => T("OFF", "꺼짐");
+    public static string ChipCheck => T("CHECK", "확인 필요");
 
     // ── Dashboard ────────────────────────────────────────────────────────────
     public static string DashEyebrow => T("PC MONITOR", "PC 모니터");
@@ -71,6 +72,9 @@ public static class L
     public static string TelegramNotSetUp => T("Not set up — open Settings", "설정 필요 — 설정에서 연결하세요");
     public static string ForwardingOn => T("On — Windows notifications go to your phone", "켜짐 — Windows 알림을 휴대폰으로 보냄");
     public static string ForwardingOff => T("Off", "꺼짐");
+    public static string ForwardingOnAutostartOff => T(
+        "On — but Homebase is disabled in Task Manager › Startup apps, so forwarding stops after the next sign-in",
+        "켜짐 — 하지만 작업 관리자 › 시작 앱에서 Homebase가 '사용 안 함'이라 다음 로그인부터 알림 전달이 멈춥니다");
     public static string PhoneOn => T("On — pair in Settings › Phone", "켜짐 — 설정 › 휴대폰에서 기기 추가");
     public static string PhoneOff => T("Off — turn on in Settings › Phone", "꺼짐 — 설정 › 휴대폰에서 켜기");
 
@@ -128,6 +132,9 @@ public static class L
         "Applying asks for administrator approval, then the tray restarts to start or stop listening.",
         "적용하면 관리자 승인 후 트레이가 다시 시작되어 알림 수신을 켜거나 끕니다.");
     public static string FwCurrent(bool on) => T(on ? "Currently on." : "Currently off.", on ? "지금 켜져 있습니다." : "지금 꺼져 있습니다.");
+    public static string FwAutostartOff => T(
+        "Homebase is disabled in Task Manager › Startup apps, so it won't start at the next sign-in and notifications stop reaching your phone. Set it to Enabled there.",
+        "작업 관리자 › 시작 앱에서 Homebase가 '사용 안 함'으로 되어 있어 다음 로그인 때 시작되지 않고, 알림도 휴대폰으로 가지 않습니다. 그곳에서 '사용'으로 바꾸세요.");
     public static string FwAppsHeader => T("APPS TO FORWARD", "보낼 앱");
     public static string FwAppsWhat => T(
         "Checked apps are forwarded. Apps seen for the first time are forwarded too. Uncheck a phone-mirroring app (e.g. Phone Link) to stop notifications looping back. Saves instantly — no approval needed.",
@@ -363,6 +370,19 @@ public static class L
     public static string UpdCancelledDetail => T(
         "Installing the update needs administrator approval. Nothing was changed — you can try again anytime.",
         "업데이트를 설치하려면 관리자 승인이 필요합니다. 바뀐 것은 없으니 언제든 다시 시도하세요.");
+    public static string UpdBusyTitle => T("Update in progress", "업데이트 진행 중");
+    public static string UpdBusyDetail => T(
+        "An update check is already running — wait a moment for its result.",
+        "이미 업데이트를 확인하고 있습니다. 결과가 나올 때까지 잠시 기다리세요.");
+    public static string UpdAutoNotApproved(string v, DateTimeOffset at) => T(
+        $"The automatic install of v{v} ({at:MM-dd HH:mm}) stopped at the administrator prompt — it was declined or nobody answered. Nothing was changed; press UPDATE NOW to try again.",
+        $"{at:MM-dd HH:mm}에 시작한 v{v} 자동 설치가 관리자 승인 창에서 멈췄습니다(거부했거나 아무도 응답하지 않음). 바뀐 것은 없으니 '지금 업데이트'를 눌러 다시 시도하세요.");
+    public static string UpdAutoFailed(string v, DateTimeOffset at) => T(
+        $"The automatic install of v{v} ({at:MM-dd HH:mm}) failed while downloading or starting the installer. Nothing was changed; press UPDATE NOW to try again.",
+        $"{at:MM-dd HH:mm}에 시작한 v{v} 자동 설치가 내려받기나 설치 프로그램 실행 중에 실패했습니다. 바뀐 것은 없으니 '지금 업데이트'를 눌러 다시 시도하세요.");
+    public static string UpdAutoNotTaken(string v, DateTimeOffset at) => T(
+        $"The automatic install of v{v} ({at:MM-dd HH:mm}) ran, but this version still isn't installed. Details: C:\\ProgramData\\Homebase\\logs\\update.log",
+        $"{at:MM-dd HH:mm}에 v{v} 자동 설치를 실행했지만 아직 이 버전이 설치되지 않았습니다. 자세한 내용: C:\\ProgramData\\Homebase\\logs\\update.log");
     public static string UpdProgressTitle => T("Homebase Update", "Homebase 업데이트");
     public static string UpdProgressHeader => T("SOFTWARE UPDATE", "소프트웨어 업데이트");
     public static string UpdPreparing => T("Preparing…", "준비하는 중…");

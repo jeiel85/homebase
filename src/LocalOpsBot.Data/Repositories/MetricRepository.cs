@@ -11,6 +11,7 @@ public sealed class MetricRepository : IMetricRepository
 
     public async Task InsertAsync(MetricSampleEntry entry, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO metric_sample (collected_at, cpu_usage_percent, memory_usage_percent, total_memory_bytes, available_memory_bytes, uptime_seconds, disk_json, network_json)
@@ -32,6 +33,7 @@ public sealed class MetricRepository : IMetricRepository
     public async Task<IReadOnlyList<MetricSampleEntry>> GetRecentAsync(int count, CancellationToken ct)
     {
         var results = new List<MetricSampleEntry>();
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "SELECT id, collected_at, cpu_usage_percent, memory_usage_percent, total_memory_bytes, available_memory_bytes, uptime_seconds, disk_json, network_json FROM metric_sample ORDER BY collected_at DESC LIMIT @count";
         cmd.Parameters.Add(new SqliteParameter("@count", count));
@@ -54,6 +56,7 @@ public sealed class MetricRepository : IMetricRepository
 
     public async Task<int> DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "DELETE FROM metric_sample WHERE collected_at < @cutoff";
         cmd.Parameters.Add(new SqliteParameter("@cutoff", cutoff.ToString("O")));

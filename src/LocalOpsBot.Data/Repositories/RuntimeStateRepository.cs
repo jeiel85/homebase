@@ -13,6 +13,7 @@ public sealed class RuntimeStateRepository : IRuntimeStateRepository
 
     public async Task<string?> GetAsync(string key, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM runtime_state WHERE key = @key";
         cmd.Parameters.Add(new SqliteParameter("@key", key));
@@ -21,6 +22,7 @@ public sealed class RuntimeStateRepository : IRuntimeStateRepository
 
     public async Task SetAsync(string key, string value, CancellationToken ct)
     {
+        using var hold = await _db.LockAsync(ct);
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO runtime_state (key, value, updated_at)

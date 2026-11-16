@@ -28,14 +28,20 @@ public partial class UpdateDialog : ThemedWindow
 
     /// <summary>
     /// Shows the dialog modally and returns the user's choice. <paramref name="autoUpdateSeconds"/>
-    /// &gt; 0 starts the auto-install countdown on the Update button; 0 waits for a click. Must run
-    /// on the UI thread.
+    /// &gt; 0 starts the auto-install countdown on the Update button; 0 waits for a click.
+    /// <paramref name="note"/>, when set, is shown above the release notes (e.g. why the last
+    /// unattended install of this version didn't take). Must run on the UI thread.
     /// </summary>
-    internal static UpdateDialogChoice Show(UpdateInfo info, string currentVersion, int autoUpdateSeconds = 0)
+    internal static UpdateDialogChoice Show(UpdateInfo info, string currentVersion, int autoUpdateSeconds = 0, string? note = null)
     {
         var dlg = new UpdateDialog();
         dlg.TitleText.Text = L.UpdDlgTitle(info.Version.ToString(3));
         dlg.MetaText.Text = L.UpdDlgMeta(currentVersion, info.PublishedAt.ToLocalTime());
+        if (!string.IsNullOrEmpty(note))
+        {
+            dlg.AutoNoteText.Text = note;
+            dlg.AutoNote.Visibility = Visibility.Visible;
+        }
         dlg.NotesViewer.Document = BuildDocument(ReleaseNotes.Parse(ReleaseNotes.ExtractChangelog(info.ReleaseNotes)));
         if (autoUpdateSeconds > 0) dlg.StartCountdown(autoUpdateSeconds);
         // The startup check opens this unprompted; bring it forward once without pinning it on top.

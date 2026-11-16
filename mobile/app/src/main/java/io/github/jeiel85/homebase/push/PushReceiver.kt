@@ -12,6 +12,9 @@ import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Broadcasts from the distributor (UnifiedPush AND_3). Anything whose token isn't our current one is
@@ -43,7 +46,7 @@ class PushReceiver : BroadcastReceiver() {
             UnifiedPush.ACTION_MESSAGE -> {
                 val bytes = intent.getByteArrayExtra(UnifiedPush.EXTRA_BYTES_MESSAGE)
                 if (id != null) UnifiedPush.ack(context, distributor, token, id)
-                if (bytes != null) handleMessage(context, state, bytes)
+                if (bytes != null) inBackground(context) { app -> handleMessage(app, state, bytes) }
             }
 
             UnifiedPush.ACTION_REGISTRATION_FAILED -> {
@@ -109,6 +112,8 @@ class PushReceiver : BroadcastReceiver() {
         // or the user keeps this kind out of the shade.
         try {
             PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown, quiet = !profile.shade))
+            // The file is written on the history's own thread; keep the broadcast open until it is on disk.
+            PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
         } catch (e: Exception) {
             Log.w(TAG, "could not add a push to the history: ${e.javaClass.simpleName}")
         }
@@ -131,6 +136,30 @@ class PushReceiver : BroadcastReceiver() {
         Log.i(TAG, "path update from ${pc.name}: ${if (applied) "applied" else "older than the last one, ignored"}")
     }
 
+    /**
+     * Runs [work] off the main thread with the broadcast kept open ([goAsync]) until it is done:
+     * decrypting a push, reading the PC tokens and encrypting the history are Android Keystore calls,
+     * which take tens of ms on some phones. One worker thread keeps pushes in the order they arrived.
+     */
+    private fun inBackground(context: Context, work: (Context) -> Unit) {
+        val pending = goAsync()
+        val app = context.applicationContext
+        try {
+            worker.execute {
+                try {
+                    work(app)
+                } catch (e: Exception) {
+                    // Nothing may escape a pool thread (it would crash the app); the push is lost, as before.
+                    Log.w(TAG, "could not handle a push: ${e.javaClass.simpleName}")
+                } finally {
+                    pending.finish()
+                }
+            }
+        } catch (e: RejectedExecutionException) {
+            pending.finish()
+        }
+    }
+
     /** A broadcast may only run ~10 s; PCs not reached by then catch up on their next contact. */
     private fun registerWithAllPcs(context: Context) {
         val pending = goAsync()
@@ -148,6 +177,12 @@ class PushReceiver : BroadcastReceiver() {
 
     private companion object {
         const val TAG = "HomebasePush"
+
+        /** Longest a push waits for its history write; well inside the broadcast's ~10 s. */
+        const val HISTORY_WRITE_WAIT_MS = 4_000L
+
+        /** Handles MESSAGE broadcasts one at a time, in arrival order (see [inBackground]). */
+        val worker: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "hb-push-receiver") }
     }
 }
 

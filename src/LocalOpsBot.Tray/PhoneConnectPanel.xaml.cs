@@ -28,6 +28,11 @@ public partial class PhoneConnectPanel : UserControl
 
     private readonly DispatcherTimer _countdown = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _statusTimer = new() { Interval = StatusPoll };
+
+    // The copied pairing link or 24-word code, wiped from the clipboard when its offer expires (#39).
+    // A timer of its own, so it still fires after the Settings window has closed.
+    private readonly DispatcherTimer _clipboardWipe = new();
+    private string? _copiedSecret;
     private DateTimeOffset _expiresAt;
     private string _offerEndpointsKey = "";
     private bool _hasSavedToken;
@@ -51,6 +56,7 @@ public partial class PhoneConnectPanel : UserControl
         InitializeComponent();
         _countdown.Tick += (_, _) => UpdateCountdown();
         _statusTimer.Tick += async (_, _) => await PollStatusAsync();
+        _clipboardWipe.Tick += (_, _) => WipeCopiedSecret();
     }
 
     /// <summary>The tab came into view: load everything the first time, then resume polling.</summary>
@@ -154,6 +160,7 @@ public partial class PhoneConnectPanel : UserControl
         try
         {
             var r = await client.RequestAsync(MobileBridge.OpStatus);
+            if ((bool?)r["ok"] != true) return null;
             return r["payload"]?.Deserialize<BridgeStatus>(MobileProtocol.Json);
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException)
@@ -253,15 +260,16 @@ public partial class PhoneConnectPanel : UserControl
             // An https link (M-20): the phone's own camera opens the app, or the install guide when it's missing.
             QrImage.Source = RenderQr(PairingLink.Build(offer));
             _offer = offer;
-            // A shown code belongs to the previous offer; it can't pair any more.
+            // A shown code belongs to the previous offer; it can't pair any more — nor can a copied one.
             CodeBox.Visibility = Visibility.Collapsed;
             CodeBox.Text = "";
+            WipeCopiedSecret();
             _offerEndpointsKey = EndpointsKey(offer.Endpoints);
             _expiresAt = offer.ExpiresAt;
             UpdateCountdown();
             _countdown.Start();
         }
-        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException)
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException)
         {
             StatusText.Text = "Agent 응답이 없습니다: " + ex.Message;
         }
@@ -274,15 +282,20 @@ public partial class PhoneConnectPanel : UserControl
         try
         {
             var r = await client.RequestAsync(MobileBridge.OpDevicesList);
-            var devices = r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new();
-            DeviceList.ItemsSource = devices.Select(d => new DeviceRow(
-                d.DeviceId,
-                d.Name,
-                (d.Kind == DeviceKind.Pc ? "PC" : d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
-                (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""))).ToList();
-            NoDevicesText.Visibility = devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            // An error reply (an Agent that doesn't know the op, a failed read) keeps what is shown
+            // instead of claiming that no phone is paired.
+            if ((bool?)r["ok"] == true)
+            {
+                var devices = r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new();
+                DeviceList.ItemsSource = devices.Select(d => new DeviceRow(
+                    d.DeviceId,
+                    d.Name,
+                    (d.Kind == DeviceKind.Pc ? "PC" : d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
+                    (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""))).ToList();
+                NoDevicesText.Visibility = devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
-        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { }
         await LoadHubsAsync();
     }
 
@@ -302,7 +315,7 @@ public partial class PhoneConnectPanel : UserControl
                 DeviceText.Hub(h),
                 (Brush)FindResource(h.Online ? "Brush.StatusOk" : "Brush.StatusWarn"))).ToList();
         }
-        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { }
     }
 
     private void CopyLink_Click(object sender, RoutedEventArgs e)
@@ -314,7 +327,7 @@ public partial class PhoneConnectPanel : UserControl
         }
         try
         {
-            Clipboard.SetText(PairingLink.Build(_offer));
+            CopySecret(PairingLink.Build(_offer), _offer.ExpiresAt);
             CountdownText.Text = L.PhoneCopyLinkDone;
         }
         catch (System.Runtime.InteropServices.COMException) { CountdownText.Text = L.PhoneCopyLinkFailed; }
@@ -336,10 +349,60 @@ public partial class PhoneConnectPanel : UserControl
         CodeBox.Visibility = Visibility.Visible;
         try
         {
-            Clipboard.SetText(code);
+            CopySecret(code, _offer.ExpiresAt);
             CountdownText.Text = L.PhoneCopyCodeDone;
         }
         catch (System.Runtime.InteropServices.COMException) { CountdownText.Text = L.PhoneCopyLinkFailed; }
+    }
+
+    /// <summary>
+    /// Copies a pairing secret (link or 24-word code). Windows is asked to keep it out of clipboard
+    /// history (Win+V) and cloud clipboard sync, and the clipboard is wiped when the offer expires —
+    /// only if it still holds exactly this text (#39). Throws <see cref="System.Runtime.InteropServices.COMException"/>
+    /// when the clipboard is busy, like <see cref="Clipboard.SetText(string)"/>.
+    /// </summary>
+    private void CopySecret(string text, DateTimeOffset expiresAt)
+    {
+        try
+        {
+            var data = new DataObject();
+            data.SetText(text);
+            data.SetData("CanIncludeInClipboardHistory", new MemoryStream(BitConverter.GetBytes(0)));
+            data.SetData("CanUploadToCloudClipboard", new MemoryStream(BitConverter.GetBytes(0)));
+            Clipboard.SetDataObject(data, true);
+        }
+        catch (Exception)
+        {
+            // The exclusion hints are optional; never let them cost the copy itself. Falls back to the
+            // plain copy, which throws COMException again if the clipboard really is busy.
+            Clipboard.SetText(text);
+        }
+
+        _copiedSecret = text;
+        // Offers live 5 minutes; clamp anyway so a skewed expiry can't produce an invalid interval.
+        var left = expiresAt - DateTimeOffset.UtcNow;
+        if (left < TimeSpan.FromSeconds(1)) left = TimeSpan.FromSeconds(1);
+        if (left > TimeSpan.FromHours(1)) left = TimeSpan.FromHours(1);
+        _clipboardWipe.Stop();
+        _clipboardWipe.Interval = left;
+        _clipboardWipe.Start();
+    }
+
+    private void WipeCopiedSecret()
+    {
+        _clipboardWipe.Stop();
+        var secret = _copiedSecret;
+        _copiedSecret = null;
+        if (secret is null) return;
+        try
+        {
+            // Whatever the user copied since stays untouched.
+            if (Clipboard.ContainsText() && Clipboard.GetText() == secret) Clipboard.Clear();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Clipboard busy: leave it — the code has expired and can't pair any more anyway.
+        }
     }
 
     private async void Link_Click(object sender, RoutedEventArgs e)
@@ -362,7 +425,7 @@ public partial class PhoneConnectPanel : UserControl
             }
             else LinkResultText.Text = result?.Message ?? L.PhoneLinkFailed;
         }
-        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException)
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException)
         {
             LinkResultText.Text = L.PhoneLinkFailed + " " + ex.Message;
         }

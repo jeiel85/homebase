@@ -211,6 +211,18 @@ public class HardwareTests
         Assert.Equal(counts, WindowsResourceSampler.CountsTowardTotals(type, name, description));
 
     [Fact]
+    public void Windows_hardware_flag_leaves_out_virtual_adapters_the_name_list_does_not_know()
+    {
+        // A new VPN whose name matches nothing in the list: Windows marks it as software.
+        Assert.False(WindowsResourceSampler.CountsTowardTotals(NetworkInterfaceType.Ethernet, "이더넷 4", "Acme SecureLink Adapter", hardware: false));
+        Assert.True(WindowsResourceSampler.CountsTowardTotals(NetworkInterfaceType.Ethernet, "이더넷", "Realtek PCIe GbE Family Controller", hardware: true));
+        // Some virtual drivers register as hardware: the name rules still apply to them.
+        Assert.False(WindowsResourceSampler.CountsTowardTotals(NetworkInterfaceType.Ethernet, "이더넷 3", "TAP-Windows Adapter V9", hardware: true));
+        // Unknown (WMI not read yet): names alone decide, as before.
+        Assert.True(WindowsResourceSampler.CountsTowardTotals(NetworkInterfaceType.Ethernet, "이더넷", "Realtek PCIe GbE Family Controller", hardware: null));
+    }
+
+    [Fact]
     public void The_hub_runs_the_hardware_sampler_only_while_a_phone_watches_and_puts_its_readings_in_the_snapshot()
     {
         var hardware = new FakeHardwareSampler();
