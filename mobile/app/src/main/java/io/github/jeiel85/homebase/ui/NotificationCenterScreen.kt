@@ -89,13 +89,14 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     val pushOn = remember { PushState(context).endpoint != null }
-    // Paired PCs under the name this phone shows (alias first, M-36); entries keep what the PC sent.
-    val pcNames = remember { store.all().associate { it.pcId to it.displayName } }
+    // Paired PCs; an entry is drawn under the PC's alias (M-36), else the name it was sent with.
+    val paired = remember { store.all().associateBy { it.pcId } }
+    fun nameOf(pcId: String, sent: String) = paired[pcId]?.shownName(sent) ?: sent
 
     val entries = history.entries
     val groups = remember(entries) { entries.map { PushHistoryRules.categoryLabel(it.category) }.distinct() }
     // Latest name per PC, in the order they last sent something.
-    val pcs = remember(entries) { entries.distinctBy { it.pcId }.map { it.pcId to (pcNames[it.pcId] ?: it.pcName) } }
+    val pcs = remember(entries) { entries.distinctBy { it.pcId }.map { it.pcId to nameOf(it.pcId, it.pcName) } }
     // A filter whose last entry was deleted would hide everything with its chip row (and "전체") gone: drop it.
     LaunchedEffect(groups, pcs) {
         if (groupFilter != null && groupFilter !in groups) groupFilter = null
@@ -171,8 +172,8 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                         entry = e,
                         unread = seenBefore.let { it != null && e.receivedAt > it },
                         expanded = expanded == e.key,
-                        pcName = pcNames[e.pcId] ?: e.pcName,
-                        canOpenPc = e.pcId in pcNames,
+                        pcName = nameOf(e.pcId, e.pcName),
+                        canOpenPc = e.pcId in paired,
                         onToggle = { expanded = if (expanded == e.key) null else e.key },
                         onOpenPc = { onOpenPc(e.pcId) },
                         onDelete = {

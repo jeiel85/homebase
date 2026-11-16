@@ -24,6 +24,13 @@ data class PcEntry(
     /** What the app shows for this PC: the alias when set, else the name the PC reported. */
     val displayName: String get() = alias ?: name
 
+    /**
+     * The name for something the PC sent now under [reported] (a push, a history entry, the hub's
+     * own name): the alias when set, else what the PC reports — [name] is from pairing and is not
+     * refreshed, so a PC renamed in Windows would otherwise keep its old name.
+     */
+    fun shownName(reported: String): String = alias ?: reported.ifBlank { name }
+
     /** Paths to try now, best first, for the phone's current network (DECISIONS M-18). */
     fun orderedEndpoints(net: LocalNetworks?): List<Endpoint> = RouteSelector.order(endpoints, net, lastGood)
 }

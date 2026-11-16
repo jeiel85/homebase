@@ -99,7 +99,7 @@ object MeshSync {
             val stale = now - view.receivedAt > FRESH_MS
             val mine = myPcs.firstOrNull { it.pcId == pcId }
             // The user's alias first; else the PC's current name (it may have been renamed since pairing).
-            val hubName = mine?.alias ?: response.hub.pcName.ifBlank { mine?.name ?: "PC" }
+            val hubName = mine?.shownName(response.hub.pcName) ?: response.hub.pcName.ifBlank { "PC" }
             for (listed in response.devices) {
                 val d = if (stale && listed.online) listed.copy(online = false) else listed
                 if (d.deviceId in myDeviceIds) continue

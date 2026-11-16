@@ -99,8 +99,9 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a relayed notification already shown")
             return
         }
-        // Shown under the user's alias for the PC; the history keeps what the PC sent and maps it when drawn.
-        val shown = PushNotifier.show(context, message.copy(pcName = pc.displayName))
+        // Shown under the user's alias for the PC, else the name the PC sent; the history keeps what the
+        // PC sent and maps it when drawn.
+        val shown = PushNotifier.show(context, message.copy(pcName = pc.shownName(message.pcName)))
         // The notification center keeps it even when Android blocked the notification (DECISIONS M-31).
         try {
             PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown))

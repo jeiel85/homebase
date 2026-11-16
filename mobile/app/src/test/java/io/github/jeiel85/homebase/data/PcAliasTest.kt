@@ -15,6 +15,14 @@ class PcAliasTest {
     }
 
     @Test
+    fun without_an_alias_what_the_pc_sends_now_wins_over_the_pairing_time_name() {
+        // Renamed in Windows after pairing: pushes carry the new name, the stored entry the old one.
+        assertEquals("NEW-NAME", pc("A", "OLD-NAME").shownName("NEW-NAME"))
+        assertEquals("OLD-NAME", pc("A", "OLD-NAME").shownName(""))
+        assertEquals("집 데스크톱", pc("A", "OLD-NAME", alias = "집 데스크톱").shownName("NEW-NAME"))
+    }
+
+    @Test
     fun the_alias_is_trimmed_and_whitespace_collapsed() {
         assertEquals("집 데스크톱", PcStore.normalizeAlias("  집 \n\t 데스크톱  ", "PC"))
     }
