@@ -53,8 +53,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.jeiel85.homebase.data.PcMark
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.push.HistoryEntry
+import io.github.jeiel85.homebase.push.NotificationGroups
+import io.github.jeiel85.homebase.push.NotificationLook
 import io.github.jeiel85.homebase.push.NotificationPriority
 import io.github.jeiel85.homebase.push.NotificationRuleStore
 import io.github.jeiel85.homebase.push.PushHistory
@@ -99,6 +102,8 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     // Paired PCs; an entry is drawn under the PC's alias (M-36), else the name it was sent with.
     val paired = remember { store.all().associateBy { it.pcId } }
     fun nameOf(pcId: String, sent: String) = paired[pcId]?.shownName(sent) ?: sent
+    // The badge its Android notification carried (M-38).
+    fun markOf(e: HistoryEntry) = NotificationLook.mark(e.category, e.source, e.pcId, nameOf(e.pcId, e.pcName), paired[e.pcId])
 
     val entries = history.entries
     val groups = remember(entries) { entries.map { PushHistoryRules.categoryLabel(it.category) }.distinct() }
@@ -189,6 +194,7 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                                 unread = row.any(::isUnread),
                                 open = open,
                                 pcName = nameOf(row.first().pcId, row.first().pcName),
+                                mark = markOf(row.first()),
                                 onToggle = { openStack = if (open) null else stackKey },
                                 zone = zone,
                             )
@@ -202,6 +208,7 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                                 unread = isUnread(e),
                                 expanded = expanded == e.key,
                                 pcName = nameOf(e.pcId, e.pcName),
+                                mark = markOf(e),
                                 canOpenPc = e.pcId in paired,
                                 onToggle = { expanded = if (expanded == e.key) null else e.key },
                                 onOpenPc = { onOpenPc(e.pcId) },
@@ -283,6 +290,7 @@ private fun HistoryCard(
     unread: Boolean,
     expanded: Boolean,
     pcName: String,
+    mark: PcMark,
     canOpenPc: Boolean,
     onToggle: () -> Unit,
     onOpenPc: () -> Unit,
@@ -292,7 +300,7 @@ private fun HistoryCard(
 ) {
     val hb = Hb.colors
     val time = remember(entry.receivedAt) { TIME.format(Instant.ofEpochMilli(entry.receivedAt).atZone(zone)) }
-    val source = sourceLabel(entry)
+    val kind = PushHistoryRules.categoryLabel(entry.category)
     // The header line already names the source; the PC sends titles as "카카오톡: 홍길동", so drop the repeat.
     val title = if (expanded) entry.title else entry.title.removePrefix("${entry.source}: ").ifBlank { entry.title }
     Plate(
@@ -303,15 +311,16 @@ private fun HistoryCard(
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                PcBadge(mark, size = 18.dp)
+                Spacer(Modifier.width(6.dp))
                 Tag(
-                    PushHistoryRules.categoryLabel(entry.category),
+                    kind,
                     background = if (unread) hb.accent else hb.slabRaised,
                     foreground = if (unread) Brand.Carbon else hb.onSlab,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    // The tag already names the kind; repeat the source only when it adds something (an app, a monitor).
-                    if (source == PushHistoryRules.categoryLabel(entry.category)) pcName else "$pcName · $source",
+                    headerLine(entry, pcName, kind),
                     style = HbType.label,
                     color = hb.inkSoft,
                     maxLines = 1,
@@ -379,6 +388,20 @@ private fun HistoryCard(
     }
 }
 
+/**
+ * Who sent it, then what: "작업실 · 카카오톡", or for a relayed notification the device first and the
+ * PC it came through last. The tag already names the kind, so a monitor's name is repeated only when
+ * it adds something.
+ */
+private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): String {
+    val source = sourceLabel(entry)
+    return when {
+        entry.category == NotificationGroups.DEVICE -> "${entry.source} · $pcName 경유"
+        source == kind -> pcName
+        else -> "$pcName · $source"
+    }
+}
+
 /** An app for forwarded notifications, a Korean label for alert kinds. */
 private fun sourceLabel(entry: HistoryEntry): String =
     if (NotificationPriority.hasApps(entry.category)) entry.source else PushNotifier.CATEGORY_LABELS[entry.source] ?: entry.source
@@ -396,13 +419,13 @@ private fun StackCard(
     unread: Boolean,
     open: Boolean,
     pcName: String,
+    mark: PcMark,
     onToggle: () -> Unit,
     zone: ZoneId,
 ) {
     val hb = Hb.colors
     val newest = entries.first()
     val time = remember(newest.receivedAt) { TIME.format(Instant.ofEpochMilli(newest.receivedAt).atZone(zone)) }
-    val source = sourceLabel(newest)
     val kind = PushHistoryRules.categoryLabel(newest.category)
     Plate(
         rail = unread,
@@ -411,6 +434,8 @@ private fun StackCard(
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                PcBadge(mark, size = 18.dp)
+                Spacer(Modifier.width(6.dp))
                 Tag(
                     kind,
                     background = if (unread) hb.accent else hb.slabRaised,
@@ -418,7 +443,7 @@ private fun StackCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (source == kind) pcName else "$pcName · $source",
+                    headerLine(newest, pcName, kind),
                     style = HbType.label,
                     color = hb.inkSoft,
                     maxLines = 1,
