@@ -85,6 +85,7 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         Assert.Null(a.Links.Hub("pc-c"));
         Assert.DoesNotContain(a.Store.List(), d => d.Kind == DeviceKind.Pc && a.Board.PcIdOf(d.DeviceId) == "pc-c");
         Assert.Contains(a.Group.Describe().Removed!, r => r.Key == "pc:pc-c");
+        Assert.Empty(c.Links.Hubs()); // C was told too and dropped its own links
 
         // A member never re-introduces a removed PC.
         Assert.Null(await a.Group.IntroduceAsync("pc-c", _cts.Token));

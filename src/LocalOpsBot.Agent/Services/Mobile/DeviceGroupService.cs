@@ -104,8 +104,9 @@ public sealed class DeviceGroupService : BackgroundService
         _removed.Add(key);
         if (fanOut)
         {
-            // Tell the others first, while this PC's tokens for them still work.
-            await Task.WhenAll(_links.Hubs().Where(h => GroupKeys.Pc(h.PcId) != key).Select(h =>
+            // Tell the others first, while this PC's tokens for them still work — the removed PC too,
+            // so it drops its own links instead of retrying them.
+            await Task.WhenAll(_links.Hubs().Select(h =>
                 _links.CallAsync(h.PcId, HttpMethod.Post, GroupPaths.Remove, new GroupRemoveRequest(MobileProtocol.Schema, key), CallTimeout, ct)));
         }
         var n = await ApplyAsync(key);
@@ -207,7 +208,10 @@ public sealed class DeviceGroupService : BackgroundService
 
                 // The hub should hold this PC's token too (a link made before v0.35.0, or a link back that failed).
                 if (!group.Pcs.Any(p => p.PcId == me && p.Token) && Due("back:" + hub.PcId))
+                {
+                    Failed("back:" + hub.PcId); // asked: not again for a while, whatever the answer
                     await AskToLinkBackAsync(hub.PcId, ct);
+                }
 
                 foreach (var p in group.Pcs)
                 {
