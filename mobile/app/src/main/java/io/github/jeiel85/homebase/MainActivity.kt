@@ -30,8 +30,6 @@ import io.github.jeiel85.homebase.ui.PcListScreen
 import io.github.jeiel85.homebase.ui.PushAutoSetup
 import io.github.jeiel85.homebase.ui.SettingsScreen
 import io.github.jeiel85.homebase.ui.ThemeSetting
-import io.github.jeiel85.homebase.update.UpdateCheckScheduler
-import io.github.jeiel85.homebase.update.UpdateNotifier
 import io.github.jeiel85.homebase.update.UpdateSurface
 
 /** A handful of screens — list, pair, detail, settings, notification center — so plain state instead of a navigation library. */
@@ -50,9 +48,10 @@ class MainActivity : ComponentActivity() {
         ThemeSetting.load(this)
         // A pending (unconfirmed) link survives rotation and other recreation; the first launch reads the intent.
         pairingLink = if (savedInstanceState == null) intent.pairingLink() else savedInstanceState.getString(KEY_PAIRING_LINK)
-        if (savedInstanceState == null && intent.isUpdateTap()) UpdateSurface.requestOpen()
+        if (savedInstanceState == null && UpdateSurface.isUpdateTap(intent)) UpdateSurface.requestOpen()
         // Keeps the background update check (DECISIONS M-22) scheduled — or cancelled — to match the setting.
-        UpdateCheckScheduler.sync(this)
+        // A no-op in the Play build, which Play updates (DECISIONS M-33).
+        UpdateSurface.sync(this)
         // Keeps this phone's state reaching the paired PCs while the app is closed (DECISIONS M-27).
         PresenceScheduler.sync(this)
         val store = PcStore(this)
@@ -113,7 +112,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.pairingLink()?.let { pairingLink = it }
-        if (intent.isUpdateTap()) {
+        if (UpdateSurface.isUpdateTap(intent)) {
             UpdateSurface.requestOpen()
             updateTapped++
         }
@@ -128,8 +127,6 @@ class MainActivity : ComponentActivity() {
         val NAV_SCRIM_LIGHT = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
         val NAV_SCRIM_DARK = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
     }
-
-    private fun Intent?.isUpdateTap(): Boolean = this?.getBooleanExtra(UpdateNotifier.EXTRA_OPEN_UPDATE, false) == true
 
     private fun Intent?.pairingLink(): String? =
         this?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString?.takeIf(PairingLink::isLink)

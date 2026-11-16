@@ -32,6 +32,8 @@ jobs:
           test -n "$KEYSTORE_BASE64" || { echo "HOMEBASE_RELEASE_KEYSTORE_BASE64 secret is missing"; exit 1; }
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/homebase-release.jks"
 
+      # The GitHub channel only (DECISIONS M-33): the sideloaded APK that updates itself. The Play
+      # build is signed with the Play upload key and uploaded from the maintainer's PC (docs/PLAY_RELEASE.md).
       - name: Test and build signed APK
         working-directory: mobile
         env:
@@ -41,14 +43,14 @@ jobs:
           HOMEBASE_RELEASE_KEY_PASSWORD: ${{ secrets.HOMEBASE_RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon testDebugUnitTest assembleRelease             -Phomebase.version="$VER" -Phomebase.requireReleaseSigning=true
+          ./gradlew --no-daemon testGithubDebugUnitTest testPlayDebugUnitTest assembleGithubRelease             -Phomebase.version="$VER" -Phomebase.requireReleaseSigning=true
 
       - name: Verify signature and write update.json
         run: |
           set -euo pipefail
           BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
           mkdir -p dist
-          cp mobile/app/build/outputs/apk/release/app-release.apk dist/Homebase-Mobile.apk
+          cp mobile/app/build/outputs/apk/github/release/app-github-release.apk dist/Homebase-Mobile.apk
           "$BUILD_TOOLS/apksigner" verify --print-certs dist/Homebase-Mobile.apk > signing.txt
           # apksigner prints either "Signer #1 certificate SHA-256 digest: <hex>" or
           # "V2 Signer: certificate SHA-256 digest: <hex>" depending on version — take the last field.
