@@ -83,6 +83,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- A bundled push was swiped away: drops the bundle's summary once it is empty (DECISIONS M-37).
+             Only this app's own notifications (their delete intent) reach it. -->
+        <receiver
+            android:name=".push.NotificationDismissReceiver"
+            android:exported="false" />
+
         <service
             android:name=".push.RaiseToForegroundService"
             android:exported="true">

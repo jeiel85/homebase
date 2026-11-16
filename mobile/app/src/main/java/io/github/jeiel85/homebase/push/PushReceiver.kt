@@ -99,12 +99,15 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a relayed notification already shown")
             return
         }
+        // How the user wants this kind / this app to appear (DECISIONS M-37).
+        val profile = NotificationRuleStore(context).resolve(message.category, message.source)
         // Shown under the user's alias for the PC, else the name the PC sent; the history keeps what the
         // PC sent and maps it when drawn.
-        val shown = PushNotifier.show(context, message.copy(pcName = pc.shownName(message.pcName)))
-        // The notification center keeps it even when Android blocked the notification (DECISIONS M-31).
+        val shown = PushNotifier.show(context, message.copy(pcName = pc.shownName(message.pcName)), profile)
+        // The notification center keeps it even when Android blocked the notification (DECISIONS M-31)
+        // or the user keeps this kind out of the shade.
         try {
-            PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown))
+            PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown, quiet = !profile.shade))
         } catch (e: Exception) {
             Log.w(TAG, "could not add a push to the history: ${e.javaClass.simpleName}")
         }

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.30.0 — Bundled notifications and notification priorities
+
+### Added
+- **Notification priorities on the phone.** Settings → 알림 → "알림 우선순위" (Notification priorities)
+  sets how each kind of notification (Windows app notifications, watch alerts, event log, PC health
+  advice, boot, other devices' notifications) appears: 긴급 (pops up, sound, vibration), 보통 (sound
+  and vibration in the shade), 조용히 (silent, in the shade) or 센터에만 (only in the notification
+  center, not in the shade), or popup, sound and vibration switched one by one. Apps that sent Windows
+  or relayed notifications are listed too, so one app can be set apart from its kind (for example,
+  messenger pops up, everything else stays quiet). Choices apply from the next notification and stay
+  on the phone; the PC is not involved (DECISIONS M-37).
+- **Bundling.** With "같은 출처끼리 묶기" (Bundle same source, on by default), notifications from one
+  app (or one alert kind on one PC) fold into one group in Android's notification shade, keeping the
+  newest 8 there; the notification center keeps them all. Tapping the group opens the notification
+  center. In the notification center itself, a day's notifications from one source fold into one card
+  that lists the newest three lines and opens to show all of them.
+
+### Changed
+- **Other devices' notifications no longer pop up by default.** Notifications relayed from your other
+  phones and PCs were shown like PC alerts (heads-up with sound), and each one was posted separately,
+  so a busy group chat filled the shade with expanded entries. They now ring in the shade without
+  popping up, bundled per device and app. PC alerts still pop up. Change either in the new settings.
+- Notification center cards are shorter when closed (one title line, two body lines), and the title
+  no longer repeats the app the header already names.
+- Changing a priority creates a new Android notification channel for that app and PC; sound or other
+  details changed in Android's own settings for the old channel start over. An app or PC turned off in
+  Android's settings stays off.
+
 ## v0.29.0 — GPU, drives, temperature and ping on the phone
 
 ### Added
