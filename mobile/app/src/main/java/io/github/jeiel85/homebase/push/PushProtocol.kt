@@ -121,6 +121,8 @@ data class PushMessage(
     val source: String,
     val count: Int,
     val ts: String,
+    /** Set on a Claude Code permission prompt the phone can answer (DECISIONS M-48). */
+    val approval: PushApproval? = null,
 ) {
     val isToast: Boolean get() = category == "windows-toast"
 
@@ -145,10 +147,31 @@ data class PushMessage(
                     source = o.getString("source"),
                     count = o.optInt("count", 1).coerceAtLeast(1),
                     ts = o.getString("ts"),
+                    approval = PushApproval.parse(o.optJSONObject("approval")),
                 )
             } catch (e: Exception) {
                 throw ProtocolException("푸시 필드가 빠졌습니다: ${e.message}")
             }
+        }
+    }
+}
+
+/**
+ * A Claude Code permission prompt waiting for an answer (DECISIONS M-48): the phone answers
+ * `POST /api/v1/approval {id, decision}` on the PC that sent it, before [expiresAt].
+ */
+data class PushApproval(val id: String, val expiresAt: String) {
+    /** Milliseconds since the epoch, or null when the PC sent an unreadable time. */
+    val expiresAtMillis: Long?
+        get() = runCatching { java.time.OffsetDateTime.parse(expiresAt).toInstant().toEpochMilli() }.getOrNull()
+
+    companion object {
+        fun parse(o: JSONObject?): PushApproval? {
+            if (o == null) return null
+            val id = o.optString("id")
+            val expires = o.optString("expiresAt")
+            // Ids are 32 hex characters (the PC's own); anything else is not ours to send back.
+            return if (Regex("^[0-9a-f]{32}$").matches(id) && expires.isNotBlank()) PushApproval(id, expires) else null
         }
     }
 }

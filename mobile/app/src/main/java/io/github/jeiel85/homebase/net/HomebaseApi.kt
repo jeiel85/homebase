@@ -199,6 +199,22 @@ class HomebaseApi(
             if (code in 200..299) text else null
         }
 
+    /**
+     * Answers a Claude Code permission prompt on [pc] (DECISIONS M-48). True when the PC took it,
+     * false when the prompt is gone (answered elsewhere, withdrawn or timed out: 410) or the PC is too
+     * old to know approvals (404).
+     */
+    suspend fun answerApproval(pc: PcEntry, id: String, decision: String): Boolean {
+        val body = JSONObject().put("schema", 1).put("id", id).put("decision", decision).toString()
+        return authedCall(pc, "/api/v1/approval", Request.Builder().post(body.toRequestBody(JSON))) { code, text ->
+            when {
+                code in 200..299 -> true
+                code == 404 || code == 410 -> false
+                else -> throw IOException(errorMessage(text) ?: "승인 응답 실패 (HTTP $code)")
+            }
+        }
+    }
+
     /** One authenticated call over [pc]'s paths in order; the first path that answers decides. */
     private suspend fun <T> authedCall(
         pc: PcEntry,

@@ -43,6 +43,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
     private readonly AgentAlertGate _agentAlerts = new();
+    private readonly ApprovalBroker? _approvals;
     private readonly List<Connection> _connections = new();
 
     private sealed class Connection(Stream stream)
@@ -63,9 +64,11 @@ public sealed class MobileBridgeServer : BackgroundService
         TrayToastRelay? toasts = null,
         INotificationHistoryStore? history = null,
         TrayLiveService? trayLive = null,
-        DeviceGroupService? group = null)
+        DeviceGroupService? group = null,
+        ApprovalBroker? approvals = null)
     {
         _group = group;
+        _approvals = approvals;
         _history = history;
         _trayLive = trayLive;
         _deviceHub = deviceHub;
@@ -188,6 +191,18 @@ public sealed class MobileBridgeServer : BackgroundService
             await SendAgentAlertAsync(payload, ct);
             return;
         }
+        if (op == MobileBridge.OpApprovalCancel)
+        {
+            _approvals?.Cancel(MobileBridge.StringOf(payload?["id"]));
+            return;
+        }
+        if (op == MobileBridge.OpApprovalAsk && id is not null)
+        {
+            // Waits for a phone for up to 10 minutes: answered off the read loop so this connection's
+            // session reports and other requests keep flowing meanwhile.
+            _ = Task.Run(() => AskApprovalAsync(conn, id, payload, ct), CancellationToken.None);
+            return;
+        }
 
         if (id is null) return; // requests need an id to answer
         if (op == MobileBridge.OpNotifyTest)
@@ -287,6 +302,11 @@ public sealed class MobileBridgeServer : BackgroundService
         try { alert = AgentAlertGate.Sanitize(payload?.Deserialize<AgentAlert>(MobileProtocol.Json)); }
         catch (JsonException) { alert = null; }
         if (alert is null) return;
+        if (alert.Kind == AgentAlertKind.Waiting && _approvals?.RecentlyAsked(alert.App, alert.Title) == true)
+        {
+            _logger.LogDebug("AI session waiting alert held back: its approval was just pushed");
+            return;
+        }
         var now = DateTimeOffset.UtcNow;
         bool pass;
         lock (_agentAlerts) pass = _agentAlerts.TryPass(alert, now);
@@ -297,6 +317,26 @@ public sealed class MobileBridgeServer : BackgroundService
         }
         var result = await _router.DeliverAsync(AgentAlertGate.ToNotification(alert, now), ct);
         _logger.LogInformation("AI session alert {Kind} ({App}): delivered={Delivered}", alert.Kind, alert.App, result.Delivered);
+    }
+
+    /// <summary>A Claude Code permission prompt for the phones (M-48); answers null (ask on the PC) on any failure.</summary>
+    private async Task AskApprovalAsync(Connection conn, string id, JsonNode? payload, CancellationToken ct)
+    {
+        string? decision = null;
+        try
+        {
+            var request = payload?.Deserialize<ApprovalRequest>(MobileProtocol.Json);
+            if (_approvals is not null && request is not null && !string.IsNullOrEmpty(request.Id))
+                decision = await _approvals.AskAsync(request, ct);
+        }
+        catch (JsonException) { }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Claude approval failed; the PC asks as usual");
+        }
+        try { await SendAsync(conn, MobileBridge.Response(id, true, new ApprovalAskResult(decision)), ct); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
     }
 
     /// <summary>The Tray's "send test" goes through the same router as real alerts (push first, Telegram fallback).</summary>

@@ -99,6 +99,8 @@ public static class MobileServiceCollectionExtensions
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<TrayLiveService>>(),
             sp.GetRequiredService<DeviceHub>(), sp.GetRequiredService<HubLinkService>()));
         services.AddHostedService(sp => sp.GetRequiredService<HubLinkService>());
+        // Claude Code permission prompts waiting for a phone (M-48).
+        services.AddSingleton(sp => new ApprovalBroker(sp.GetRequiredService<ILogger<ApprovalBroker>>(), sp.GetService<IOutboundRouter>()));
         services.AddSingleton(sp =>
         {
             var api = new MobileApiServer(
@@ -106,7 +108,7 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<TailscaleAddressResolver>(),
                 sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
                 sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
-                deviceHub: sp.GetRequiredService<DeviceHub>());
+                deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>());
             api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
             return api;
         });

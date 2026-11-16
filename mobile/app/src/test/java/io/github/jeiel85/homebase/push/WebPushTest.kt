@@ -95,6 +95,25 @@ class PushProtocolTest {
         assertEquals("info", m.priority)
     }
 
+    @Test
+    fun an_approval_push_carries_its_id_and_deadline() {
+        // DECISIONS M-48: Allow / Deny answer this id on the PC that sent it.
+        val m = PushMessage.parse(fixture("push-approval.v1.json"))
+        assertEquals("agent-approval", m.category)
+        assertEquals("Claude Code", m.source)
+        assertEquals("명령 실행", m.title)
+        assertEquals("0f1e2d3c4b5a69788796a5b4c3d2e1f0", m.approval!!.id)
+        assertEquals(1794877800000L, m.approval!!.expiresAtMillis)
+        assertNull(PushMessage.parse(fixture("push-message.v1.json")).approval)
+    }
+
+    @Test
+    fun an_approval_id_that_is_not_the_pcs_format_is_ignored() {
+        val o = JSONObject(fixture("push-approval.v1.json"))
+        o.getJSONObject("approval").put("id", "../../api/v1/device")
+        assertNull(PushMessage.parse(o.toString()).approval)
+    }
+
     @Test(expected = io.github.jeiel85.homebase.net.ProtocolException::class)
     fun another_schema_is_rejected() {
         PushMessage.parse(fixture("push-message.v1.json").replaceFirst("\"schema\": 1", "\"schema\": 2"))

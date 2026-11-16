@@ -119,6 +119,13 @@ public class ProtocolGoldenTests
         "BTBZMqHH6r4Tts7J_aSIgg",
         ["advisor", "event_log"]);
 
+    /// <summary>A Claude Code permission prompt (M-48): the phone shows Allow / Deny for <c>approval.id</c>.</summary>
+    public static PushMessage SampleApprovalPush() => new(MobileProtocol.Schema,
+        "9c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5", "6f1c0d2e9b8a4c7d", "HOME-PC", "agent-approval", PushPriority.Critical,
+        "명령 실행", "알림 개선\nPush the release\n\ngit push origin main", "Claude Code", 1,
+        new DateTimeOffset(2026, 11, 17, 1, 0, 0, TimeSpan.Zero),
+        new PushApproval("0f1e2d3c4b5a69788796a5b4c3d2e1f0", new DateTimeOffset(2026, 11, 17, 1, 10, 0, TimeSpan.Zero)));
+
     public static PushMessage SamplePushMessage() => new(MobileProtocol.Schema,
         "5b0e1c2d3f4a49b8a1c2d3e4f5a6b7c8", "6f1c0d2e9b8a4c7d", "HOME-PC", "windows-toast", PushPriority.Info,
         "KakaoTalk: 알림 3건", "엄마: 저녁 먹었니?\n팀장: 회의 10분 뒤", "KakaoTalk", 3,
@@ -135,6 +142,7 @@ public class ProtocolGoldenTests
     [InlineData("devices.v1.json")]
     [InlineData("device-notification.v1.json")]
     [InlineData("group.v1.json")]
+    [InlineData("push-approval.v1.json")]
     public void Serialized_contract_matches_the_shared_fixture(string file)
     {
         object sample = file switch
@@ -148,6 +156,7 @@ public class ProtocolGoldenTests
             "devices.v1.json" => SampleDevices(),
             "device-notification.v1.json" => SampleDeviceNotification(),
             "group.v1.json" => SampleGroup(),
+            "push-approval.v1.json" => SampleApprovalPush(),
             _ => new EndpointsResponse(MobileProtocol.Schema, SampleEndpoints()),
         };
         var actual = JsonSerializer.SerializeToNode(sample, sample.GetType(), MobileProtocol.Json)!;

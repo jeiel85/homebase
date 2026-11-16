@@ -156,7 +156,14 @@ public sealed record PushMessage(
     string? Body,
     string Source,
     int Count,
-    DateTimeOffset Ts);
+    DateTimeOffset Ts,
+    PushApproval? Approval = null);
+
+/// <summary>
+/// Set on a Claude Code permission prompt (category <c>agent-approval</c>, DECISIONS M-48): the phone
+/// answers <c>POST /api/v1/approval {id, decision}</c> before <see cref="ExpiresAt"/>.
+/// </summary>
+public sealed record PushApproval(string Id, DateTimeOffset ExpiresAt);
 
 public static class PushPriority
 {
