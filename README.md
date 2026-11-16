@@ -238,7 +238,7 @@ homebase/
 
 ## 📄 라이선스
 
-MIT &mdash; 자세한 내용은 [LICENSE](LICENSE) 파일을 참고하세요.
+MIT &mdash; 자세한 내용은 [LICENSE](LICENSE) 파일을 참고하세요. 앱·PC 프로그램의 정보 처리는 [개인정보처리방침](https://jeiel85.github.io/homebase/privacy/)에 있습니다.
 
 ---
 
