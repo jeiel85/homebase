@@ -75,6 +75,13 @@ class NotificationPriorityTest {
     }
 
     @Test
+    fun anAiSessionWaitingPopsUpAndOneThatFinishedRings() {
+        // DECISIONS M-45: waiting blocks the work until the user answers; done can wait for a look.
+        assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("agent-waiting", "Claude Code", NotificationRules())))
+        assertEquals(AlertLevel.NORMAL, AlertLevel.of(NotificationPriority.resolve("agent-done", "Codex", NotificationRules())))
+    }
+
+    @Test
     fun appChoiceBeatsGroupChoiceBeatsDefault() {
         val quiet = AlertLevel.QUIET.applyTo(AlertProfile())
         val urgent = AlertLevel.URGENT.applyTo(AlertProfile())

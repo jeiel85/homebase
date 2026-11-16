@@ -452,7 +452,7 @@
     <Setter Property="HorizontalAlignment" Value="Center"/>
   </Style>
 
-  <!-- ══ Device page (dashboard, DECISIONS M-44) — the phone app's light console roles ══ -->
+  <!-- ══ Device page (dashboard, DECISIONS M-46) — the phone app's light console roles ══ -->
   <!-- Masthead button: flat on carbon, white text, slate hover. -->
   <Style x:Key="Dash.HeadButton" TargetType="Button">
     <Setter Property="Foreground" Value="White"/>

@@ -80,7 +80,7 @@ data class DevicesResponse(val hub: HubEntry, val devices: List<DeviceEntry>) {
 
 /**
  * What this phone reports about itself (`POST /api/v1/presence`). The fields after [network] came with
- * v0.33.0 (DECISIONS M-44): the PC's device page shows them; the PC drops a value out of range.
+ * v0.34.0 (DECISIONS M-46): the PC's device page shows them; the PC drops a value out of range.
  */
 data class PresenceReport(
     val appVersion: String,
@@ -169,7 +169,62 @@ data class DeviceNotification(
     }
 }
 
-/** One entry of the work tab (DECISIONS M-26). */
+/**
+ * What the PC knows about an AI coding session beyond its title (DECISIONS M-46). Every field is
+ * optional: each comes from a file Claude Code or Codex writes for itself, and a PC older than
+ * v0.34.0 sends none of it.
+ */
+data class AgentInfo(
+    /** [BUSY], [WAITING] or [IDLE]; null when the PC cannot tell. */
+    val status: String? = null,
+    val waitingFor: String? = null,
+    val statusSince: String? = null,
+    val model: String? = null,
+    val effort: String? = null,
+    val contextTokens: Long? = null,
+    val contextWindow: Long? = null,
+    val totalTokens: Long? = null,
+    val lastTool: String? = null,
+    val mode: String? = null,
+    val prNumber: Int? = null,
+    /** The session on claude.ai (Remote Control): open it to type to the session. */
+    val remoteUrl: String? = null,
+    val sessionId: String? = null,
+) {
+    /** Context in use as a share of the window, when both are known. */
+    val contextShare: Float?
+        get() = if (contextTokens != null && contextWindow != null && contextWindow > 0) {
+            (contextTokens.toFloat() / contextWindow).coerceIn(0f, 1f)
+        } else {
+            null
+        }
+
+    companion object {
+        const val BUSY = "busy"
+        const val WAITING = "waiting"
+        const val IDLE = "idle"
+
+        fun parse(o: JSONObject?): AgentInfo? = o?.let {
+            AgentInfo(
+                status = it.optStringOrNull("status"),
+                waitingFor = it.optStringOrNull("waitingFor"),
+                statusSince = it.optStringOrNull("statusSince"),
+                model = it.optStringOrNull("model"),
+                effort = it.optStringOrNull("effort"),
+                contextTokens = it.optLongOrNull("contextTokens"),
+                contextWindow = it.optLongOrNull("contextWindow"),
+                totalTokens = it.optLongOrNull("totalTokens"),
+                lastTool = it.optStringOrNull("lastTool"),
+                mode = it.optStringOrNull("mode"),
+                prNumber = it.optIntOrNull("prNumber"),
+                remoteUrl = it.optStringOrNull("remoteUrl")?.takeIf { url -> url.startsWith("https://claude.ai/") },
+                sessionId = it.optStringOrNull("sessionId"),
+            )
+        }
+    }
+}
+
+/** One entry of the work tab (DECISIONS M-26). [agent] is set for AI sessions by PCs from v0.34.0 (M-46). */
 data class WorkItem(
     val kind: String,
     val app: String,
@@ -177,6 +232,7 @@ data class WorkItem(
     val detail: String?,
     val lastActivity: String?,
     val foreground: Boolean,
+    val agent: AgentInfo? = null,
 ) {
     companion object {
         const val AGENT = "agent"
@@ -192,6 +248,7 @@ data class WorkItem(
                 detail = it.optStringOrNull("detail"),
                 lastActivity = it.optStringOrNull("lastActivity"),
                 foreground = it.optBoolean("foreground"),
+                agent = AgentInfo.parse(it.optJSONObject("agent")),
             )
         }
     }

@@ -14,14 +14,14 @@ public static class DeviceKind
 }
 
 /// <summary>
-/// <c>POST /api/v1/presence</c> body (DECISIONS M-27, M-44): a device's own state. Phones fill battery,
+/// <c>POST /api/v1/presence</c> body (DECISIONS M-27, M-46): a device's own state. Phones fill battery,
 /// network, memory, storage and the rest of what Android tells without extra permissions; PCs fill CPU,
 /// memory, uptime and OS. <c>PushHashes</c> are the SHA-256 (lowercase hex) of the UnifiedPush endpoints
 /// the device itself delivers to — a PC lists its phones so the hub does not push the same relayed
 /// notification to them twice (M-28).
 /// </summary>
 /// <remarks>
-/// The fields after <c>PushHashes</c> came with v0.33.0 (M-44). They are display-only: a value out of
+/// The fields after <c>PushHashes</c> came with v0.34.0 (M-46). They are display-only: a value out of
 /// range is dropped by <see cref="Sanitized"/> instead of failing the whole report, so one odd sensor on
 /// a phone never hides the rest of its state.
 /// </remarks>
@@ -66,7 +66,7 @@ public sealed record PresenceReport(
         return null;
     }
 
-    /// <summary>The report with the v0.33.0 display fields that are out of range left out (M-44).</summary>
+    /// <summary>The report with the v0.34.0 display fields that are out of range left out (M-46).</summary>
     public PresenceReport Sanitized() => this with
     {
         Os = Word(Os, 64),
@@ -92,7 +92,7 @@ public sealed record PresenceReport(
 
 /// <summary>
 /// The last reported state of one device; every field may be missing. The fields after <c>UptimeSec</c>
-/// are the v0.33.0 additions of <see cref="PresenceReport"/> (M-44); older devices and hubs leave them out.
+/// are the v0.34.0 additions of <see cref="PresenceReport"/> (M-46); older devices and hubs leave them out.
 /// </summary>
 public sealed record DeviceStatus(
     string? AppVersion = null,
@@ -174,14 +174,14 @@ public sealed record InboxItem(
     DateTimeOffset Ts);
 
 /// <summary>
-/// <c>Next</c> is the <c>after</c> value for the following poll. <c>Live</c> (v0.33.0, M-44) is true while
+/// <c>Next</c> is the <c>after</c> value for the following poll. <c>Live</c> (v0.34.0, M-46) is true while
 /// someone on the hub is looking at the polling PC: it should then share its live snapshots with
 /// <c>POST /api/v1/live-snapshot</c> until the hub answers <c>live: false</c>.
 /// </summary>
 public sealed record InboxResponse(int Schema, long Next, IReadOnlyList<InboxItem> Items, bool? Live = null);
 
 /// <summary>
-/// <c>POST /api/v1/live-snapshot</c> answer (M-44): <c>Live</c> false means nobody on the hub is watching
+/// <c>POST /api/v1/live-snapshot</c> answer (M-46): <c>Live</c> false means nobody on the hub is watching
 /// any more, so the sharing PC stops.
 /// </summary>
 public sealed record LiveShareResponse(int Schema, bool Live);

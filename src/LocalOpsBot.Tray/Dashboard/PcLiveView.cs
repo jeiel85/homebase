@@ -9,7 +9,7 @@ using static LocalOpsBot.Tray.Dashboard.Hb;
 namespace LocalOpsBot.Tray.Dashboard;
 
 /// <summary>
-/// A PC's page, live (DECISIONS M-44) — the same reading the phone app shows: CPU, memory and main GPU
+/// A PC's page, live (DECISIONS M-46) — the same reading the phone app shows: CPU, memory and main GPU
 /// gauges with 60-second traces, disk I/O, network, ping and temperature cells, drives, and the apps,
 /// processes and work sessions. Built once per device and updated in place every second.
 /// </summary>
@@ -389,9 +389,24 @@ internal sealed class PcLiveView
         pill.Margin = new Thickness(0, 1, 0, 0);
         g.Children.Add(At(pill, 0));
         var text = new StackPanel();
+        // An AI session's state (M-44): waiting for input stands out, as on the phone.
+        if (w.Agent is { Status: { } status } agent)
+        {
+            var (label, tone) = status switch
+            {
+                AgentStatus.Waiting => (L.AgentWaiting, Accent),
+                AgentStatus.Busy => (L.AgentBusy, LedOn),
+                _ => (L.AgentIdle, InkSoft),
+            };
+            var line = label;
+            if (agent.StatusSince is { } since) line += " · " + Fmt.Ago(since, now);
+            if (status == AgentStatus.Waiting && agent.WaitingFor is { Length: > 0 } why) line += " · " + why;
+            text.Children.Add(Text(line, 11.5, tone == InkSoft ? InkSoft : tone == Accent ? B2(0x8A, 0x5A, 0x00) : B2(0x1E, 0x6B, 0x34), FontWeights.SemiBold));
+        }
         text.Children.Add(Text(w.Title, 12.5, Ink, FontWeights.SemiBold));
         var meta = new List<string> { w.App };
         if (!string.IsNullOrEmpty(w.Detail)) meta.Add(w.Detail!);
+        if (w.Agent?.Model is { } model) meta.Add(model);
         if (w.LastActivity is { } at) meta.Add(Fmt.Ago(at, now));
         if (w.Foreground) meta.Add(L.DetForeground);
         text.Children.Add(Text(string.Join(" · ", meta), 11.5, InkSoft));

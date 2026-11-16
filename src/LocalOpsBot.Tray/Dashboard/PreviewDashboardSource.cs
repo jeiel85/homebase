@@ -105,7 +105,8 @@ internal sealed class PreviewDashboardSource : IDashboardSource
         };
         var work = new[]
         {
-            new WorkItem(WorkKind.Agent, "Claude Code", "PC에서 연결된 기기 정보 보기", @"D:\Project\homebase", now.AddMinutes(-1)),
+            new WorkItem(WorkKind.Agent, "Claude Code", "PC에서 연결된 기기 정보 보기", @"D:\Project\homebase", now.AddMinutes(-1),
+                Agent: new AgentInfo(AgentStatus.Waiting, "도구 사용 승인", now.AddMinutes(-4), "Opus 5.5")),
             new WorkItem(WorkKind.Agent, "Codex", "OpenCode에 모델 추가", @"C:\Users\me\Documents\Codex", now.AddMinutes(-7)),
             new WorkItem(WorkKind.Editor, "VS Code", "DashboardWindow.xaml", "homebase", Foreground: true),
             new WorkItem(WorkKind.Document, "Word", "견적서.docx"),

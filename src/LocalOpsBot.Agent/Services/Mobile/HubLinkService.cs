@@ -19,7 +19,7 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// phones, except phones the hub already reaches (M-28) — and never sent on again;</item>
 /// <item>every 10 minutes, the hub's current paths (<c>GET /api/v1/endpoints</c>) replace the stored ones;</item>
 /// <item>while the hub's Tray looks at this PC (its inbox answers say <c>live</c>), this PC's live snapshots
-/// every 2 s → <c>POST /api/v1/live-snapshot</c>, until the hub answers <c>live: false</c> (M-44).</item>
+/// every 2 s → <c>POST /api/v1/live-snapshot</c>, until the hub answers <c>live: false</c> (M-46).</item>
 /// </list>
 /// </summary>
 [SupportedOSPlatform("windows")]
@@ -31,7 +31,7 @@ public sealed class HubLinkService : BackgroundService
     private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan InboxTimeout = DeviceHub.InboxWait + TimeSpan.FromSeconds(15);
 
-    /// <summary>How often a shared live snapshot goes to a hub whose Tray is looking at this PC (M-44).</summary>
+    /// <summary>How often a shared live snapshot goes to a hub whose Tray is looking at this PC (M-46).</summary>
     public static readonly TimeSpan LiveShareInterval = TimeSpan.FromSeconds(2);
     private const int LiveShareMaxFailures = 3;
 
@@ -58,7 +58,7 @@ public sealed class HubLinkService : BackgroundService
         public DateTimeOffset? LastContactAt { get; set; }
         public bool Online { get; set; }
         public string? Error { get; set; }
-        /// <summary>1 while this PC shares its live view with the hub (M-44).</summary>
+        /// <summary>1 while this PC shares its live view with the hub (M-46).</summary>
         public int Sharing;
         public IReadOnlyCollection<string> HubPushHashes => LastDevices?.PushHashes ?? (IReadOnlyCollection<string>)Array.Empty<string>();
     }
@@ -108,7 +108,7 @@ public sealed class HubLinkService : BackgroundService
 
     /// <summary>
     /// The stored link to <paramref name="pcId"/> (paths and token) for this PC's own live view of that hub
-    /// (M-44), with the path that answered last first; null when not linked.
+    /// (M-46), with the path that answered last first; null when not linked.
     /// </summary>
     public LinkedHub? Hub(string pcId)
     {
@@ -312,7 +312,7 @@ public sealed class HubLinkService : BackgroundService
                     await Task.Delay(reply.Status == 401 ? RejectedRetry : PresenceInterval, _time, ct);
                     continue;
                 }
-                // The hub's Tray is looking at this PC: share the live view while it does (M-44).
+                // The hub's Tray is looking at this PC: share the live view while it does (M-46).
                 if (inbox.Live == true) StartSharing(link, ct);
                 foreach (var item in inbox.Items)
                 {

@@ -9,7 +9,7 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// Builds live snapshots — but only while at least one watcher is there. The first watcher
 /// starts the sampler (and its ETW session) and tells the Tray to start reporting windows; the
 /// last one leaving stops all of it, so an idle Homebase costs nothing extra (DECISIONS M-5).
-/// Watchers are remote (a phone or another PC) or local (this PC's own Tray dashboard, M-44); only
+/// Watchers are remote (a phone or another PC) or local (this PC's own Tray dashboard, M-46); only
 /// remote ones light the Tray's "another device is viewing this PC" indicator.
 /// </summary>
 public sealed class LiveSnapshotHub : IDisposable
@@ -43,7 +43,7 @@ public sealed class LiveSnapshotHub : IDisposable
     /// <summary>Raised with <c>true</c> when the first watcher arrives and <c>false</c> when the last leaves.</summary>
     public event Action<bool>? WatchingChanged;
 
-    /// <summary>Raised when the first remote watcher arrives and when the last one leaves (M-44).</summary>
+    /// <summary>Raised when the first remote watcher arrives and when the last one leaves (M-46).</summary>
     public event Action<bool>? RemoteWatchingChanged;
 
     public int Watchers { get { lock (_gate) return _subscribers.Count; } }

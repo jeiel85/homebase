@@ -14,7 +14,7 @@ internal interface IDashboardSource
     /// <summary><c>mobile:enabled</c> — without it there is no bridge and no other device.</summary>
     bool FeatureEnabled { get; }
 
-    /// <summary>The Agent answered <c>live.get</c> with "unsupported" (older than v0.33.0).</summary>
+    /// <summary>The Agent answered <c>live.get</c> with "unsupported" (older than v0.34.0).</summary>
     bool LiveUnsupported { get; }
 
     Task<DeviceOverview?> OverviewAsync();
@@ -23,7 +23,7 @@ internal interface IDashboardSource
     Task<LiveView?> LiveAsync(string target);
 }
 
-/// <summary>The real source: <c>devices.overview</c> and <c>live.get</c> over the mobile bridge (M-44).</summary>
+/// <summary>The real source: <c>devices.overview</c> and <c>live.get</c> over the mobile bridge (M-46).</summary>
 internal sealed class BridgeDashboardSource : IDashboardSource
 {
     private bool? _enabled;

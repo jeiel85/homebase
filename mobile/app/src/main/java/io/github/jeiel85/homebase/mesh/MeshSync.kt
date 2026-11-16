@@ -50,7 +50,7 @@ object MeshSync {
     val hubs: StateFlow<Map<String, HubView>> = _hubs
 
     /**
-     * This phone's own state, as far as Android tells it without extra permissions (DECISIONS M-27, M-44).
+     * This phone's own state, as far as Android tells it without extra permissions (DECISIONS M-27, M-46).
      * Each extra reading is best effort: one that fails is left out, never the whole report.
      */
     fun report(context: Context): PresenceReport {

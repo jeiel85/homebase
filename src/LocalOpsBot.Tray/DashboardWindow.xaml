@@ -12,7 +12,7 @@
         FontFamily="Segoe UI, Malgun Gothic"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
-  <!-- The device hub (DECISIONS M-44): every device on the left, the selected one on the right — this
+  <!-- The device hub (DECISIONS M-46): every device on the left, the selected one on the right — this
        PC, linked PCs (live, like the phone app's PC page) and phones (their last report). Read-only;
        configuration stays in Settings. -->
   <local:ThemedWindow.Resources>

@@ -32,17 +32,18 @@ public static class MobileBridge
     public const string OpHubsUnlink = "hubs.unlink";         // request {pcId} → bool (M-29)
     public const string OpHistoryList = "history.list";       // request {after?, limit?} → HistoryPage (M-32)
     public const string OpHistoryClear = "history.clear";     // request → int (relayed notifications removed; M-32)
-    public const string OpLiveGet = "live.get";               // request {target} → LiveView, keeps that view open ~10 s (M-44)
+    public const string OpAgentAlert = "agent.alert";         // push AgentAlert — an AI session waits or finished (M-45)
+    public const string OpLiveGet = "live.get";               // request {target} → LiveView, keeps that view open ~10 s (M-46)
 
     // Agent → Tray
-    public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-44)
+    public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
     public const string OpToast = "toast.show";               // push {title, body} — a relayed notification to show (M-28)
     public const string OpResponse = "response";
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
-        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpLiveGet,
+        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
@@ -165,7 +166,7 @@ public sealed record LinkedHubView(
     string? SelfDeviceId = null);
 
 /// <summary>
-/// <c>devices.overview</c>: what is paired here, and the PCs this one is linked to. <c>Local</c> (v0.33.0)
+/// <c>devices.overview</c>: what is paired here, and the PCs this one is linked to. <c>Local</c> (v0.34.0)
 /// adds what only this PC knows about its own devices: when they paired and whether they take push.
 /// </summary>
 public sealed record DeviceOverview(
@@ -174,13 +175,13 @@ public sealed record DeviceOverview(
     IReadOnlyList<LocalDeviceInfo>? Local = null);
 
 /// <summary>
-/// A device paired with this PC as the Tray's device page shows it (M-44): <c>Push</c> — it registered a
+/// A device paired with this PC as the Tray's device page shows it (M-46): <c>Push</c> — it registered a
 /// UnifiedPush endpoint here; <c>Muted</c> — the notification kinds it asked this PC not to send.
 /// </summary>
 public sealed record LocalDeviceInfo(string DeviceId, DateTimeOffset PairedAt, bool Push, IReadOnlyList<string>? Muted);
 
 /// <summary>
-/// What <c>live.get</c> looks at (M-44): this PC, a hub PC this one is linked to (its live WebSocket), or a
+/// What <c>live.get</c> looks at (M-46): this PC, a hub PC this one is linked to (its live WebSocket), or a
 /// PC paired here as a device (it shares its snapshots on request).
 /// </summary>
 public static class LiveTarget
@@ -208,7 +209,7 @@ public static class LiveViewState
     public const string Connecting = "connecting";
     /// <summary>The other PC does not answer; <c>Snapshot</c> may hold the last one seen.</summary>
     public const string Unreachable = "unreachable";
-    /// <summary>The other PC is too old to share its live view (before v0.33.0).</summary>
+    /// <summary>The other PC is too old to share its live view (before v0.34.0).</summary>
     public const string Unsupported = "unsupported";
     /// <summary>No such device or link here.</summary>
     public const string Unknown = "unknown";

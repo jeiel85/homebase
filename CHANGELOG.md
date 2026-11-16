@@ -1,17 +1,17 @@
 # Changelog
 
-## v0.33.0 — See your devices from the PC
+## v0.34.0 — See your devices from the PC
 
 ### Added
 - **The tray dashboard is now a device hub.** Click the tray icon: every device is listed on the left — this PC,
   the PCs linked either way, the phones (and the devices your linked PCs see) — and the one you pick fills the
-  right side (DECISIONS M-44).
+  right side (DECISIONS M-46).
   - **PCs, live, at the phone app's level**: CPU, memory and main-GPU gauges with the last 60 seconds, disk I/O,
     network in/out, ping and temperature, drives, every GPU's VRAM, temperature, power and clock, and the apps,
     processes and work (AI sessions, editors, documents, browser tabs) tabs, sortable by CPU, memory or name.
     App rows open to show their other windows and child processes.
   - Both PCs of a link see each other, whichever side made the link: the PC you linked to opens its live view
-    for you, and a PC that linked to you shares its live view while you look at it (it needs v0.33.0 too; an
+    for you, and a PC that linked to you shares its live view while you look at it (it needs v0.34.0 too; an
     older one shows its last CPU, memory and uptime with a note). Views close 10 seconds after you hide the
     window, so nothing is collected meanwhile.
   - **Phones**: their last report — battery level, temperature, health, charger and time to full, memory and
@@ -33,6 +33,23 @@
 - Phones send their state early only when something you would notice changes (battery, charging, network,
   charger, power saving, heat, forwarding, Do Not Disturb, signal); the rest rides along once a minute.
 
+## v0.33.0 — AI coding sessions in detail, and alerts when they need you
+
+### Added
+- **AI session detail on the work tab.** Each Claude Code and Codex session now shows what it is
+  doing — 작업 중 (working) / 입력 대기 (waiting for you, highlighted and listed first) / 쉬는 중 (idle)
+  and for how long — what it is waiting for, the model (and Codex's reasoning effort), how much
+  context is in use (a bar for Codex), its permission mode, the last tool it used, the pull request
+  it is on and Codex's total tokens. A session left waiting for approval stays listed even if its
+  transcript has been quiet for a long time. No prompt, reply or tool argument leaves the PC
+  (DECISIONS M-44).
+- **"Claude에서 열기" (Open in Claude).** A Claude Code session's card opens that very session on
+  claude.ai / the Claude app (Remote Control), where you can type to it from the phone.
+- **Alerts when an AI session needs you.** While you are away from the PC (no keyboard or mouse for
+  a minute), the phone is notified when a Claude Code session starts waiting for your approval or
+  answer, and when Claude Code or Codex finishes a turn that took more than a minute. Two new
+  notification kinds, "AI 세션 입력 대기" (pops up by default) and "AI 세션 작업 끝" (rings by default),
+  can be turned off or reprioritised like the others (DECISIONS M-45).
 ## v0.32.0 — Hardening
 
 Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #5 (DECISIONS M-39–M-43).

@@ -17,7 +17,7 @@ internal enum DeviceRole
     ViaHub,
 }
 
-/// <summary>One entry of the dashboard's device list (DECISIONS M-44).</summary>
+/// <summary>One entry of the dashboard's device list (DECISIONS M-46).</summary>
 internal sealed record DeviceItem(
     string Key,
     DeviceRole Role,

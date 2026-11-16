@@ -8,7 +8,7 @@ using static LocalOpsBot.Tray.Dashboard.Hb;
 namespace LocalOpsBot.Tray.Dashboard;
 
 /// <summary>
-/// A phone's page (DECISIONS M-44): what it last reported — battery, memory, storage, network and the
+/// A phone's page (DECISIONS M-46): what it last reported — battery, memory, storage, network and the
 /// rest Android tells without extra permissions — plus what only this PC knows (push, pairing date).
 /// Phones have no server, so this is their latest report, not a live view.
 /// </summary>

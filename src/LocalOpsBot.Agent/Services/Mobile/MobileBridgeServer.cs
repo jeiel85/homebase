@@ -41,6 +41,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly MobileOptions _options;
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
+    private readonly AgentAlertGate _agentAlerts = new();
     private readonly List<Connection> _connections = new();
 
     private sealed class Connection(Stream stream)
@@ -80,7 +81,7 @@ public sealed class MobileBridgeServer : BackgroundService
 
     /// <summary>
     /// <c>watch</c>: <c>on</c> — someone watches, so report windows; <c>remote</c> — it is another device,
-    /// not this PC's own Tray, so show the "viewing this PC" indicator (M-44).
+    /// not this PC's own Tray, so show the "viewing this PC" indicator (M-46).
     /// </summary>
     private object WatchPayload() => new { on = _hub.IsWatching, remote = _hub.IsRemoteWatching };
 
@@ -179,6 +180,11 @@ public sealed class MobileBridgeServer : BackgroundService
             if (report is not null) _hub.UpdateSession(report);
             return;
         }
+        if (op == MobileBridge.OpAgentAlert)
+        {
+            await SendAgentAlertAsync(payload, ct);
+            return;
+        }
 
         if (id is null) return; // requests need an id to answer
         if (op == MobileBridge.OpNotifyTest)
@@ -252,6 +258,29 @@ public sealed class MobileBridgeServer : BackgroundService
             _logger.LogError(ex, "Notification center request {Op} failed", op);
             return MobileBridge.Response(id, false, error: "store_failed");
         }
+    }
+
+    /// <summary>
+    /// An AI session the Tray saw start waiting or finish while the user was away (DECISIONS M-45):
+    /// checked and rate-limited by <see cref="AgentAlertGate"/>, then pushed on encrypted channels.
+    /// </summary>
+    private async Task SendAgentAlertAsync(JsonNode? payload, CancellationToken ct)
+    {
+        if (_router is null) return;
+        AgentAlert? alert;
+        try { alert = AgentAlertGate.Sanitize(payload?.Deserialize<AgentAlert>(MobileProtocol.Json)); }
+        catch (JsonException) { alert = null; }
+        if (alert is null) return;
+        var now = DateTimeOffset.UtcNow;
+        bool pass;
+        lock (_agentAlerts) pass = _agentAlerts.TryPass(alert, now);
+        if (!pass)
+        {
+            _logger.LogDebug("AI session alert {Kind} held back by the rate limit", alert.Kind);
+            return;
+        }
+        var result = await _router.DeliverAsync(AgentAlertGate.ToNotification(alert, now), ct);
+        _logger.LogInformation("AI session alert {Kind} ({App}): delivered={Delivered}", alert.Kind, alert.App, result.Delivered);
     }
 
     /// <summary>The Tray's "send test" goes through the same router as real alerts (push first, Telegram fallback).</summary>

@@ -8,7 +8,7 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 
 /// <summary>
 /// This PC as a hub (DECISIONS M-27, M-28): the state its paired devices report, the device list it
-/// hands back, the notifications they send, and the inbox linked PCs poll. Since v0.33.0 (M-44) it also
+/// hands back, the notifications they send, and the inbox linked PCs poll. Since v0.34.0 (M-46) it also
 /// asks a linked PC to share its live snapshots while this PC's Tray is looking at it, and keeps the
 /// latest one: the linked PC holds the token, so this side cannot open its live view itself.
 /// </summary>
@@ -94,7 +94,7 @@ public sealed class DeviceHub
     }
 
     /// <summary>
-    /// What the Tray's device page adds for devices paired here (M-44): pairing date and whether each one
+    /// What the Tray's device page adds for devices paired here (M-46): pairing date and whether each one
     /// takes push from this PC (and which kinds it turned off).
     /// </summary>
     public IReadOnlyList<LocalDeviceInfo> LocalInfo()
@@ -106,7 +106,7 @@ public sealed class DeviceHub
     }
 
     /// <summary>
-    /// The Tray is looking at the PC paired here as <paramref name="deviceId"/> (M-44): ask it, through its
+    /// The Tray is looking at the PC paired here as <paramref name="deviceId"/> (M-46): ask it, through its
     /// inbox poll, to share its live snapshots for <see cref="LiveLease"/>. Renewing an active request does
     /// not wake the poll again; the inbox answers carry <c>live: true</c> for as long as the lease runs.
     /// </summary>
@@ -161,7 +161,7 @@ public sealed class DeviceHub
     public async Task<InboxResponse?> InboxAsync(MobileDeviceInfo device, long after, CancellationToken ct)
     {
         var id = device.DeviceId;
-        // A live request that came while this PC was between polls: answer at once (M-44).
+        // A live request that came while this PC was between polls: answer at once (M-46).
         if (_livePending.TryRemove(id, out _) && IsLiveWanted(id)) return WithLive(_inbox.Read(after, id), id);
 
         if (Interlocked.Increment(ref _inboxWaiters) > MaxInboxWaiters)

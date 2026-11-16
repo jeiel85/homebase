@@ -62,7 +62,7 @@ public sealed class SystemStatusProbe
             Os: s.Os);
     }
 
-    /// <summary>"Windows 11 Pro 24H2"-style name from the registry, else the runtime's description (M-44).</summary>
+    /// <summary>"Windows 11 Pro 24H2"-style name from the registry, else the runtime's description (M-46).</summary>
     public static string OsName { get; } = ReadOsName();
 
     private static string ReadOsName()

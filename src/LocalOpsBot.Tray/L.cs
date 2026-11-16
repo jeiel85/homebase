@@ -281,7 +281,7 @@ public static class L
     public static string DevHubConnecting => T("connecting…", "연결하는 중…");
     public static string DevHubPhones(int n) => T($"{n} phone(s) there", $"휴대폰 {n}대 연결됨");
 
-    // ── Device page (dashboard, DECISIONS M-44) ──────────────────────────────
+    // ── Device page (dashboard, DECISIONS M-46) ──────────────────────────────
     public static string DashAddDevice => T("+  Connect a phone or PC", "+  휴대폰·PC 연결");
     public static string RailThisPc => T("THIS PC", "이 PC");
     public static string RailPcs => T("PCS", "PC");
@@ -342,6 +342,9 @@ public static class L
     public static string DetExpandHint => T("Click to see its windows and child processes", "눌러서 창과 하위 프로세스 보기");
     public static string DetForeground => T("in front", "앞에 열림");
     public static string WorkAgent => T("AI agent", "AI 에이전트");
+    public static string AgentWaiting => T("Waiting for input", "입력 대기");
+    public static string AgentBusy => T("Working", "작업 중");
+    public static string AgentIdle => T("Idle", "쉬는 중");
     public static string WorkEditor => T("Editor", "편집기");
     public static string WorkDocument => T("Document", "문서");
     public static string WorkBrowser => T("Browser", "브라우저");
@@ -361,8 +364,8 @@ public static class L
         "That PC doesn't answer: it is off, asleep or out of reach. Its last report is shown.",
         "그 PC가 응답하지 않습니다. 꺼져 있거나 절전 중이거나 네트워크에 닿지 않습니다. 마지막 보고를 보여 줍니다.");
     public static string DetPcTooOld(string version) => T(
-        $"That PC runs Homebase v{version}. Update it to v0.33.0 or later to see it live here.",
-        $"그 PC는 Homebase v{version}입니다. v0.33.0 이상으로 업데이트하면 여기서 실시간으로 볼 수 있습니다.");
+        $"That PC runs Homebase v{version}. Update it to v0.34.0 or later to see it live here.",
+        $"그 PC는 Homebase v{version}입니다. v0.34.0 이상으로 업데이트하면 여기서 실시간으로 볼 수 있습니다.");
     public static string DetNoLiveYet => T("No live view yet — its last report is shown.", "아직 실시간 화면이 없어 마지막 보고를 보여 줍니다.");
     public static string DetSelfFeatureOff => T(
         "Turn on the phone connection (Settings › Phone) to see GPUs, temperatures, ping, apps and processes here — and your other devices.",
@@ -378,8 +381,8 @@ public static class L
         "No report from this phone yet. Open the Homebase app on it.",
         "이 휴대폰의 보고가 아직 없습니다. 휴대폰에서 Homebase 앱을 열어 보세요.");
     public static string DetPhoneOldApp => T(
-        "Update the Homebase app on this phone to v0.33.0 or later to see memory, storage, temperature and more here.",
-        "휴대폰의 Homebase 앱을 v0.33.0 이상으로 업데이트하면 메모리·저장공간·온도 등도 여기에 보입니다.");
+        "Update the Homebase app on this phone to v0.34.0 or later to see memory, storage, temperature and more here.",
+        "휴대폰의 Homebase 앱을 v0.34.0 이상으로 업데이트하면 메모리·저장공간·온도 등도 여기에 보입니다.");
     public static string DetPhoneCadence => T(
         "Phones report when the Homebase app opens and about once a minute while it is open; when it is closed, about every 30 minutes.",
         "휴대폰은 Homebase 앱을 열 때와 열려 있는 동안 약 1분마다, 닫혀 있으면 약 30분마다 상태를 보냅니다.");

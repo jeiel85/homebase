@@ -17,7 +17,7 @@ using static LocalOpsBot.Tray.Dashboard.Hb;
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// The tray popup, a device hub (DECISIONS M-44): every device on the left — this PC, the PCs linked
+/// The tray popup, a device hub (DECISIONS M-46): every device on the left — this PC, the PCs linked
 /// either way, the phones — and the selected one on the right at the level the phone app shows a PC.
 /// PCs are live (this PC from the Agent's own sampler, a linked PC over its live view); phones show
 /// their last report. Read-only by design — configuration lives in <see cref="SettingsWindow"/>.

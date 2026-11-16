@@ -9,7 +9,7 @@ using Xunit;
 
 namespace LocalOpsBot.Tests.Mobile;
 
-/// <summary>The device page of the Tray: richer device state and live views of other PCs (DECISIONS M-44).</summary>
+/// <summary>The device page of the Tray: richer device state and live views of other PCs (DECISIONS M-46).</summary>
 public class PresenceDetailTests
 {
     [Fact]
@@ -183,11 +183,11 @@ public class LiveWatcherKindTests
     }
 
     [Theory]
-    [InlineData("0.32.0", true)]
-    [InlineData("0.33.0", false)]
-    [InlineData("0.33.1+abc", false)]
+    [InlineData("0.33.0", true)]
+    [InlineData("0.34.0", false)]
+    [InlineData("0.34.1+abc", false)]
     [InlineData("1.0.0-beta", false)]
-    public void Pcs_before_v0_33_cannot_share(string version, bool tooOld) =>
+    public void Pcs_before_v0_34_cannot_share(string version, bool tooOld) =>
         Assert.Equal(tooOld, TrayLiveService.ParseVersion(version) < TrayLiveService.ShareVersion);
 }
 
@@ -205,7 +205,7 @@ public class LiveShareEndToEndTests : IDisposable
         var storeA = new InMemoryDeviceStore();
         var liveA = new LiveSnapshotHub(new FakeSampler(), options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance);
         var deviceHubA = new DeviceHub(storeA, new DeviceStatusBoard(TimeProvider.System), new NotificationInbox(TimeProvider.System),
-            () => new DeviceStatus("0.33.0"), null, "HUB-A", "0.33.0", NullLogger.Instance);
+            () => new DeviceStatus("0.34.0"), null, "HUB-A", "0.34.0", NullLogger.Instance);
         var api = new MobileApiServer(liveA, new PairingService(storeA, TimeProvider.System), storeA,
             new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
             new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance,
@@ -217,7 +217,7 @@ public class LiveShareEndToEndTests : IDisposable
         var samplerB = new FakeSampler();
         var liveB = new LiveSnapshotHub(samplerB, options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance);
         var links = new HubLinkService(new HubStore(_dir, NullLogger.Instance, protect: false), storeB,
-            new SystemStatusProbeAdapter(h => new PresenceReport(1, DeviceKind.Pc, "0.33.0", CpuPct: 7, PushHashes: h)),
+            new SystemStatusProbeAdapter(h => new PresenceReport(1, DeviceKind.Pc, "0.34.0", CpuPct: 7, PushHashes: h)),
             TimeProvider.System, NullLogger<HubLinkService>.Instance, allowLoopback: true, live: liveB);
         using var trayB = new TrayLiveService(liveB, storeB, TimeProvider.System, NullLogger<TrayLiveService>.Instance,
             links: links, allowLoopback: true);

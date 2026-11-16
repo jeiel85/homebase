@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace LocalOpsBot.Agent.Services.Mobile;
 
 /// <summary>
-/// The live views this PC's Tray opens on its device page (<c>live.get</c>, DECISIONS M-44). Each call
+/// The live views this PC's Tray opens on its device page (<c>live.get</c>, DECISIONS M-46). Each call
 /// renews a lease of <see cref="Lease"/>; a view nobody asked about for that long is closed, so leaving
 /// the page (or hiding the window) stops the sampling it caused (M-5).
 /// <list type="bullet">
@@ -30,7 +30,7 @@ public sealed class TrayLiveService : IDisposable
     public static readonly TimeSpan ShareStartTimeout = TimeSpan.FromSeconds(40);
 
     /// <summary>The first Agent version that shares its live view with a hub on request.</summary>
-    public static readonly Version ShareVersion = new(0, 33, 0);
+    public static readonly Version ShareVersion = new(0, 34, 0);
 
     private readonly LiveSnapshotHub _hub;
     private readonly IMobileDeviceStore _devices;
@@ -204,7 +204,7 @@ public sealed class TrayLiveService : IDisposable
 }
 
 /// <summary>
-/// One live view of a hub PC (M-44): the same WebSocket the phone app opens, authenticated with the token
+/// One live view of a hub PC (M-46): the same WebSocket the phone app opens, authenticated with the token
 /// this PC got when it linked (M-29), over the link's paths in order — LAN with the pinned certificate,
 /// Tailscale in plain HTTP, Cloudflare with public TLS. Reconnects every few seconds while it is wanted.
 /// </summary>

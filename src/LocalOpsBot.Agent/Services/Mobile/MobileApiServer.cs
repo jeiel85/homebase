@@ -355,7 +355,7 @@ public sealed class MobileApiServer : BackgroundService
             var maxBody = MiniHttp.MaxBodyBytes;
             if (r.Head.Path == LiveSharePath)
             {
-                // The one large body: only a paired device may make us read it (M-44).
+                // The one large body: only a paired device may make us read it (M-46).
                 if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
                 {
                     await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
@@ -550,7 +550,7 @@ public sealed class MobileApiServer : BackgroundService
                 if (_deviceHub is null) return (404, Error("not_found", "Not found."));
                 var device = _devices.Authenticate(head.BearerToken() ?? "");
                 if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
-                // Phones have nothing to share this way; only a linked PC is asked to (M-44).
+                // Phones have nothing to share this way; only a linked PC is asked to (M-46).
                 if (device.Kind != DeviceKind.Pc) return (403, Error("forbidden", "Only a linked PC shares its live view."));
                 LiveSnapshot? snapshot;
                 try { snapshot = JsonSerializer.Deserialize<LiveSnapshot>(body!, MobileProtocol.Json); }
@@ -653,7 +653,7 @@ public sealed class MobileApiServer : BackgroundService
         }
     }
 
-    /// <summary>Where a linked PC shares its live snapshots while this PC's Tray looks at it (M-44).</summary>
+    /// <summary>Where a linked PC shares its live snapshots while this PC's Tray looks at it (M-46).</summary>
     public const string LiveSharePath = "/api/v1/live-snapshot";
 
     /// <summary>WebSocket close reason (status 1008) when the device was revoked; the app treats it like 401.</summary>

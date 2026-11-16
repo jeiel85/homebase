@@ -81,7 +81,7 @@ public static class MobileServiceCollectionExtensions
                     sp.GetRequiredService<ILogger<HubFinder>>()),
                 live: sp.GetRequiredService<LiveSnapshotHub>());
         });
-        // The Tray's device page (M-44): this PC, linked PCs and PCs linked here, live while it looks.
+        // The Tray's device page (M-46): this PC, linked PCs and PCs linked here, live while it looks.
         services.AddSingleton(sp => new TrayLiveService(
             sp.GetRequiredService<LiveSnapshotHub>(), sp.GetRequiredService<IMobileDeviceStore>(),
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<TrayLiveService>>(),

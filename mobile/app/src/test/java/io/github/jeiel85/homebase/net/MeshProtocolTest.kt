@@ -32,6 +32,34 @@ class MeshProtocolTest {
         assertEquals(WorkItem.DOCUMENT, work[2].kind)
         assertEquals("homebase", work[3].detail)
         assertNull(work[4].detail)
+        assertNull(work[2].agent)
+    }
+
+    @Test
+    fun ai_sessions_carry_their_detail() {
+        val work = LiveSnapshot.parse(fixture("snapshot.v1.json")).workItems
+        val claude = work[0].agent!!
+        assertEquals(AgentInfo.WAITING, claude.status)
+        assertEquals("Bash 실행 승인", claude.waitingFor)
+        assertEquals("claude-opus-5-5", claude.model)
+        assertEquals(184503L, claude.contextTokens)
+        assertNull(claude.contextShare)
+        assertEquals("Bash", claude.lastTool)
+        assertEquals("plan", claude.mode)
+        assertEquals(56, claude.prNumber)
+        assertEquals("https://claude.ai/code/session_01KuE5FPMg4WPj9yciyPDgKg", claude.remoteUrl)
+        val codex = work[1].agent!!
+        assertEquals(AgentInfo.BUSY, codex.status)
+        assertEquals("high", codex.effort)
+        assertEquals(42000f / 258400f, codex.contextShare!!, 0.0001f)
+        assertEquals(51000L, codex.totalTokens)
+        assertNull(codex.remoteUrl)
+    }
+
+    @Test
+    fun only_claude_ai_links_are_opened() {
+        val o = JSONObject("""{"status":"busy","remoteUrl":"https://evil.example/claude.ai/"}""")
+        assertNull(AgentInfo.parse(o)!!.remoteUrl)
     }
 
     @Test
