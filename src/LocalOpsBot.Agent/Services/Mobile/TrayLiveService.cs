@@ -266,7 +266,7 @@ internal sealed class HubLiveSession : IDisposable
                     break; // it was reachable: start over from the first path after a pause
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
-                catch (WebSocketException ex) when (ex.Message.Contains("401", StringComparison.Ordinal))
+                catch (UnauthorizedAccessException)
                 {
                     rejected = true;
                     lastError = "rejected";
@@ -292,6 +292,7 @@ internal sealed class HubLiveSession : IDisposable
             ws.Options.Proxy = null;
             ws.Options.SetRequestHeader("Authorization", "Bearer " + _hub.Token);
             ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+            ws.Options.CollectHttpResponseDetails = true;
             if (ep.Tls && ep.CertSha256 is { Length: > 0 } pin)
             {
                 // Self-signed LAN certificate (M-15): accept exactly the pinned one, nothing else.
@@ -304,6 +305,12 @@ internal sealed class HubLiveSession : IDisposable
             connect.CancelAfter(ConnectTimeout);
             await ws.ConnectAsync(uri, connect.Token);
             return ws;
+        }
+        catch (WebSocketException) when (ws.HttpStatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            // The hub no longer knows this PC (unlinked there): say so instead of retrying every few seconds.
+            ws.Dispose();
+            throw new UnauthorizedAccessException("rejected");
         }
         catch
         {

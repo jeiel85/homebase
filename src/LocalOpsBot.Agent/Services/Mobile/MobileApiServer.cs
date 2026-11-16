@@ -557,6 +557,13 @@ public sealed class MobileApiServer : BackgroundService
                 catch (JsonException) { snapshot = null; }
                 if (snapshot is null || snapshot.Schema != MobileProtocol.Schema || snapshot.System is null)
                     return (400, Error("invalid_snapshot", "Invalid live snapshot."));
+                // Lists left out of the JSON come back null; the Tray reads them as empty.
+                snapshot = snapshot with
+                {
+                    Apps = snapshot.Apps ?? Array.Empty<AppEntry>(),
+                    Processes = snapshot.Processes ?? Array.Empty<ProcessEntry>(),
+                    ClaudeSessions = snapshot.ClaudeSessions ?? Array.Empty<ClaudeSession>(),
+                };
                 return (200, Json(new LiveShareResponse(MobileProtocol.Schema, _deviceHub.AcceptLive(device, snapshot))));
             }
 
