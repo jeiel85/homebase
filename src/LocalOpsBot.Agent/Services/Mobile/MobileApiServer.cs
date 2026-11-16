@@ -48,6 +48,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly LanAddressResolver _lanResolver;
     private readonly CloudflareTunnel? _tunnel;
     private readonly DeviceHub? _deviceHub;
+    private DeviceGroupService? _group;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -105,7 +106,11 @@ public sealed class MobileApiServer : BackgroundService
     }
 
     /// <summary>A fresh one-time pairing offer for the QR code, or <c>null</c> while no path is up.</summary>
-    public PairingOffer? CreateOffer()
+    /// <summary>
+    /// A pairing offer with a fresh one-time code. <paramref name="introduction"/>: a group introduction
+    /// (M-47), whose code does not replace the QR code on screen.
+    /// </summary>
+    public PairingOffer? CreateOffer(bool introduction = false)
     {
         IReadOnlyList<string> hosts;
         IReadOnlyList<MobileEndpoint> endpoints;
@@ -116,7 +121,7 @@ public sealed class MobileApiServer : BackgroundService
             endpoints = EndpointsLocked();
         }
         if (endpoints.Count == 0) return null;
-        var (code, expires) = _pairing.Begin();
+        var (code, expires) = introduction ? _pairing.BeginIntroduction() : _pairing.Begin();
         return new PairingOffer(1, _devices.PcId, Environment.MachineName, hosts, _options.Port, code, expires, endpoints);
     }
 
@@ -425,6 +430,10 @@ public sealed class MobileApiServer : BackgroundService
                     case PairOutcome.Paired:
                         _logger.LogInformation("Device paired: {Name} ({DeviceId}, {Kind}).", req.DeviceName, result.DeviceId,
                             DeviceKind.Normalize(req.Kind));
+                        // Paired again after being taken out of the group: it is back in (M-47).
+                        _group?.Readmit(DeviceKind.Normalize(req.Kind) == DeviceKind.Pc && req.PcId is { Length: > 0 } pcId
+                            ? GroupKeys.Pc(pcId)
+                            : GroupKeys.PhoneByName(req.DeviceName ?? "", req.DeviceModel));
                         return (200, Json(new PairResponse(MobileProtocol.Schema, result.DeviceId!, result.Token!,
                             _devices.PcId, Environment.MachineName)));
                     case PairOutcome.Expired:
@@ -545,6 +554,9 @@ public sealed class MobileApiServer : BackgroundService
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return (200, Json(_deviceHub.Inbox.Read(after, device.DeviceId))); }
             }
 
+            case (_, GroupPaths.Group or GroupPaths.Offer or GroupPaths.Join or GroupPaths.Introduce or GroupPaths.Remove):
+                return await GroupAsync(head, body, ct);
+
             case ("POST", LiveSharePath):
             {
                 if (_deviceHub is null) return (404, Error("not_found", "Not found."));
@@ -651,6 +663,56 @@ public sealed class MobileApiServer : BackgroundService
             }
             await receive;
         }
+    }
+
+    /// <summary>The device group (M-47); set once both exist (they need each other).</summary>
+    public void AttachGroup(DeviceGroupService group) => _group = group;
+
+    private async Task<(int, string)> GroupAsync(HttpRequestHead head, byte[]? body, CancellationToken ct)
+    {
+        var device = _devices.Authenticate(head.BearerToken() ?? "");
+        if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+        if (_group is null) return (404, Error("not_found", "Not found."));
+        switch (head.Method, head.Path)
+        {
+            case ("GET", GroupPaths.Group):
+                return (200, Json(_group.Describe()));
+            case ("POST", GroupPaths.Offer):
+                return CreateOffer(introduction: true) is { } own
+                    ? (200, Json(own))
+                    : (503, Error("not_listening", "This PC has no path to offer right now."));
+            case ("POST", GroupPaths.Join):
+            {
+                var req = Read<GroupJoinRequest>(body);
+                if (req?.Offer is not { Code.Length: > 0, Endpoints.Count: > 0 } offer) return (400, Error("bad_request", "Invalid offer."));
+                return (200, Json(await _group.JoinAsync(offer, ct)));
+            }
+            case ("POST", GroupPaths.Introduce):
+            {
+                var req = Read<GroupIntroduceRequest>(body);
+                if (req is not { PcId.Length: > 0 }) return (400, Error("bad_request", "Missing pcId."));
+                return await _group.IntroduceAsync(req.PcId, ct) is { } introduced
+                    ? (200, Json(introduced))
+                    : (404, Error("not_linked", "This PC cannot introduce that PC."));
+            }
+            case ("POST", GroupPaths.Remove):
+            {
+                // From a member PC that removed a device; applied here without passing it on (one hop).
+                if (device.Kind != DeviceKind.Pc) return (403, Error("forbidden", "Only a linked PC removes devices from the group."));
+                var req = Read<GroupRemoveRequest>(body);
+                if (!GroupKeys.IsValid(req?.Key)) return (400, Error("bad_request", "Invalid key."));
+                return (200, Json(new { schema = MobileProtocol.Schema, removed = await _group.RemoveAsync(req!.Key, fanOut: false, ct) }));
+            }
+            default:
+                return (405, Error("method_not_allowed", "Method not allowed."));
+        }
+    }
+
+    private static T? Read<T>(byte[]? body) where T : class
+    {
+        if (body is null) return null;
+        try { return JsonSerializer.Deserialize<T>(body, MobileProtocol.Json); }
+        catch (JsonException) { return null; }
     }
 
     /// <summary>Where a linked PC shares its live snapshots while this PC's Tray looks at it (M-46).</summary>

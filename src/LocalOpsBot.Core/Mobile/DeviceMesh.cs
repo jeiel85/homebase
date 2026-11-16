@@ -49,7 +49,8 @@ public sealed record PresenceReport(
     int? Signal = null,
     int? LinkMbps = null,
     bool? Forwarding = null,
-    bool? Dnd = null)
+    bool? Dnd = null,
+    string? PcId = null)
 {
     public const int MaxPushHashes = 32;
 
@@ -79,6 +80,8 @@ public sealed record PresenceReport(
         Thermal = Word(Thermal, 16),
         Signal = Signal is >= 0 and <= 4 ? Signal : null,
         LinkMbps = LinkMbps is > 0 and <= 100_000 ? LinkMbps : null,
+        // A linked PC names itself so the group knows it (M-47); phones leave it out.
+        PcId = Kind == DeviceKind.Pc ? Word(PcId, 64) : null,
     };
 
     private static string? Word(string? s, int max) => string.IsNullOrWhiteSpace(s) || s.Length > max ? null : s.Trim();
@@ -238,6 +241,12 @@ public sealed class DeviceStatusBoard
     public int Count
     {
         get { lock (_gate) return _reports.Count; }
+    }
+
+    /// <summary>The pcId a linked PC reported (M-47), or null.</summary>
+    public string? PcIdOf(string deviceId)
+    {
+        lock (_gate) return _reports.TryGetValue(deviceId, out var r) ? r.Report.PcId : null;
     }
 
     /// <summary>Push hashes the device said it delivers to itself (empty when unknown).</summary>

@@ -171,6 +171,34 @@ class HomebaseApi(
             }
         }
 
+    /** [pc]'s device group (DECISIONS M-47), or null for a PC older than v0.35.0. */
+    suspend fun group(pc: PcEntry): GroupInfo? =
+        authedCall(pc, "/api/v1/group", Request.Builder().get()) { code, text ->
+            when {
+                code in 200..299 -> GroupInfo.parse(text!!)
+                code == 404 || code == 405 -> null
+                else -> throw IOException(errorMessage(text) ?: "그룹 확인 실패 (HTTP $code)")
+            }
+        }
+
+    /** A fresh one-time pairing offer of [pc] (raw JSON), to hand to another of the group's PCs. */
+    suspend fun groupOffer(pc: PcEntry): String? =
+        authedCall(pc, "/api/v1/group/offer", Request.Builder().post("{\"schema\":1}".toRequestBody(JSON))) { code, text ->
+            if (code in 200..299) text else null
+        }
+
+    /** Asks [pc] to link to the PC behind [offerJson]. */
+    suspend fun groupJoin(pc: PcEntry, offerJson: String): Boolean =
+        authedCall(pc, "/api/v1/group/join", Request.Builder().post(groupJoinBody(offerJson).toRequestBody(JSON))) { code, text ->
+            code in 200..299 && JSONObject(text ?: "{}").let { it.optBoolean("linked") || it.optBoolean("already") }
+        }
+
+    /** A fresh offer of [pcId] (raw JSON) from [pc], which holds its token; null when it can't. */
+    suspend fun groupIntroduce(pc: PcEntry, pcId: String): String? =
+        authedCall(pc, "/api/v1/group/introduce", Request.Builder().post(groupIntroduceBody(pcId).toRequestBody(JSON))) { code, text ->
+            if (code in 200..299) text else null
+        }
+
     /** One authenticated call over [pc]'s paths in order; the first path that answers decides. */
     private suspend fun <T> authedCall(
         pc: PcEntry,

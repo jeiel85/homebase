@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.35.0 — Device group: connect once, connected everywhere
+
+### Added
+- **Connecting a device means joining its group.** Pair a phone with one PC or link two PCs, and within a few
+  minutes every PC and phone of the group is connected to every other — no more linking PCs pair by pair in
+  Settings (DECISIONS M-47).
+  - A phone paired with PC1 and PC2 links the two PCs to each other, so each one's dashboard shows the other live.
+  - A PC linked to one member links to the rest of the group's PCs, and links are made both ways.
+  - A phone joins the group's PCs it is missing and adds them to its PC list.
+- Members introduce each other with fresh one-time pairing codes carried over connections that are already
+  paired; an introduction never cancels a QR code shown on screen.
+
+### Changed
+- **Removing a device removes it from the whole group.** Revoking a phone or unlinking a PC in the tray's Settings
+  disconnects it on every PC of the group, and a PC that was off at the time follows when it comes back (kept for
+  a week). Pairing it again by hand brings it back. Deleting a PC in the phone app only stops that phone from
+  rejoining it.
+
 ## v0.34.0 — See your devices from the PC
 
 ### Added

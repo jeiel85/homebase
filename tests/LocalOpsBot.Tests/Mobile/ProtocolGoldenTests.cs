@@ -91,6 +91,11 @@ public class ProtocolGoldenTests
         },
         new[] { "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b" });
 
+    // The device group (M-47): HOME-PC holds WORK-PC's token, LAPTOP linked to it only one way so far.
+    public static GroupResponse SampleGroup() => new(MobileProtocol.Schema, "6f1c0d2e9b8a4c7d", "HOME-PC",
+        new[] { new GroupMember("3b9e1f5a7c2d4e60", "LAPTOP", false), new GroupMember("a1b2c3d4e5f60718", "WORK-PC", true) },
+        new[] { new GroupRemoval("pc:0fedcba987654321", new DateTimeOffset(2026, 11, 16, 12, 0, 0, TimeSpan.Zero)) });
+
     public static DeviceNotification SampleDeviceNotification() => new(MobileProtocol.Schema,
         "9c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5", "카카오톡", "엄마", "저녁 먹었니?", new DateTimeOffset(2026, 11, 14, 9, 31, 0, TimeSpan.Zero));
 
@@ -129,6 +134,7 @@ public class ProtocolGoldenTests
     [InlineData("presence.v1.json")]
     [InlineData("devices.v1.json")]
     [InlineData("device-notification.v1.json")]
+    [InlineData("group.v1.json")]
     public void Serialized_contract_matches_the_shared_fixture(string file)
     {
         object sample = file switch
@@ -141,6 +147,7 @@ public class ProtocolGoldenTests
             "presence.v1.json" => SamplePresence(),
             "devices.v1.json" => SampleDevices(),
             "device-notification.v1.json" => SampleDeviceNotification(),
+            "group.v1.json" => SampleGroup(),
             _ => new EndpointsResponse(MobileProtocol.Schema, SampleEndpoints()),
         };
         var actual = JsonSerializer.SerializeToNode(sample, sample.GetType(), MobileProtocol.Json)!;

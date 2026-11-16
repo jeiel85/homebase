@@ -63,6 +63,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.mesh.GroupSync
 import io.github.jeiel85.homebase.mesh.MeshSync
 import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import androidx.compose.runtime.collectAsState
@@ -140,7 +141,9 @@ fun PcListScreen(
                 }
             }.awaitAll()
         }
-        // A PC renamed in Windows: its card and the alias dialog show the new name.
+        // Pairing with one PC means joining its group (DECISIONS M-47): link the PCs and join the rest.
+        if (GroupSync.syncIfDue(context, api, store, force = forcePresence)) renamed = true
+        // A PC renamed in Windows (or one the group added): the list shows it.
         if (renamed) pcs = store.all()
     }
 
@@ -290,6 +293,7 @@ fun PcListScreen(
                     PushNotifier.forgetPc(context, pc.pcId)
                     PushHistory.forgetPc(context, pc.pcId)
                     MeshSync.forget(pc.pcId)
+                    GroupSync.decline(context, pc.pcId) // deleted here: the group doesn't bring it back
                     store.remove(pc.pcId)
                     PresenceScheduler.sync(context) // the last PC gone: stop the background report
                     pcs = store.all()

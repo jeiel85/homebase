@@ -53,6 +53,13 @@ public sealed class PairingService
     private string? _code;
     private DateTimeOffset _expiresAt;
 
+    /// <summary>
+    /// Group introduction codes (M-47): handed by one member to another so it can pair without a QR. Kept
+    /// apart from the QR code so an introduction never cancels a code on screen; each is single use.
+    /// </summary>
+    private readonly Dictionary<string, DateTimeOffset> _introductions = new(StringComparer.Ordinal);
+    public const int MaxIntroductions = 8;
+
     public PairingService(IMobileDeviceStore store, TimeProvider time)
     {
         _store = store;
@@ -69,6 +76,21 @@ public sealed class PairingService
         }
     }
 
+    /// <summary>A one-time code for a group introduction (M-47); the QR code stays valid.</summary>
+    public (string Code, DateTimeOffset ExpiresAt) BeginIntroduction()
+    {
+        lock (_gate)
+        {
+            var now = _time.GetUtcNow();
+            foreach (var old in _introductions.Where(kv => kv.Value < now).Select(kv => kv.Key).ToList()) _introductions.Remove(old);
+            while (_introductions.Count >= MaxIntroductions) _introductions.Remove(_introductions.MinBy(kv => kv.Value).Key);
+            var code = Base64Url(RandomNumberGenerator.GetBytes(16));
+            var expires = now + CodeLifetime;
+            _introductions[code] = expires;
+            return (code, expires);
+        }
+    }
+
     public PairResult TryPair(string? code, string? deviceName, string? deviceModel, string? kind = null)
     {
         lock (_gate)
@@ -76,6 +98,14 @@ public sealed class PairingService
             var now = _time.GetUtcNow();
             while (_failures.Count > 0 && now - _failures.Peek() > FailureWindow) _failures.Dequeue();
             if (_failures.Count >= MaxFailures) return new PairResult(PairOutcome.Locked);
+
+            if (!string.IsNullOrEmpty(code) && _introductions.Remove(code, out var introExpires))
+            {
+                if (now > introExpires) return new PairResult(PairOutcome.Expired);
+                var introToken = Base64Url(RandomNumberGenerator.GetBytes(32));
+                var introduced = _store.Add(CleanName(deviceName, kind), CleanModel(deviceModel), HashToken(introToken), DeviceKind.Normalize(kind));
+                return new PairResult(PairOutcome.Paired, introduced.DeviceId, introToken);
+            }
 
             if (_code is null || string.IsNullOrEmpty(code) ||
                 !CryptographicOperations.FixedTimeEquals(
