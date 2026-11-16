@@ -82,6 +82,27 @@ public class AgentSessionTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    [Fact]
+    public void Piled_up_files_of_ended_sessions_do_not_crowd_out_a_live_one()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "hb-claude-pile-" + Guid.NewGuid().ToString("N"))).FullName;
+        try
+        {
+            var old = DateTime.UtcNow.AddDays(-30);
+            for (var i = 1; i <= ClaudeStatusReader.MaxFiles + 50; i++)
+            {
+                var f = Path.Combine(dir, $"{i}.json");
+                File.WriteAllText(f, $$"""{"pid":{{i}},"sessionId":"dead{{i}}","status":"busy"}""");
+                File.SetLastWriteTimeUtc(f, old.AddMinutes(i));
+            }
+            // Sorts after "1.json".."250.json" by name, i.e. past the limit in directory order.
+            File.WriteAllText(Path.Combine(dir, "99999.json"), StatusFile.Replace("\"pid\":420", "\"pid\":99999"));
+            var list = new ClaudeStatusReader(dir, (pid, _) => pid == 99999).Read();
+            Assert.Equal("Phonebox 기능 정리", Assert.Single(list).Name);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     // ---- Claude Code transcripts ---------------------------------------------------------------
 
     private static string Assistant(string model, int input, int cacheWrite, int cacheRead, string? tool, bool sidechain = false) =>
@@ -230,6 +251,44 @@ public class AgentSessionTests
             var second = Assert.Single(reader.ReadActive(DateTime.UtcNow)).Agent!;
             Assert.Equal(AgentStatus.Idle, second.Status);
             Assert.Equal("gpt-5.5", second.Model);
+        }
+        finally { Directory.Delete(home, recursive: true); }
+    }
+
+    [Fact]
+    public void A_codex_turn_running_a_long_quiet_command_stays_listed_until_it_ends()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "hb-codex-q-" + Guid.NewGuid().ToString("N"));
+        var day = Directory.CreateDirectory(Path.Combine(home, "sessions", "2026", "11", "16")).FullName;
+        var running = Path.Combine(day, "rollout-2026-11-16T14-00-00-01a1e375-84c9-7741-a7f3-120940bdace8.jsonl");
+        var finished = Path.Combine(day, "rollout-2026-11-16T13-00-00-01a1e375-0000-7741-a7f3-120940bdace8.jsonl");
+        try
+        {
+            File.WriteAllText(running, """{"timestamp":"2026-11-16T14:00:03.000Z","type":"event_msg","payload":{"type":"task_started"}}""" + "\n");
+            File.WriteAllText(finished, """{"timestamp":"2026-11-16T13:00:03.000Z","type":"event_msg","payload":{"type":"task_complete"}}""" + "\n");
+            var reader = new CodexSessionReader(home);
+            var now = DateTime.UtcNow;
+            Assert.Equal(2, reader.ReadActive(now).Count);
+
+            // 40 minutes later neither file has changed: the finished session drops, the running turn stays.
+            File.SetLastWriteTimeUtc(running, now);
+            File.SetLastWriteTimeUtc(finished, now);
+            var later = now.AddMinutes(40);
+            var still = Assert.Single(reader.ReadActive(later));
+            Assert.Equal(AgentStatus.Busy, still.Agent!.Status);
+
+            File.AppendAllText(running, """{"timestamp":"2026-11-16T14:41:00.000Z","type":"event_msg","payload":{"type":"task_complete"}}""" + "\n");
+            File.SetLastWriteTimeUtc(running, later);
+            Assert.Equal(AgentStatus.Idle, Assert.Single(reader.ReadActive(later)).Agent!.Status);
+
+            // Running but silent past the limit: Codex is taken to be gone.
+            var gone = Path.Combine(day, "rollout-2026-11-16T15-00-00-01a1e375-1111-7741-a7f3-120940bdace8.jsonl");
+            File.WriteAllText(gone, """{"type":"event_msg","payload":{"type":"task_started"}}""" + "\n");
+            File.SetLastWriteTimeUtc(gone, later);
+            var fresh = new CodexSessionReader(home);
+            Assert.Contains(fresh.ReadActive(later), i => i.Agent!.Status == AgentStatus.Busy);
+            Assert.DoesNotContain(fresh.ReadActive(later + CodexSessionReader.RunningQuietLimit + TimeSpan.FromMinutes(1)),
+                i => i.Agent!.Status == AgentStatus.Busy);
         }
         finally { Directory.Delete(home, recursive: true); }
     }

@@ -45,7 +45,13 @@ public sealed class ClaudeStatusReader
         var list = new List<ClaudeLiveSession>();
         try
         {
-            foreach (var file in Directory.EnumerateFiles(_dir, "*.json").Take(MaxFiles))
+            // Newest first: a running session rewrites its file on every status change, while files
+            // of ended sessions only age, so however many of those pile up they fall past the limit.
+            var files = new DirectoryInfo(_dir).EnumerateFiles("*.json")
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .Take(MaxFiles)
+                .Select(f => f.FullName);
+            foreach (var file in files)
             {
                 string text;
                 try

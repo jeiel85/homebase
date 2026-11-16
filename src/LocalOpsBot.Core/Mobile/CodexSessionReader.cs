@@ -22,6 +22,9 @@ public sealed class CodexSessionReader
     /// <summary>How often the dated folders are searched for rollouts written lately; a new session appears within it.</summary>
     public static readonly TimeSpan DiscoveryInterval = TimeSpan.FromSeconds(30);
 
+    /// <summary>How long a rollout whose turn is still running may stay unwritten and listed; past it Codex is assumed gone.</summary>
+    public static readonly TimeSpan RunningQuietLimit = TimeSpan.FromHours(6);
+
     private readonly string _home;
     private readonly Dictionary<string, FileState> _files = new();
     private string[] _candidates = Array.Empty<string>();
@@ -73,7 +76,11 @@ public sealed class CodexSessionReader
                 var file = new FileInfo(path);
                 if (!file.Exists) continue;
                 var write = file.LastWriteTimeUtc;
-                if (nowUtc - write > ClaudeSessionReader.ActiveWindow) continue;
+                // A turn running a long, quiet command writes nothing for a while; it stays listed
+                // (and watched) so its end is still seen — that is the turn worth an alert.
+                var running = _files.TryGetValue(file.FullName, out var known) && known.Details.Running;
+                var limit = running ? RunningQuietLimit : ClaudeSessionReader.ActiveWindow;
+                if (nowUtc - write > limit) continue;
                 seen.Add(file.FullName);
                 if (!_files.TryGetValue(file.FullName, out var state))
                     _files[file.FullName] = state = new FileState();
