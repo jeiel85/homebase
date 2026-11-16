@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Homebase 개인정보처리방침</title>
+  <meta name="description" content="Homebase Android 앱과 Windows PC 프로그램이 어떤 정보를 어디로 보내고 얼마나 보관하는지.">
+  <style>
+    :root { --bg: #0a0a1a; --card: #0f1a2e; --line: #1e2c47; --text: #e6e9ef; --muted: #8f9db0; --accent: #2b9af3; --amber: #ecab37; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+    main { max-width: 760px; margin: 0 auto; padding: 48px 20px 64px; }
+    h1 { font-size: 1.9rem; margin-bottom: 4px; }
+    .meta { color: var(--muted); font-size: .9rem; margin-bottom: 28px; }
+    h2 { font-size: 1.2rem; margin: 36px 0 12px; color: var(--amber); }
+    p, li { color: var(--text); }
+    p + p { margin-top: 10px; }
+    ul { padding-left: 1.2rem; margin: 8px 0; }
+    li + li { margin-top: 6px; }
+    .note { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .93rem; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; }
+    a { color: var(--accent); }
+    code { font-family: 'JetBrains Mono', Consolas, monospace; font-size: .88em; }
+    @media (max-width: 560px) { table, thead, tbody, tr, th, td { display: block; } thead { display: none; } td { border: none; padding: 2px 0; } tr { border-bottom: 1px solid var(--line); padding: 10px 0; } td:first-child { font-weight: 600; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Homebase 개인정보처리방침</h1>
+  <p class="meta">시행일 2026년 11월 16일 · 대상: Homebase Android 앱(<code>io.github.jeiel85.homebase</code>)과 Homebase Windows PC 프로그램</p>
+
+  <div class="note">
+    <p><b>요약</b> — Homebase는 내가 직접 연결한 내 PC와 휴대폰끼리만 통신합니다. 개발자는 어떤 정보도 받지 않으며, 개발자가 운영하는 서버도 없습니다. 광고·분석·사용 기록 수집이 없습니다.</p>
+  </div>
+
+  <h2>1. 누가 무엇을 처리하나요</h2>
+  <p>Homebase는 개인이 만든 오픈소스(MIT) 프로그램입니다. 앱이 다루는 정보는 모두 사용자의 휴대폰과 사용자가 연결한 사용자의 PC에만 저장됩니다. 개발자는 이 정보를 수집하거나 열람하거나 제3자에게 판매·제공하지 않습니다.</p>
+
+  <h2>2. 앱이 연결한 PC로 보내는 정보</h2>
+  <p>아래 정보는 사용자가 QR 코드로 직접 연결한 PC에만 갑니다. 같은 Wi-Fi에서는 PC 인증서를 고정한 TLS로, Tailscale에서는 WireGuard로, Cloudflare Tunnel에서는 HTTPS로 암호화되어 전송됩니다.</p>
+  <table>
+    <thead><tr><th>정보</th><th>언제</th><th>왜</th></tr></thead>
+    <tbody>
+      <tr><td>휴대폰 이름과 제조사·모델명, PC가 발급한 기기 ID·인증 토큰</td><td>PC를 연결할 때, 이후 모든 요청</td><td>PC의 연결된 기기 목록에 표시하고, 연결된 휴대폰만 접근하도록 인증하기 위해</td></tr>
+      <tr><td>배터리 잔량, 충전 여부, 네트워크 종류(Wi-Fi·모바일), 앱 버전</td><td>앱을 열 때와 약 30분마다</td><td>연결된 다른 PC·휴대폰에 이 휴대폰의 상태를 보여 주기 위해</td></tr>
+      <tr><td>푸시 구독 정보(배포자 앱의 수신 주소와 암호화 공개키), 받지 않기로 한 알림 종류</td><td>푸시 알림을 켤 때</td><td>PC가 이 휴대폰으로 암호화된 알림을 보내기 위해</td></tr>
+      <tr><td>(선택) 이 휴대폰에 뜬 알림의 앱 이름·제목·내용</td><td>설정에서 "이 휴대폰 알림을 PC로 보내기"를 켜고 Android 알림 접근을 허용한 경우에만</td><td>연결한 PC와 다른 휴대폰에 그 알림을 보여 주기 위해</td></tr>
+    </tbody>
+  </table>
+  <p>알림 보내기는 기본으로 꺼져 있습니다. 켜더라도 인증 앱·비밀번호 관리자 같은 민감한 앱은 기본으로 제외되고, 원하는 앱을 더 뺄 수 있습니다. PC는 비밀번호·인증 코드처럼 보이는 내용을 가린 뒤 표시합니다.</p>
+
+  <h2>3. 앱이 받는 정보</h2>
+  <p>앱은 연결한 PC에서 CPU·메모리·디스크·네트워크 사용량, 열린 창 제목과 프로그램별 사용량, 작업 중인 문서·프로젝트 이름, 감시 경보와 Windows 알림을 받아 화면에 보여 줍니다. 이 정보는 화면을 보는 동안만 쓰이며, 받은 푸시 알림만 아래의 알림 센터에 남습니다.</p>
+
+  <h2>4. 휴대폰에만 저장되는 정보</h2>
+  <ul>
+    <li><b>연결한 PC 목록</b>(PC 이름, 연결 경로, 인증 토큰) — 인증 토큰은 Android 키 저장소의 키로 암호화해 보관합니다. 앱에서 PC를 지우면 휴대폰에서 삭제됩니다.</li>
+    <li><b>알림 센터</b> — 받은 푸시 알림을 최근 30일, 최대 500건까지 암호화해 보관합니다. 휴지통 버튼으로 모두 지울 수 있고, PC를 지우면 그 PC의 알림도 지워집니다.</li>
+    <li><b>카메라</b> — PC 화면의 QR 코드를 읽는 데만 씁니다. 영상은 휴대폰 안에서만 처리되고 저장·전송하지 않습니다.</li>
+  </ul>
+
+  <h2>5. 거치는 외부 서비스</h2>
+  <ul>
+    <li><b>푸시 배포자</b>(예: <a href="https://ntfy.sh/">ntfy</a>) — 사용자가 설치한 UnifiedPush 배포자 앱과 그 서버가 PC의 알림을 휴대폰으로 전달합니다. 내용은 PC가 휴대폰의 키로 종단 암호화(RFC 8291)하므로 중계 서버는 내용을 읽을 수 없고, 보낸 시각·크기 같은 전송 정보만 봅니다. 해당 서비스의 개인정보처리방침이 적용됩니다.</li>
+    <li><b>Tailscale, Cloudflare</b> — 사용자가 PC에서 이 연결 방법을 켠 경우에만 연결이 그 서비스를 거칩니다. Cloudflare Tunnel은 Cloudflare 엣지에서 HTTPS를 처리합니다. 각 서비스의 개인정보처리방침이 적용됩니다.</li>
+    <li><b>Google Play</b> — 앱 설치·업데이트에 Google Play의 정책이 적용됩니다. 앱 자체는 Google 서비스에 정보를 보내지 않습니다.</li>
+  </ul>
+
+  <h2>6. PC 프로그램이 보관하는 정보</h2>
+  <p>PC 프로그램은 사용자의 PC 안에 연결된 기기 목록, 경보·명령 기록, 다른 기기에서 온 알림(최근 30일, 최대 500건)을 보관합니다. 이 폴더는 관리자와 시스템만 읽을 수 있습니다. 휴대폰이 보낸 상태 정보는 PC 메모리에만 있고 저장하지 않습니다. PC 프로그램의 트레이 설정에서 연결된 휴대폰을 해제하면 그 휴대폰의 연결 정보와 푸시 구독이 지워집니다. 사용자가 PC 프로그램에서 Telegram 봇을 설정한 경우 경보 일부가 Telegram으로 전송될 수 있으며, Telegram의 개인정보처리방침이 적용됩니다.</p>
+
+  <h2>7. 삭제와 선택</h2>
+  <ul>
+    <li>앱에서 PC를 지우면 그 PC와의 연결 정보와 알림 기록이 휴대폰에서 지워지고, 앱이 그 PC에 푸시 구독 해지를 한 번 요청합니다. 이 요청은 그때 PC에 연결되어야 처리되며, PC가 꺼져 있거나 닿지 않으면 PC에 구독이 남아 암호화된 알림이 계속 올 수 있습니다(앱은 지운 PC의 알림을 표시하지 않습니다). 이 경우와 PC의 기기 목록에서도 지우려면 PC 프로그램의 설정 → 휴대폰 탭에서 이 휴대폰을 해제합니다. 해제하면 PC에서 그 휴대폰의 연결 정보와 푸시 구독이 함께 지워집니다.</li>
+    <li>앱을 삭제하면 휴대폰에 저장된 모든 정보가 지워집니다.</li>
+    <li>푸시 알림, 받을 알림 종류, 이 휴대폰 알림 보내기는 앱 설정에서 언제든 끄거나 바꿀 수 있습니다.</li>
+  </ul>
+
+  <h2>8. 아동</h2>
+  <p>Homebase는 PC를 관리하는 성인을 위한 도구이며 만 13세 미만 아동을 대상으로 하지 않습니다.</p>
+
+  <h2>9. 변경</h2>
+  <p>이 방침이 바뀌면 이 페이지를 고치고 시행일을 갱신합니다. 변경 내역은 <a href="https://github.com/jeiel85/homebase/commits/main/docs/privacy/index.html">GitHub 기록</a>에서 볼 수 있습니다.</p>
+
+  <h2>10. 문의</h2>
+  <p>이메일 <a href="mailto:jeiel85@gmail.com">jeiel85@gmail.com</a> · <a href="https://github.com/jeiel85/homebase/issues">GitHub 이슈</a></p>
+</main>
+</body>
+</html>
