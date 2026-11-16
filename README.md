@@ -10,8 +10,9 @@
 </p>
 
 <p align="center">
-  <b>Homebase</b> &mdash; 개인 Windows PC 상태, 부팅, 장애, 알림을 Telegram으로 확인하고 알림받는 개인용 모니터링 봇입니다.<br>
-  인터넷에 포트를 열지 않습니다. Telegram은 outbound HTTPS, 휴대폰 앱은 같은 LAN(TLS)·Tailscale 망·Cloudflare Tunnel(outbound) 중 되는 경로로 연결합니다.
+  <b>Homebase</b> &mdash; 내 Windows PC 여러 대를 Android 앱에서 실시간으로 보고, 경보·부팅·Windows 알림을 종단 암호화 푸시로 받는 개인용 모니터링입니다.<br>
+  PC·휴대폰끼리 서로의 상태를 보고 알림을 주고받습니다. Telegram 봇은 전환 기간의 대체 채널입니다.<br>
+  인터넷에 포트를 열지 않습니다. 휴대폰 앱은 같은 LAN(TLS)·Tailscale 망·Cloudflare Tunnel(outbound) 중 되는 경로로 연결하고, 푸시·Telegram은 outbound HTTPS입니다.
 </p>
 
 <p align="center">
@@ -163,39 +164,27 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
 ## 🏗️ 아키텍처
 
 ```
-┌─────────────────────────────────────────────┐
-│ Telegram 모바일/데스크톱                     │
-└───────────────────┬─────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│ Telegram Bot API (outbound HTTPS, polling)   │
-└───────────────────┬─────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│ 로컬 Windows PC                              │
-│                                               │
-│  ┌─────────────────────────────────────────┐ │
-│  │ LocalOpsBot.Agent (Windows 서비스)       │ │
-│  │ • 부팅 알림                             │ │
-│  │ • 상태 수집기                           │ │
-│  │ • 이벤트 로그 감시                      │ │
-│  │ • 프로세스/서비스 감시                  │ │
-│  │ • Telegram 폴링                         │ │
-│  └───────────────────┬─────────────────────┘ │
-│                      │ Named Pipe IPC        │
-│  ┌───────────────────▼─────────────────────┐ │
-│  │ LocalOpsBot.Tray (사용자 세션 앱)        │ │
-│  │ • 토스트 알림 리스너                    │ │
-│  │ • 알림 필터/마스킹                      │ │
-│  │ • 로컬 설정 UI                          │ │
-│  └─────────────────────────────────────────┘ │
-│                                               │
-│  ┌─────────────────────────────────────────┐ │
-│  │ LocalOpsBot.Data (SQLite)               │ │
-│  └─────────────────────────────────────────┘ │
-└─────────────────────────────────────────────┘
+┌─ Homebase 앱 (Android)
+├─ 다른 PC (Homebase)
+│     LAN(TLS) · Tailscale · Cloudflare Tunnel(outbound) — PC가 포트를 열지 않음
+▼
+로컬 Windows PC
+├─ LocalOpsBot.Agent (Windows 서비스)
+│     • 상태 수집 · 프로세스/서비스/이벤트 감시
+│     • 모바일 API · 페어링 · 기기 허브(M-27)
+│     • 알림 중계 · 암호화 푸시 전송
+│     • Telegram 폴링(대체 채널)
+│        ▲
+│        │ Named Pipe IPC
+│        ▼
+├─ LocalOpsBot.Tray (사용자 세션 앱)
+│     • Windows 알림 수집 · 필터/마스킹
+│     • 대시보드 · 설정 · 알림 센터
+├─ LocalOpsBot.Data (SQLite)
+│
+└─ outbound HTTPS만
+      → UnifiedPush(ntfy) → 휴대폰 알림
+      → Telegram Bot API (대체 채널)
 ```
 
 ## 🛠️ 기술 스택
@@ -205,6 +194,9 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
   <img src="https://img.shields.io/badge/C%23-239120?logo=csharp&logoColor=white" alt="C#">
   <img src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/WPF-0C54C2?logo=windows&logoColor=white" alt="WPF">
+  <img src="https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin">
+  <img src="https://img.shields.io/badge/Jetpack_Compose-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose">
+  <img src="https://img.shields.io/badge/UnifiedPush-1E88E5" alt="UnifiedPush">
   <img src="https://img.shields.io/badge/Telegram_Bot_API-26A5E4?logo=telegram&logoColor=white" alt="Telegram Bot API">
   <img src="https://img.shields.io/badge/xUnit-5E5E5E?logo=xunit&logoColor=white" alt="xUnit">
   <img src="https://img.shields.io/badge/Serilog-2C3E50?logo=serilog&logoColor=white" alt="Serilog">
@@ -217,7 +209,9 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
 | IPC | Named Pipes (length-prefixed JSON) |
 | 데이터베이스 | SQLite via Microsoft.Data.Sqlite |
 | UI (트레이) | WPF |
-| 봇 프로토콜 | Telegram Bot API (long polling) |
+| 휴대폰 앱 | Kotlin · Jetpack Compose (Android 8.0+, target API 36) |
+| 푸시 | UnifiedPush + RFC 8291 메시지 암호화 (의존성 없이 플랫폼 암호) |
+| 봇 프로토콜 | Telegram Bot API (long polling, 대체 채널) |
 | DI/호스팅 | Microsoft.Extensions.Hosting |
 | 로깅 | Serilog |
 | 테스팅 | xUnit |
@@ -225,19 +219,20 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
 ## 📁 프로젝트 구조
 
 ```
-LocalOpsBot/
+homebase/
 ├─ src/
 │  ├─ LocalOpsBot.Core/           # 도메인 모델, 인터페이스
-│  ├─ LocalOpsBot.Infrastructure/ # Telegram, Windows 수집기
+│  ├─ LocalOpsBot.Protocol/       # 기기 간 메시지 형식(Device Hub)
+│  ├─ LocalOpsBot.Infrastructure/ # Telegram, 푸시, Windows 수집기
 │  ├─ LocalOpsBot.Data/           # SQLite 영속성
-│  ├─ LocalOpsBot.Agent/          # Windows 서비스 진입점
+│  ├─ LocalOpsBot.Agent/          # Windows 서비스 진입점, 모바일 API
 │  └─ LocalOpsBot.Tray/           # WPF 트레이 앱
-├─ mobile/                        # Android 앱 (Kotlin/Compose)
+├─ mobile/                        # Android 앱 (Kotlin/Compose, github·play 채널)
 ├─ tests/
 │  └─ LocalOpsBot.Tests/          # 단위 및 통합 테스트
 ├─ installer/                     # PowerShell 스크립트
 ├─ config/                        # 설정 예시
-├─ docs/                          # GitHub Pages 랜딩 페이지
+├─ docs/                          # GitHub Pages 랜딩·페어링 안내 페이지, 설계 문서
 └─ assets/                        # 이미지, 배너
 ```
 
