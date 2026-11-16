@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.33.0 — See your devices from the PC
+
+### Added
+- **The tray dashboard is now a device hub.** Click the tray icon: every device is listed on the left — this PC,
+  the PCs linked either way, the phones (and the devices your linked PCs see) — and the one you pick fills the
+  right side (DECISIONS M-44).
+  - **PCs, live, at the phone app's level**: CPU, memory and main-GPU gauges with the last 60 seconds, disk I/O,
+    network in/out, ping and temperature, drives, every GPU's VRAM, temperature, power and clock, and the apps,
+    processes and work (AI sessions, editors, documents, browser tabs) tabs, sortable by CPU, memory or name.
+    App rows open to show their other windows and child processes.
+  - Both PCs of a link see each other, whichever side made the link: the PC you linked to opens its live view
+    for you, and a PC that linked to you shares its live view while you look at it (it needs v0.33.0 too; an
+    older one shows its last CPU, memory and uptime with a note). Views close 10 seconds after you hide the
+    window, so nothing is collected meanwhile.
+  - **Phones**: their last report — battery level, temperature, health, charger and time to full, memory and
+    storage, network, signal bars and Wi-Fi speed, Android version, power saving, heat, Do Not Disturb, whether
+    the phone forwards its notifications — and, from this PC, whether it takes this PC's push (and which kinds
+    it turned off) and when it was paired.
+  - This PC's page shows notification forwarding, phone connection and Telegram as chips (click for Settings)
+    and the Task Manager autostart warning. Without the phone connection it falls back to CPU, memory, drives
+    and network read by the tray itself.
+- App: phones report memory, storage, uptime, Android version, battery temperature, health, charger and time to
+  full, power saving, heat, signal, Wi-Fi link speed, notification forwarding and Do Not Disturb to their PCs.
+  Nothing changes on the phone's screens.
+
+### Changed
+- The dashboard window is resizable (default 980×680) and remembers its size and the device you last looked at.
+  It uses the phone app's light console look and Segoe UI with Malgun Gothic for Korean.
+- The tray's "viewing this PC" indicator now says "another device" (a linked PC can watch too), and this PC's
+  own dashboard does not light it.
+- Phones send their state early only when something you would notice changes (battery, charging, network,
+  charger, power saving, heat, forwarding, Do Not Disturb, signal); the rest rides along once a minute.
+
 ## v0.32.0 — Hardening
 
 Collected fixes from the hardening issues opened since v0.13.0 and bugs #2 and #5 (DECISIONS M-39–M-43).

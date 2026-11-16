@@ -40,6 +40,12 @@ public sealed class HubClient : IDisposable
 
     public HubClient(bool allowLoopback = false) => _allowLoopback = allowLoopback;
 
+    /// <summary>The path that answered last, tried first next time.</summary>
+    public MobileEndpoint? Preferred
+    {
+        get { lock (_gate) return _preferred; }
+    }
+
     public Task<HubReply> GetAsync(IReadOnlyList<MobileEndpoint> endpoints, string path, string? token, TimeSpan timeout, CancellationToken ct) =>
         SendAsync(endpoints, HttpMethod.Get, path, null, token, timeout, ct);
 
@@ -116,7 +122,7 @@ public sealed class HubClient : IDisposable
         }
     }
 
-    private static string MobileTlsPin(X509Certificate cert) =>
+    internal static string MobileTlsPin(X509Certificate cert) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cert.GetRawCertData())).ToLowerInvariant();
 
     public void Dispose()

@@ -1,7 +1,9 @@
 package io.github.jeiel85.homebase.mesh
 
 import io.github.jeiel85.homebase.net.PresenceReport
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,6 +28,25 @@ class PresenceThrottleTest {
         assertTrue(MeshSync.presenceDue(report, 0, report.copy(battery = 79), 15_000))
         assertTrue(MeshSync.presenceDue(report, 0, report.copy(charging = true), 15_000))
         assertTrue(MeshSync.presenceDue(report, 0, report.copy(network = "cellular"), 15_000))
+    }
+
+    @Test
+    fun readings_that_move_all_the_time_wait_for_the_minute() {
+        val full = report.copy(memUsedBytes = 1_000, uptimeSec = 100, batteryTempC = 30.0, storageUsedBytes = 5)
+        val later = full.copy(memUsedBytes = 2_000, uptimeSec = 115, batteryTempC = 30.4, storageUsedBytes = 6)
+        assertFalse(MeshSync.presenceDue(full, 0, later, 15_000))
+        assertTrue(MeshSync.presenceDue(full, 0, later.copy(powerSave = true), 15_000))
+        assertTrue(MeshSync.presenceDue(full, 0, later.copy(plug = "usb"), 15_000))
+    }
+
+    @Test
+    fun signal_bars_follow_the_network_kind() {
+        assertEquals(4, MeshSync.signalBars(-50, wifi = true))
+        assertEquals(2, MeshSync.signalBars(-70, wifi = true))
+        assertEquals(0, MeshSync.signalBars(-95, wifi = true))
+        assertEquals(3, MeshSync.signalBars(-90, wifi = false))
+        assertNull(MeshSync.signalBars(Int.MIN_VALUE, wifi = false))
+        assertNull(MeshSync.signalBars(0, wifi = true))
     }
 
     @Test

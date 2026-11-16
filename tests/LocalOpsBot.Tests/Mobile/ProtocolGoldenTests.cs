@@ -63,18 +63,24 @@ public class ProtocolGoldenTests
             new[] { new DiskUsage("C:", 510_891_388_928, 327_434_858_496), new DiskUsage("D:", 1_447_034_875_904, 1_400_076_177_408) },
             new PingStats("1.1.1.1", LastMs: 8, AvgMs: 10.3, LossPct: 0, Samples: 30)));
 
-    public static PresenceReport SamplePresence() => new(MobileProtocol.Schema, DeviceKind.Phone, "0.22.0",
-        Battery: 76, Charging: false, Network: "wifi");
+    // A phone's report (M-27) with the v0.33.0 display fields (M-44); the Kotlin test builds the same one.
+    public static PresenceReport SamplePresence() => new(MobileProtocol.Schema, DeviceKind.Phone, "0.33.0",
+        Battery: 76, Charging: true, Network: "wifi", MemUsedBytes: 5_368_709_120, MemTotalBytes: 11_811_160_064, UptimeSec: 259_200,
+        Os: "Android 15", StorageUsedBytes: 143_881_404_416, StorageTotalBytes: 255_550_554_112, BatteryTempC: 31.5,
+        BatteryHealth: "good", Plug: "usb", ChargeFullSec: 2_100, PowerSave: false, Thermal: "none", Signal: 4, LinkMbps: 866,
+        Forwarding: true, Dnd: false);
 
     public static DevicesResponse SampleDevices() => new(MobileProtocol.Schema,
         new HubEntry("6f1c0d2e9b8a4c7d", "HOME-PC", "0.22.0",
-            new DeviceStatus("0.22.0", CpuPct: 23.4, MemUsedBytes: 12_884_901_888, MemTotalBytes: 34_359_738_368, UptimeSec: 93_784)),
+            new DeviceStatus("0.22.0", CpuPct: 23.4, MemUsedBytes: 12_884_901_888, MemTotalBytes: 34_359_738_368, UptimeSec: 93_784,
+                Os: "Windows 11 Pro 24H2")),
         new[]
         {
             new DeviceEntry("a1b2c3d4e5f6", "WORK-PC", DeviceKind.Pc, "Windows", new DateTimeOffset(2026, 11, 14, 9, 30, 0, TimeSpan.Zero), true,
-                new DeviceStatus("0.22.0", CpuPct: 8, MemUsedBytes: 8_589_934_592, MemTotalBytes: 17_179_869_184, UptimeSec: 7200)),
+                new DeviceStatus("0.22.0", CpuPct: 8, MemUsedBytes: 8_589_934_592, MemTotalBytes: 17_179_869_184, UptimeSec: 7200,
+                    Os: "Windows 11 Home 24H2")),
             new DeviceEntry("0f9e8d7c6b5a", "Galaxy S24", DeviceKind.Phone, "SM-S921N", new DateTimeOffset(2026, 11, 14, 9, 29, 0, TimeSpan.Zero), true,
-                new DeviceStatus("0.22.0", Battery: 76, Charging: false, Network: "wifi")),
+                SamplePresence().ToStatus()),
             new DeviceEntry("1234567890ab", "Galaxy Tab", DeviceKind.Phone, "SM-X710", new DateTimeOffset(2026, 11, 13, 22, 0, 0, TimeSpan.Zero), false, null),
         },
         new[] { "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b" });

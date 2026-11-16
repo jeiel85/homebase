@@ -1,179 +1,428 @@
+using System.IO;
 using System.ServiceProcess;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Core.Monitoring;
 using LocalOpsBot.Infrastructure.Windows;
+using LocalOpsBot.Tray.Dashboard;
 using LocalOpsBot.Tray.Services;
 using LocalOpsBot.Tray.Services.Mobile;
+using static LocalOpsBot.Tray.Dashboard.Hb;
 
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// The tray popup: what this PC is doing right now and whether its connections are set up.
-/// Read-only by design — configuration lives in <see cref="SettingsWindow"/>, opened from the
-/// button at the bottom (<see cref="OpenSettingsRequested"/>) or the tray menu.
+/// The tray popup, a device hub (DECISIONS M-44): every device on the left — this PC, the PCs linked
+/// either way, the phones — and the selected one on the right at the level the phone app shows a PC.
+/// PCs are live (this PC from the Agent's own sampler, a linked PC over its live view); phones show
+/// their last report. Read-only by design — configuration lives in <see cref="SettingsWindow"/>.
+/// Nothing is collected while the window is hidden: the Agent closes a view nobody asked about for 10 s.
 /// </summary>
 public partial class DashboardWindow : ThemedWindow
 {
     private const string ServiceName = "Homebase.Agent";
 
+    private readonly IDashboardSource _source;
+    private readonly bool _preview;
     private readonly ISystemMetricsCollector _metrics = new WindowsSystemMetricsCollector();
     private readonly IDiskCollector _disk = new WindowsDiskCollector();
     private readonly INetworkStatusChecker _network = new WindowsNetworkStatusChecker();
     private readonly ConnectionReadiness _readiness = new();
     private readonly DispatcherTimer _timer;
+    private readonly Dictionary<string, History> _histories = new(StringComparer.Ordinal);
+    private IReadOnlyList<DeviceItem> _items = Array.Empty<DeviceItem>();
+    private string _selected = DeviceList.SelfKey;
+    private PcLiveView? _live;
+    private string? _liveKey;
+    private string? _shownKey;
     private bool _refreshing;
     private int _ticks;
+    private Connections? _connections;
 
-    /// <summary>Raised by the "Settings" button; the tray opens the settings window.</summary>
+    /// <summary>Raised by the "Settings" button and "connect a device"; the tray opens the settings window.</summary>
     public event Action? OpenSettingsRequested;
 
     /// <summary>Raised by the notification center button (DECISIONS M-32).</summary>
     public event Action? OpenNotificationsRequested;
 
-    public DashboardWindow()
+    public DashboardWindow() : this(new BridgeDashboardSource(), preview: false) { }
+
+    internal DashboardWindow(IDashboardSource source, bool preview)
     {
+        _source = source;
+        _preview = preview;
         InitializeComponent();
+        if (!preview)
+        {
+            DashboardPrefs.Load(this, out var selected);
+            if (selected is not null) _selected = selected;
+        }
 
         NotificationsButton.Content = L.DashNotifications(NotificationCenter.Unread);
         Action<int> onUnread = n => NotificationsButton.Content = L.DashNotifications(n);
         NotificationCenter.UnreadChanged += onUnread;
 
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Refresh();
 
-        // Refresh the connection summary whenever the window is shown again — the user may just
-        // have changed something in Settings.
-        IsVisibleChanged += (_, _) => { if (IsVisible) { _ticks = 0; Refresh(); _timer.Start(); } else _timer.Stop(); };
+        // Refresh at once whenever the window is shown again — the user may just have changed something
+        // in Settings — and stop asking for live views while it is hidden.
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible) { _ticks = 0; Refresh(); _timer.Start(); }
+            else { _timer.Stop(); if (!_preview) DashboardPrefs.Save(this, _selected); }
+        };
         Closed += (_, _) => { _timer.Stop(); NotificationCenter.UnreadChanged -= onUnread; };
     }
 
     private async void Refresh()
     {
-        // Timer ticks are re-entrant if a collection runs long; skip overlapping refreshes.
-        // Safe without locking because this only ever runs on the UI thread.
+        // Ticks re-enter if a request runs long; skip overlapping refreshes (UI thread only, no lock).
         if (_refreshing) return;
         _refreshing = true;
         try
         {
-            // The WMI-backed collectors run synchronously; do the work off the UI thread
-            // so the window never stutters, then apply results back on the UI thread.
-            var metrics = await Task.Run(() => _metrics.CollectAsync(CancellationToken.None));
-            var disks = await Task.Run(() => _disk.CollectAsync(CancellationToken.None));
-            var network = await Task.Run(() => _network.CollectAsync(CancellationToken.None));
-            var service = await Task.Run(ReadServiceStatus);
-
-            ApplyServiceStatus(service);
-            ApplyMetrics(metrics);
-            ApplyNetwork(network);
-            ApplyDisks(disks);
-
-            // Other devices report every 30 s (PCs) or less often (phones); every ~9 s is plenty.
-            if (_ticks % 3 == 0) await RefreshDevicesAsync();
-
-            // Config-backed rows change rarely; re-read them every ~30 s rather than every tick.
-            if (_ticks++ % 10 == 0)
+            if (_ticks % 4 == 0)
+            {
+                ApplyServiceStatus(_preview ? new ServiceStatusInfo("Running", true, true) : await Task.Run(ReadServiceStatus));
+                var overview = _source.Connected ? await _source.OverviewAsync() : null;
+                // A failed answer keeps what is shown; no bridge at all leaves just this PC.
+                if (overview is not null || !_source.Connected || _items.Count == 0)
+                {
+                    _items = DeviceList.Build(overview, Environment.MachineName);
+                    if (_items.All(i => i.Key != _selected)) _selected = DeviceList.SelfKey;
+                    RenderRail();
+                }
+            }
+            if (_ticks % 30 == 0 && !_preview)
             {
                 var readiness = await Task.Run(_readiness.Probe);
                 var forwarding = await Task.Run(SafeForwardingEnabled);
-                var phone = await Task.Run(SafePhoneEnabled);
                 var autostartOff = await Task.Run(TrayAutostart.IsDisabled);
-                ApplyConnections(readiness, forwarding, phone, autostartOff);
+                _connections = new Connections(readiness, forwarding, _source.FeatureEnabled, autostartOff);
             }
+            else if (_preview && _connections is null)
+            {
+                _connections = new Connections(new ReadinessSnapshot(AgentServiceState.Running, true, true, 1), true, true, false);
+            }
+            await RenderDetailAsync();
         }
-        catch
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Transient collection error — keep the last shown values.
+            // A transient failure (bridge dropped mid-request, WMI hiccup): keep what is shown.
+            TrayLog.Info("dashboard", $"Refresh failed: {ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
+            _ticks++;
             _refreshing = false;
         }
     }
 
-    private async Task RefreshDevicesAsync()
+    /// <summary>Design preview only: open on a given device (<c>--select</c>).</summary>
+    internal void PreviewSelect(string key) => _selected = key;
+
+    private DeviceItem Selected() => _items.FirstOrDefault(i => i.Key == _selected) ?? _items[0];
+
+    // ── Device list ──
+
+    private void RenderRail()
     {
-        if (MobileHost.Client is not { IsConnected: true } client)
+        RailPanel.Children.Clear();
+        string? group = null;
+        foreach (var d in _items)
         {
-            ShowDeviceMessage(MobileHost.IsEnabled() ? L.DevNone : L.DevFeatureOff);
+            var g = d.Role == DeviceRole.Self ? L.RailThisPc : d.IsPc ? L.RailPcs : L.RailPhones;
+            if (g != group)
+            {
+                group = g;
+                var head = Label(g, InkSoft, 11);
+                head.Margin = new Thickness(6, RailPanel.Children.Count == 0 ? 0 : 12, 0, 6);
+                RailPanel.Children.Add(head);
+            }
+            RailPanel.Children.Add(Tile(d));
+        }
+        if (_items.Count == 1)
+        {
+            var hint = Text(_source.FeatureEnabled ? L.DevNone : L.DevFeatureOff, 11.5, InkSoft, wrap: true);
+            hint.Margin = new Thickness(6, 14, 6, 0);
+            RailPanel.Children.Add(hint);
+        }
+    }
+
+    private Border Tile(DeviceItem d)
+    {
+        var on = d.Key == _selected;
+        var g = Columns(Px(30), Star(), Auto);
+        var glyph = Glyph(d.IsPc, on ? OnSlab : Ink, 20);
+        glyph.VerticalAlignment = VerticalAlignment.Top;
+        glyph.Margin = new Thickness(0, 2, 0, 0);
+        g.Children.Add(At(glyph, 0));
+        var text = new StackPanel();
+        text.Children.Add(Text(d.Name, 13, on ? OnSlab : Ink, FontWeights.SemiBold));
+        text.Children.Add(Text(DeviceList.Summary(d), 11.5, on ? OnSlabSoft : InkSoft));
+        if (RoleLine(d) is { } role) text.Children.Add(Text(role, 10.5, on ? Accent : InkSoft));
+        g.Children.Add(At(text, 1));
+        var led = Led(d.Online ? LedOn : Idle, 8);
+        led.VerticalAlignment = VerticalAlignment.Top;
+        led.Margin = new Thickness(8, 5, 0, 0);
+        g.Children.Add(At(led, 2));
+        var tile = new Border
+        {
+            Background = on ? Slab : Brushes.Transparent,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 9, 10, 9),
+            Margin = new Thickness(0, 0, 0, 4),
+            Cursor = Cursors.Hand,
+            Child = g,
+        };
+        if (!on)
+        {
+            tile.MouseEnter += (_, _) => tile.Background = Plate;
+            tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
+        }
+        tile.MouseLeftButtonUp += (_, _) => Select(d.Key);
+        return tile;
+    }
+
+    private static string? RoleLine(DeviceItem d) => d.Role switch
+    {
+        DeviceRole.Hub => L.RoleHub,
+        DeviceRole.LinkedHere => L.RoleLinkedHere,
+        DeviceRole.ViaHub => L.DevVia(d.Via ?? ""),
+        _ => null,
+    };
+
+    private void Select(string key)
+    {
+        if (key == _selected) return;
+        _selected = key;
+        _shownKey = null;
+        RenderRail();
+        DetailScroll.ScrollToTop();
+        _ = RenderDetailAsync();
+    }
+
+    // ── Selected device ──
+
+    private async Task RenderDetailAsync()
+    {
+        if (_items.Count == 0) return;
+        var d = Selected();
+        RenderHeader(d);
+        var key = d.Key;
+
+        // An Agent too old for live views is asked again now and then: the service may have been updated since.
+        if (d.LiveTarget is { } target && _source.Connected && (!_source.LiveUnsupported || _ticks % 30 == 0))
+        {
+            var view = await _source.LiveAsync(target);
+            if (key != _selected) return; // the user moved on while we waited
+            if (view is not null && ShowLive(d, view)) return;
+        }
+
+        if (d.Role == DeviceRole.Self && !_source.Connected)
+        {
+            // No bridge: this PC from the Tray's own collectors, every other second.
+            if (_shownKey == key && _ticks % 2 != 0) return;
+            var m = await Task.Run(() => _metrics.CollectAsync(CancellationToken.None));
+            var disks = await Task.Run(() => _disk.CollectAsync(CancellationToken.None));
+            var net = await Task.Run(() => _network.CollectAsync(CancellationToken.None));
+            if (key != _selected) return;
+            SetPill(LedOn, L.PillThisPc);
+            Show(key, PcSummaryView.BuildLocal(m.Success ? m.Snapshot : null, disks.Success ? disks.Snapshot ?? Array.Empty<DiskSnapshot>() : Array.Empty<DiskSnapshot>(),
+                net.Success ? net.Snapshot : null, !_source.FeatureEnabled ? L.DetSelfFeatureOff : L.DetSelfNoAgent));
             return;
         }
-        DeviceOverview? overview = null;
-        try
+
+        // Last reports only: phones, PCs seen through another PC, and PCs that can't be viewed live now.
+        if (_shownKey == key && _ticks % 4 != 1) return;
+        if (!d.IsPc)
         {
-            var r = await client.RequestAsync(MobileBridge.OpDevicesOverview);
-            if ((bool?)r["ok"] == true) overview = r["payload"]?.Deserialize<DeviceOverview>(MobileProtocol.Json);
+            SetPill(d.Online ? LedOn : Idle, d.Online ? L.PillOnline(Ago(d)) : L.PillOffline(Ago(d)));
+            Show(key, PhoneView.Build(d));
+            return;
         }
-        catch (Exception ex) when (ex is System.IO.IOException or TaskCanceledException or OperationCanceledException) { }
-        if (overview is null) return; // keep what is shown
-        ApplyDevices(overview);
+        SetPill(d.Online ? LedOn : Idle, d.Online ? L.PillLastReport(Ago(d)) : L.PillOffline(Ago(d)));
+        Show(key, PcSummaryView.Build(d, SummaryReason(d)));
     }
 
-    private void ShowDeviceMessage(string text)
+    /// <summary>Shows a live answer; false when there is nothing live to show (then the last report is shown).</summary>
+    private bool ShowLive(DeviceItem d, LiveView view)
     {
-        DevicePanel.Children.Clear();
-        DevicePanel.Children.Add(new TextBlock { Text = text, Style = (Style)FindResource("Type.Micro"), TextWrapping = TextWrapping.Wrap });
+        var snapshot = view.Snapshot;
+        switch (view.State)
+        {
+            case LiveViewState.Live when snapshot is not null:
+                SetPill(LedOn, L.PillLive(ViaLabel(view.Via)));
+                LiveViewFor(d).Notice(null);
+                _live!.Update(snapshot);
+                return true;
+            case LiveViewState.Connecting:
+                SetPill(Accent, d.Role switch
+                {
+                    DeviceRole.Self => L.PillStarting,
+                    DeviceRole.LinkedHere => L.PillAsking,
+                    _ => L.PillConnecting,
+                });
+                if (snapshot is not null)
+                {
+                    LiveViewFor(d).Notice(L.DetReconnecting);
+                    _live!.Update(snapshot);
+                }
+                else if (_shownKey != d.Key)
+                {
+                    Show(d.Key, Waiting(d.Role switch
+                    {
+                        DeviceRole.Self => L.DetCollecting,
+                        DeviceRole.LinkedHere => L.DetAskingShare(d.Name),
+                        _ => L.DetConnectingTo(d.Name),
+                    }));
+                }
+                return true;
+            case LiveViewState.Unreachable when snapshot is not null:
+                SetPill(LedOff, L.PillNoAnswer);
+                LiveViewFor(d).Notice(L.DetStale(view.At is { } at ? Fmt.Ago(at, DateTimeOffset.UtcNow) : "—"));
+                _live!.Update(snapshot);
+                return true;
+            default:
+                return false;
+        }
     }
 
-    private void ApplyDevices(DeviceOverview overview)
+    private PcLiveView LiveViewFor(DeviceItem d)
     {
-        DevicePanel.Children.Clear();
-        var shown = new HashSet<(string, string)>();
-        foreach (var d in overview.Here.Devices)
+        if (_live is null || _liveKey != d.Key || _shownKey != d.Key)
         {
-            shown.Add((d.Kind, d.Name));
-            AddDeviceRow(d.Kind, d.Name, DeviceText.Entry(d), d.Online);
+            if (!_histories.TryGetValue(d.Key, out var h)) _histories[d.Key] = h = new History();
+            _live = new PcLiveView(h);
+            _liveKey = d.Key;
+            Show(d.Key, _live.Root);
         }
-        foreach (var h in overview.Hubs)
+        return _live;
+    }
+
+    private void Show(string key, FrameworkElement content)
+    {
+        DetailHost.Content = content;
+        if (_liveKey == key && content != _live?.Root) _liveKey = null;
+        _shownKey = key;
+    }
+
+    private static FrameworkElement Waiting(string text)
+    {
+        var p = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 30, 0, 0) };
+        var t = Text(text, 13, OnSlabSoft, wrap: true);
+        t.TextAlignment = TextAlignment.Center;
+        t.MaxWidth = 560;
+        p.Children.Add(t);
+        var bar = new MeterBar { Width = 220, Margin = new Thickness(0, 16, 0, 0) };
+        bar.Set(0, MeterOk);
+        p.Children.Add(bar);
+        return SlabPanel(p);
+    }
+
+    private string? SummaryReason(DeviceItem d)
+    {
+        if (d.Role == DeviceRole.ViaHub) return L.DetViaHubOnly(d.Via ?? "");
+        if (!_source.Connected) return null;
+        if (_source.LiveUnsupported) return L.DetAgentTooOld;
+        if (!d.Online) return d.Role == DeviceRole.Hub && d.Error == "rejected" ? L.DevHubRejected : L.DetPcOffline;
+        if (d.Role == DeviceRole.LinkedHere && d.Status?.AppVersion is { } v) return L.DetPcTooOld(v);
+        return L.DetNoLiveYet;
+    }
+
+    private static string ViaLabel(string? via) => via switch
+    {
+        MobileTransport.Lan => "LAN",
+        MobileTransport.Tailscale => "Tailscale",
+        MobileTransport.Cloudflare => "Cloudflare",
+        MobileTransport.Loopback => "loopback",
+        "shared" => L.ViaShared,
+        "self" => L.PillThisPc,
+        _ => via ?? "",
+    };
+
+    private static string Ago(DeviceItem d) => d.LastSeen is { } at ? Fmt.Ago(at, DateTimeOffset.UtcNow) : "—";
+
+    private void SetPill(Brush led, string text)
+    {
+        LiveLed.Fill = led;
+        LiveText.Text = text;
+    }
+
+    private void RenderHeader(DeviceItem d)
+    {
+        HeaderGlyphBox.Child = Glyph(d.IsPc, OnSlab, 24);
+        HeaderName.Text = d.Name;
+        var s = d.Status;
+        var parts = new List<string>();
+        if (!d.IsPc && d.Model is { } model) parts.Add(model);
+        if (s?.Os is { } os) parts.Add(os);
+        if (s?.AppVersion is { } v) parts.Add("Homebase v" + v);
+        parts.Add(d.Role switch
         {
-            AddDeviceRow(DeviceKind.Pc, h.PcName, DeviceText.Hub(h), h.Online);
-            foreach (var d in h.Devices)
+            DeviceRole.Self => L.HeadSelf,
+            DeviceRole.Hub => L.HeadHub,
+            DeviceRole.LinkedHere => L.HeadLinkedHere,
+            DeviceRole.Phone => L.HeadPhone,
+            _ => L.DevVia(d.Via ?? ""),
+        });
+        HeaderSub.Text = string.Join("  ·  ", parts);
+
+        HeaderChips.Children.Clear();
+        WarningBox.Visibility = Visibility.Collapsed;
+        if (d.Role == DeviceRole.Self && _connections is { } c)
+        {
+            Chip(L.DashForwarding, c.Forwarding ? (c.AutostartOff ? ChipTone.Warn : ChipTone.On) : ChipTone.Off);
+            Chip(L.ChipPhoneLink, c.Phone ? ChipTone.On : ChipTone.Off);
+            Chip(L.DashTelegram, c.Readiness is { TokenConfigured: true, ChatConfigured: true } ? ChipTone.On : ChipTone.Off);
+            if (c.Forwarding && c.AutostartOff)
             {
-                // Skip this PC itself, and a phone already listed because it is paired here too.
-                if (d.DeviceId == h.SelfDeviceId || !shown.Add((d.Kind, d.Name))) continue;
-                AddDeviceRow(d.Kind, d.Name, DeviceText.Entry(d, h.PcName), d.Online);
+                WarningText.Text = L.ForwardingOnAutostartOff;
+                WarningBox.Visibility = Visibility.Visible;
             }
         }
-        if (DevicePanel.Children.Count == 0) ShowDeviceMessage(L.DevNone);
+        else if (d.Role == DeviceRole.Hub && d.Phones > 0)
+        {
+            Chip(L.DevHubPhones(d.Phones), ChipTone.Off);
+        }
     }
 
-    private void AddDeviceRow(string kind, string name, string detail, bool online)
+    private enum ChipTone { On, Off, Warn }
+
+    private void Chip(string text, ChipTone tone)
     {
-        var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var chip = new Border
+        var (bg, fg, mark) = tone switch
         {
-            Style = (Style)FindResource("Chip"),
-            Background = (Brush)FindResource(online ? "Brush.StatusOk" : "Brush.Hairline"),
-            VerticalAlignment = VerticalAlignment.Top,
-            Child = new TextBlock
-            {
-                Text = kind == DeviceKind.Pc ? L.DevKindPc : L.DevKindPhone,
-                Style = (Style)FindResource("ChipText"),
-            },
+            ChipTone.On => (Brush(0xE1, 0xF3, 0xE6), Brush(0x1E, 0x6B, 0x34), "● "),
+            ChipTone.Warn => (Brush(0xFF, 0xEE, 0xC8), Brush(0x8A, 0x5A, 0x00), "▲ "),
+            _ => (Brush(0xE8, 0xEB, 0xF4), InkSoft, "○ "),
         };
-        var text = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = name, Style = (Style)FindResource("Type.BodyStrong") });
-        text.Children.Add(new TextBlock { Text = detail, Style = (Style)FindResource("Type.Micro"), TextWrapping = TextWrapping.Wrap });
-        Grid.SetColumn(text, 1);
-        row.Children.Add(chip);
-        row.Children.Add(text);
-        DevicePanel.Children.Add(row);
+        var pill = Pill(mark + text, bg, fg, 11);
+        pill.Margin = new Thickness(0, 0, 6, 4);
+        pill.Cursor = Cursors.Hand;
+        pill.ToolTip = L.ChipOpensSettings;
+        pill.MouseLeftButtonUp += (_, _) => OpenSettingsRequested?.Invoke();
+        HeaderChips.Children.Add(pill);
     }
+
+    private static Brush Brush(byte r, byte g, byte b)
+    {
+        var x = new SolidColorBrush(Color.FromRgb(r, g, b));
+        x.Freeze();
+        return x;
+    }
+
+    // ── Service badge ──
 
     private static bool SafeForwardingEnabled()
     {
         try { return TrayConfig.IsNotificationForwardingEnabled(); } catch { return false; }
-    }
-
-    private static bool SafePhoneEnabled()
-    {
-        try { return MobileHost.IsEnabled(); } catch { return false; }
     }
 
     private static ServiceStatusInfo ReadServiceStatus()
@@ -194,159 +443,41 @@ public partial class DashboardWindow : ThemedWindow
     {
         if (svc.Running)
         {
-            AgentStatusText.Text = L.BadgeRunning;
-            StatusBadge.Background = (Brush)FindResource("Brush.StatusOnline");
+            AgentStatusText.Text = L.BadgeRunning.TrimStart('●', ' ');
+            StatusLed.Fill = LedOn;
         }
         else if (!svc.Installed)
         {
-            AgentStatusText.Text = L.BadgeNotInstalled;
-            StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)); // gray
+            AgentStatusText.Text = L.BadgeNotInstalled.TrimStart('●', ' ');
+            StatusLed.Fill = Idle;
         }
         else
         {
-            AgentStatusText.Text = L.BadgeStopped(svc.StatusText);
-            StatusBadge.Background = (Brush)FindResource("Brush.StatusBad");
+            AgentStatusText.Text = L.BadgeStopped(svc.StatusText).TrimStart('●', ' ');
+            StatusLed.Fill = LedOff;
         }
-    }
-
-    private void ApplyMetrics(CollectorResult<SystemMetricSnapshot> result)
-    {
-        if (!result.Success || result.Snapshot is null)
-        {
-            UptimeText.Text = L.Unknown;
-            CpuBar.Value = 0; CpuText.Text = "—";
-            RamBar.Value = 0; RamText.Text = "—";
-            return;
-        }
-
-        var s = result.Snapshot;
-        var u = s.Uptime;
-        UptimeText.Text = u.Days > 0 ? L.UptimeDays(u.Days, u.Hours, u.Minutes) : L.UptimeHours((int)u.TotalHours, u.Minutes);
-
-        if (s.CpuUsagePercent is double cpu)
-        {
-            CpuBar.Value = cpu;
-            CpuBar.Foreground = GaugeBrush(cpu);
-            CpuText.Text = $"{cpu:F0}%";
-        }
-        else { CpuBar.Value = 0; CpuText.Text = "—"; }
-
-        if (s.TotalMemoryBytes is long total && s.AvailableMemoryBytes is long avail && total > 0)
-        {
-            var usedGb = (total - avail) / (1024.0 * 1024 * 1024);
-            var totalGb = total / (1024.0 * 1024 * 1024);
-            var pct = s.MemoryUsagePercent ?? (usedGb / totalGb * 100);
-            RamBar.Value = pct;
-            RamBar.Foreground = GaugeBrush(pct);
-            RamText.Text = $"{pct:F0}% · {usedGb:F1} / {totalGb:F1} GB";
-        }
-        else { RamBar.Value = 0; RamText.Text = "—"; }
-    }
-
-    private void ApplyNetwork(CollectorResult<NetworkStatusSnapshot> result)
-    {
-        if (result.Success && result.Snapshot is { } s)
-            NetworkText.Text = s.IsOnline ? L.Online(s.PrimaryIPv4 ?? L.NoIp) : L.Offline;
-        else
-            NetworkText.Text = L.Unknown;
-    }
-
-    // One row per ready drive: letter, a gauge of the used share (same thresholds as CPU/RAM),
-    // and the free space — a full disk is the thing to notice, so the bar carries the glance.
-    private void ApplyDisks(CollectorResult<IReadOnlyList<DiskSnapshot>> result)
-    {
-        DiskPanel.Children.Clear();
-        if (result.Success && result.Snapshot is not null)
-        {
-            foreach (var d in result.Snapshot)
-            {
-                if (!d.IsReady || d.TotalBytes <= 0) continue;
-                var freeGb = d.FreeBytes / (1024.0 * 1024 * 1024);
-                var totalGb = d.TotalBytes / (1024.0 * 1024 * 1024);
-                var usedPct = 100.0 * (d.TotalBytes - d.FreeBytes) / d.TotalBytes;
-
-                // Value sits beside the bar, not on it: text over a red or indigo fill is unreadable.
-                var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-
-                var name = new TextBlock { Text = d.Name.TrimEnd('\\'), Style = (Style)FindResource("Type.Label"), VerticalAlignment = VerticalAlignment.Center };
-                var gauge = new ProgressBar { Style = (Style)FindResource("Gauge"), Height = 16, Value = usedPct, Foreground = GaugeBrush(usedPct) };
-                var free = new TextBlock
-                {
-                    Text = L.DiskFree(freeGb, totalGb),
-                    Style = (Style)FindResource("Type.BodyStrong"),
-                    Margin = new Thickness(10, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                Grid.SetColumn(gauge, 1);
-                Grid.SetColumn(free, 2);
-                row.Children.Add(name);
-                row.Children.Add(gauge);
-                row.Children.Add(free);
-                DiskPanel.Children.Add(row);
-            }
-        }
-        if (DiskPanel.Children.Count == 0)
-            DiskPanel.Children.Add(new TextBlock { Text = "—", Style = (Style)FindResource("Type.Micro") });
-    }
-
-    private void ApplyConnections(ReadinessSnapshot r, bool forwarding, bool phone, bool autostartOff)
-    {
-        if (r is { TokenConfigured: true, ChatConfigured: true, PrimaryChatId: long chat })
-        {
-            SetChip(TelegramChip, TelegramChipText, "Brush.StatusOnline", L.ChipReady);
-            TelegramText.Text = L.TelegramConnected(chat);
-        }
-        else
-        {
-            SetChip(TelegramChip, TelegramChipText, "Brush.StatusWarn", L.ChipSetup);
-            TelegramText.Text = L.TelegramNotSetUp;
-        }
-
-        // Forwarding runs in this tray, so with its sign-in autostart turned off in Task Manager it
-        // silently stops after the next sign-in (issue #4): say so here, where the user looks.
-        if (forwarding && autostartOff)
-        {
-            SetChip(ForwardingChip, ForwardingChipText, "Brush.StatusWarn", L.ChipCheck);
-            ForwardingText.Text = L.ForwardingOnAutostartOff;
-        }
-        else
-        {
-            SetChip(ForwardingChip, ForwardingChipText, forwarding ? "Brush.StatusOk" : "Brush.Hairline", forwarding ? L.ChipOn : L.ChipOff);
-            ForwardingText.Text = forwarding ? L.ForwardingOn : L.ForwardingOff;
-        }
-
-        SetChip(PhoneChip, PhoneChipText, phone ? "Brush.StatusOk" : "Brush.Hairline", phone ? L.ChipOn : L.ChipOff);
-        PhoneText.Text = phone ? L.PhoneOn : L.PhoneOff;
-    }
-
-    private void SetChip(Border chip, TextBlock text, string brushKey, string label)
-    {
-        chip.Background = (Brush)FindResource(brushKey);
-        text.Text = label;
     }
 
     private void OpenSettings_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke();
 
+    private void AddDevice_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke();
+
     private void OpenNotifications_Click(object sender, RoutedEventArgs e) => OpenNotificationsRequested?.Invoke();
 
-    private void Close_Click(object sender, RoutedEventArgs e) => Hide();
-
     // Tray-popup behaviour: anchor bottom-right above the taskbar and bring it to the foreground.
-    // Closing (X or CLOSE) hides rather than destroys, so the same instance reopens on the next
-    // tray click. It intentionally does NOT auto-hide on deactivation: launched from the WinForms
-    // tray icon this is a background process, so the window used to lose focus and hide itself
-    // before it even painted — showing only an empty flash and then vanishing on the next click.
+    // Closing (X) hides rather than destroys, so the same instance reopens on the next tray click.
+    // It intentionally does NOT auto-hide on deactivation: launched from the WinForms tray icon this is
+    // a background process, so the window used to lose focus and hide itself before it even painted.
     public void ShowNearTray()
     {
         WindowStartupLocation = WindowStartupLocation.Manual;
         var wa = SystemParameters.WorkArea;
-        Left = wa.Right - Width - 8;
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Width = Math.Min(Width, wa.Width - 16);
+        Height = Math.Min(Height, wa.Height - 16);
+        Left = Math.Max(wa.Left, wa.Right - Width - 8);
         Top = Math.Max(wa.Top, wa.Bottom - Height - 8);
 
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Show();
         // A plain Activate() from a background app often fails to take the foreground; the brief
         // Topmost flip reliably raises the window to the front without pinning it always-on-top.
@@ -358,17 +489,51 @@ public partial class DashboardWindow : ThemedWindow
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        if (!_preview) DashboardPrefs.Save(this, _selected);
         // During a programmatic shutdown (e.g. an auto-update restart) let the close proceed;
         // otherwise a tray click / X hides the dashboard so the same instance reopens later.
-        if (App.IsShuttingDown) { base.OnClosing(e); return; }
+        if (App.IsShuttingDown || _preview) { base.OnClosing(e); return; }
         e.Cancel = true;
         Hide();
     }
 
-    // Cool by default (chrome-indigo); warms to amber then brand red at thresholds.
-    private static Brush GaugeBrush(double pct) =>
-        (Brush)System.Windows.Application.Current.FindResource(
-            pct >= 90 ? "Brush.StatusBad" : pct >= 75 ? "Brush.StatusWarn" : "Brush.StatusOk");
-
     private readonly record struct ServiceStatusInfo(string StatusText, bool Running, bool Installed);
+
+    private sealed record Connections(ReadinessSnapshot Readiness, bool Forwarding, bool Phone, bool AutostartOff);
+}
+
+/// <summary>The dashboard's size and selected device, per Windows user (<c>%LOCALAPPDATA%\Homebase\dashboard.json</c>).</summary>
+internal static class DashboardPrefs
+{
+    private static string PathName => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Homebase", "dashboard.json");
+
+    private sealed record Prefs(double Width, double Height, string? Selected);
+
+    public static void Load(Window w, out string? selected)
+    {
+        selected = null;
+        try
+        {
+            if (!File.Exists(PathName)) return;
+            var p = JsonSerializer.Deserialize<Prefs>(File.ReadAllText(PathName));
+            if (p is null) return;
+            if (p.Width >= w.MinWidth && p.Width < 4000) w.Width = p.Width;
+            if (p.Height >= w.MinHeight && p.Height < 3000) w.Height = p.Height;
+            selected = p.Selected;
+        }
+        catch (Exception) { /* a broken file just means the defaults */ }
+    }
+
+    public static void Save(Window w, string? selected)
+    {
+        try
+        {
+            if (w.WindowState != WindowState.Normal) return;
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(PathName)!);
+            File.WriteAllText(PathName, JsonSerializer.Serialize(new Prefs(w.ActualWidth > 0 ? w.ActualWidth : w.Width,
+                w.ActualHeight > 0 ? w.ActualHeight : w.Height, selected)));
+        }
+        catch (Exception) { /* preferences are a convenience */ }
+    }
 }

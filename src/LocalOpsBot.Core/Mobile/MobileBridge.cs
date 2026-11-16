@@ -32,16 +32,17 @@ public static class MobileBridge
     public const string OpHubsUnlink = "hubs.unlink";         // request {pcId} → bool (M-29)
     public const string OpHistoryList = "history.list";       // request {after?, limit?} → HistoryPage (M-32)
     public const string OpHistoryClear = "history.clear";     // request → int (relayed notifications removed; M-32)
+    public const string OpLiveGet = "live.get";               // request {target} → LiveView, keeps that view open ~10 s (M-44)
 
     // Agent → Tray
-    public const string OpWatch = "watch";                    // push {on} — collect only while a phone watches
+    public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-44)
     public const string OpToast = "toast.show";               // push {title, body} — a relayed notification to show (M-28)
     public const string OpResponse = "response";
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
-        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear,
+        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpLiveGet,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
@@ -163,10 +164,61 @@ public sealed record LinkedHubView(
     string? Error,
     string? SelfDeviceId = null);
 
-/// <summary><c>devices.overview</c>: what is paired here, and the PCs this one is linked to.</summary>
+/// <summary>
+/// <c>devices.overview</c>: what is paired here, and the PCs this one is linked to. <c>Local</c> (v0.33.0)
+/// adds what only this PC knows about its own devices: when they paired and whether they take push.
+/// </summary>
 public sealed record DeviceOverview(
     DevicesResponse Here,
-    IReadOnlyList<LinkedHubView> Hubs);
+    IReadOnlyList<LinkedHubView> Hubs,
+    IReadOnlyList<LocalDeviceInfo>? Local = null);
+
+/// <summary>
+/// A device paired with this PC as the Tray's device page shows it (M-44): <c>Push</c> — it registered a
+/// UnifiedPush endpoint here; <c>Muted</c> — the notification kinds it asked this PC not to send.
+/// </summary>
+public sealed record LocalDeviceInfo(string DeviceId, DateTimeOffset PairedAt, bool Push, IReadOnlyList<string>? Muted);
+
+/// <summary>
+/// What <c>live.get</c> looks at (M-44): this PC, a hub PC this one is linked to (its live WebSocket), or a
+/// PC paired here as a device (it shares its snapshots on request).
+/// </summary>
+public static class LiveTarget
+{
+    public const string Self = "self";
+    private const string HubPrefix = "hub:";
+    private const string DevicePrefix = "device:";
+
+    public static string Hub(string pcId) => HubPrefix + pcId;
+    public static string Device(string deviceId) => DevicePrefix + deviceId;
+
+    public static string? HubId(string target) =>
+        target.StartsWith(HubPrefix, StringComparison.Ordinal) && target.Length > HubPrefix.Length ? target[HubPrefix.Length..] : null;
+
+    public static string? DeviceId(string target) =>
+        target.StartsWith(DevicePrefix, StringComparison.Ordinal) && target.Length > DevicePrefix.Length ? target[DevicePrefix.Length..] : null;
+}
+
+/// <summary>States of a <see cref="LiveView"/>.</summary>
+public static class LiveViewState
+{
+    /// <summary><c>Snapshot</c> is current.</summary>
+    public const string Live = "live";
+    /// <summary>Asked for, nothing yet (connecting, or waiting for the other PC to start sharing).</summary>
+    public const string Connecting = "connecting";
+    /// <summary>The other PC does not answer; <c>Snapshot</c> may hold the last one seen.</summary>
+    public const string Unreachable = "unreachable";
+    /// <summary>The other PC is too old to share its live view (before v0.33.0).</summary>
+    public const string Unsupported = "unsupported";
+    /// <summary>No such device or link here.</summary>
+    public const string Unknown = "unknown";
+}
+
+/// <summary>
+/// <c>live.get</c> answer. <c>Via</c> names the path (<c>lan</c>, <c>tailscale</c>, <c>cloudflare</c>, or
+/// <c>shared</c> when the other PC pushes to this one); <c>Detail</c> says why it is not live.
+/// </summary>
+public sealed record LiveView(string State, LiveSnapshot? Snapshot = null, string? Via = null, string? Detail = null, DateTimeOffset? At = null);
 
 /// <summary><c>history.list</c> request: entries after <c>After</c> (or from the newest), at most <c>Limit</c> (M-32).</summary>
 public sealed record HistoryListRequest(LocalOpsBot.Core.Notifications.HistoryCursor? After, int? Limit);

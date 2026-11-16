@@ -24,6 +24,28 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Design preview of the device page with made-up devices (no tray icon, no Agent, no mutex):
+        //   Homebase.Tray.exe --preview-dashboard [--select <device key>] [--lang en]
+        if (e.Args.Contains("--preview-dashboard"))
+        {
+            base.OnStartup(e);
+            var lang = ArgAfter(e.Args, "--lang");
+            if (lang is not null) CultureInfo.CurrentUICulture = CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo(lang);
+            else ApplyLanguage();
+            ShutdownMode = ShutdownMode.OnMainWindowClose;
+            var preview = new DashboardWindow(new Dashboard.PreviewDashboardSource(), preview: true);
+            if (ArgAfter(e.Args, "--select") is { } key) preview.PreviewSelect(key);
+            if (int.TryParse(ArgAfter(e.Args, "--tab"), out var tab)) Dashboard.PcLiveView.PreviewTab = tab;
+            if (ArgAfter(e.Args, "--size")?.Split('x') is [var w, var h] && double.TryParse(w, out var pw) && double.TryParse(h, out var ph))
+            {
+                preview.Width = pw;
+                preview.Height = ph;
+            }
+            MainWindow = preview;
+            preview.Show();
+            return;
+        }
+
         // Hold the mutex for the process lifetime; createdNew == false means another tray in this
         // session already owns it, so bail out before creating a second icon / pipe client.
         _singleInstanceMutex = new Mutex(initiallyOwned: false, SingleInstanceMutexName, out bool createdNew);
@@ -66,6 +88,12 @@ public partial class App : Application
         {
             // Unknown culture code or unreadable config: keep the OS display language.
         }
+    }
+
+    private static string? ArgAfter(string[] args, string name)
+    {
+        var i = Array.IndexOf(args, name);
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
     }
 
     protected override void OnExit(ExitEventArgs e)

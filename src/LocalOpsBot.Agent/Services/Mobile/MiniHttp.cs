@@ -46,8 +46,14 @@ public sealed record HttpRequestHead(string Method, string Path, IReadOnlyDictio
 public static class MiniHttp
 {
     public const int MaxHeadBytes = 8 * 1024;
-    /// <summary>A relayed notification (M-28) is the largest body: 1000 chars of Korean text is ~3 KB.</summary>
+    /// <summary>A relayed notification (M-28) is the largest ordinary body: 1000 chars of Korean text is ~3 KB.</summary>
     public const int MaxBodyBytes = 16 * 1024;
+
+    /// <summary>
+    /// A shared live snapshot (<c>POST /api/v1/live-snapshot</c>, M-44): 40 apps with window titles, 30
+    /// processes and the work list come to 20–80 KB. Read only after the bearer token checked out.
+    /// </summary>
+    public const int MaxSnapshotBodyBytes = 1024 * 1024;
 
     private const string WebSocketGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -100,9 +106,10 @@ public static class MiniHttp
     }
 
     /// <summary>Reads exactly Content-Length body bytes (bounded), using bytes already buffered first.</summary>
-    public static async Task<byte[]?> ReadBodyAsync(Stream stream, HttpRequestHead head, byte[] leftover, CancellationToken ct)
+    public static async Task<byte[]?> ReadBodyAsync(Stream stream, HttpRequestHead head, byte[] leftover, CancellationToken ct,
+        int maxBytes = MaxBodyBytes)
     {
-        if (!int.TryParse(head.Header("Content-Length"), out var length) || length < 0 || length > MaxBodyBytes)
+        if (!int.TryParse(head.Header("Content-Length"), out var length) || length < 0 || length > maxBytes)
             return null;
         var body = new byte[length];
         var have = Math.Min(leftover.Length, length);

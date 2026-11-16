@@ -6,9 +6,11 @@ using Microsoft.Extensions.Options;
 namespace LocalOpsBot.Agent.Services.Mobile;
 
 /// <summary>
-/// Builds live snapshots — but only while at least one phone is watching. The first watcher
+/// Builds live snapshots — but only while at least one watcher is there. The first watcher
 /// starts the sampler (and its ETW session) and tells the Tray to start reporting windows; the
 /// last one leaving stops all of it, so an idle Homebase costs nothing extra (DECISIONS M-5).
+/// Watchers are remote (a phone or another PC) or local (this PC's own Tray dashboard, M-44); only
+/// remote ones light the Tray's "another device is viewing this PC" indicator.
 /// </summary>
 public sealed class LiveSnapshotHub : IDisposable
 {
@@ -22,6 +24,7 @@ public sealed class LiveSnapshotHub : IDisposable
     private readonly int _intervalMs;
     private readonly object _gate = new();
     private readonly List<Channel<LiveSnapshot>> _subscribers = new();
+    private readonly HashSet<Channel<LiveSnapshot>> _local = new();
     private CancellationTokenSource? _loopCts;
     private Task? _loop;
     private SessionReport? _session;
@@ -40,9 +43,17 @@ public sealed class LiveSnapshotHub : IDisposable
     /// <summary>Raised with <c>true</c> when the first watcher arrives and <c>false</c> when the last leaves.</summary>
     public event Action<bool>? WatchingChanged;
 
+    /// <summary>Raised when the first remote watcher arrives and when the last one leaves (M-44).</summary>
+    public event Action<bool>? RemoteWatchingChanged;
+
     public int Watchers { get { lock (_gate) return _subscribers.Count; } }
 
+    /// <summary>Phones and other PCs watching, without this PC's own Tray.</summary>
+    public int RemoteWatchers { get { lock (_gate) return _subscribers.Count - _local.Count; } }
+
     public bool IsWatching => Watchers > 0;
+
+    public bool IsRemoteWatching => RemoteWatchers > 0;
 
     public void UpdateSession(SessionReport report)
     {
@@ -53,8 +64,11 @@ public sealed class LiveSnapshotHub : IDisposable
         }
     }
 
-    /// <summary>Registers a watcher. Dispose the returned subscription to leave.</summary>
-    public Subscription Subscribe()
+    /// <summary>
+    /// Registers a watcher. Dispose the returned subscription to leave. <paramref name="local"/>: this PC's
+    /// own Tray, which must not count as another device viewing the PC.
+    /// </summary>
+    public Subscription Subscribe(bool local = false)
     {
         // Capacity 1 + DropOldest: a slow phone always gets the latest snapshot, never a backlog.
         var channel = Channel.CreateBounded<LiveSnapshot>(new BoundedChannelOptions(1)
@@ -62,11 +76,13 @@ public sealed class LiveSnapshotHub : IDisposable
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
         });
-        bool first;
+        bool first, firstRemote;
         lock (_gate)
         {
             _subscribers.Add(channel);
+            if (local) _local.Add(channel);
             first = _subscribers.Count == 1;
+            firstRemote = !local && _subscribers.Count - _local.Count == 1;
             if (first)
             {
                 _sampler.Start();
@@ -81,26 +97,30 @@ public sealed class LiveSnapshotHub : IDisposable
         }
         if (first)
         {
-            _logger.LogInformation("Mobile live view started.");
+            _logger.LogInformation(local ? "Live view started for this PC's Tray." : "Mobile live view started.");
             WatchingChanged?.Invoke(true);
         }
+        if (firstRemote) RemoteWatchingChanged?.Invoke(true);
         return new Subscription(this, channel);
     }
 
     private void Unsubscribe(Channel<LiveSnapshot> channel)
     {
-        bool last;
+        bool last, lastRemote;
         CancellationTokenSource? cts;
         Task? loop;
         lock (_gate)
         {
             if (!_subscribers.Remove(channel)) return;
+            var wasLocal = _local.Remove(channel);
             channel.Writer.TryComplete();
             last = _subscribers.Count == 0;
+            lastRemote = !wasLocal && _subscribers.Count == _local.Count;
             cts = last ? _loopCts : null;
             loop = last ? _loop : null;
             if (last) { _loopCts = null; _loop = null; }
         }
+        if (lastRemote) RemoteWatchingChanged?.Invoke(false);
         if (!last) return;
 
         cts!.Cancel();
