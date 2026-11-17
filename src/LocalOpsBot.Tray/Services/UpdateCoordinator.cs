@@ -210,7 +210,7 @@ internal sealed class UpdateCoordinator
                 TrayLog.Warn("Update", $"Download of v{info.Version} failed: {ex.Message}");
                 if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.Failed);
                 status?.Report(L.UpdFailed);
-                MessageDialog.Show(L.UpdErrorTitle, L.UpdDownloadFailed(ex.Message));
+                CloseThenShow(L.UpdErrorTitle, L.UpdDownloadFailed(ex.Message));
                 return UpdateOutcome.Failed;
             }
 
@@ -238,7 +238,7 @@ internal sealed class UpdateCoordinator
                 TrayLog.Warn("Update", $"Launching the installer for v{info.Version} failed: {ex.Message}");
                 if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.Failed);
                 status?.Report(L.UpdFailed);
-                MessageDialog.Show(L.UpdErrorTitle, L.UpdLaunchFailed(ex.Message));
+                CloseThenShow(L.UpdErrorTitle, L.UpdLaunchFailed(ex.Message));
                 return UpdateOutcome.Failed;
             }
 
@@ -256,14 +256,28 @@ internal sealed class UpdateCoordinator
             if (unattended) UpdateAutoOutcome.Write(info.Version, AutoInstallResult.NotApproved);
             else TrayLog.Info("Update", $"Installer for v{info.Version} not approved at the administrator prompt");
             status?.Report(L.UpdAvailableShort(info.Version));
-            MessageDialog.Show(L.UpdCancelledTitle, L.UpdCancelledDetail);
+            CloseThenShow(L.UpdCancelledTitle, L.UpdCancelledDetail);
             return UpdateOutcome.Cancelled;
         }
         finally
         {
-            // The user may have already closed the window (cancel); closing again is a no-op we
-            // guard defensively rather than tracking close state.
-            try { window.Close(); } catch { /* already closed */ }
+            CloseQuietly(window);
         }
+
+        // The result notice must replace the progress window, not sit under it: shown while the
+        // window was still open, the modal notice opened behind it and disabled it, so the window
+        // stayed on "Installing… approve the administrator prompt" at 100% with Cancel and X dead.
+        void CloseThenShow(string title, string detail)
+        {
+            CloseQuietly(window);
+            MessageDialog.Show(title, detail);
+        }
+    }
+
+    private static void CloseQuietly(System.Windows.Window window)
+    {
+        // The user may have already closed it (cancel); closing again is guarded rather than
+        // tracking close state.
+        try { window.Close(); } catch { /* already closed */ }
     }
 }
