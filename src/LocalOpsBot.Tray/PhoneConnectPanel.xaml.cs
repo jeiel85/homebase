@@ -91,6 +91,16 @@ public partial class PhoneConnectPanel : UserControl
         _statusTimer.Stop();
     }
 
+    /// <summary>
+    /// The window was hidden (what closing the Settings window used to be): put away a shown 24-word
+    /// code, which stays valid until the offer expires, so it is not on screen when the window reopens.
+    /// </summary>
+    public void Forget()
+    {
+        CodeBox.Visibility = Visibility.Collapsed;
+        CodeBox.Text = "";
+    }
+
     /// <summary>The tray is shutting down.</summary>
     public void Stop()
     {

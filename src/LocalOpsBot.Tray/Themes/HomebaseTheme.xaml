@@ -486,6 +486,17 @@
     </Setter>
   </Style>
 
+  <!-- Keyboard focus on a list tile built in code (the notification center's sources). -->
+  <Style x:Key="RailFocus">
+    <Setter Property="Control.Template">
+      <Setter.Value>
+        <ControlTemplate>
+          <Border BorderBrush="#ECAB37" BorderThickness="2" CornerRadius="8" Margin="-1"/>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- A page with a list down the left, like the device list (Settings' areas): the picked item is the
        carbon slab, the others plain until hovered. Header = name, Tag = one line under it. -->
   <Style x:Key="Dash.RailItem" TargetType="TabItem">

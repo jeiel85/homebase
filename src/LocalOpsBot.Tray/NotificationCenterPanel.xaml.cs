@@ -27,7 +27,14 @@ public partial class NotificationCenterPanel : UserControl
     private bool _more;
     private bool _loading;
     private bool _inView;
+    private bool _newWhileLoading;
     private string? _filter; // null = all, AlertFilter, or a device name
+
+    /// <summary>
+    /// The tab is in front of a shown window: this page adds new notifications and marks them read
+    /// itself, so the tray does not count them as unread.
+    /// </summary>
+    internal bool InView => _inView;
 
     public NotificationCenterPanel()
     {
@@ -83,11 +90,19 @@ public partial class NotificationCenterPanel : UserControl
             Render();
         }
         finally { _loading = false; }
+        // One arrived while the list was being read; the read may have missed it.
+        if (_newWhileLoading) await AddNewestAsync();
     }
 
     private async Task AddNewestAsync()
     {
-        if (_loading || !_inView) return;
+        if (!_inView) return;
+        if (_loading)
+        {
+            _newWhileLoading = true;
+            return;
+        }
+        _newWhileLoading = false;
         var (page, _) = await NotificationCenter.ListAsync(null, PageSize);
         if (page is null) return;
         var newest = _entries.Count > 0 ? _entries[0].At : DateTimeOffset.MinValue;
@@ -178,7 +193,8 @@ public partial class NotificationCenterPanel : UserControl
     }
 
     // Source tiles, drawn like the device list's: everything, this PC's alerts, then each device that
-    // sent something (with its PC or phone outline). Counts are of what is loaded ("+" while older remain).
+    // sent something (with its PC or phone outline). Counts are of what is loaded; the total gets a
+    // "+" while older ones remain (which source they are from is not known until they are loaded).
     private void RenderFilters()
     {
         FilterPanel.Children.Clear();
@@ -206,7 +222,8 @@ public partial class NotificationCenterPanel : UserControl
         var name = Hb.Text(label, 13, on ? Hb.OnSlab : Hb.Ink, FontWeights.SemiBold);
         name.VerticalAlignment = VerticalAlignment.Center;
         g.Children.Add(Hb.At(name, 1));
-        var n = Hb.Text(count.ToString(CultureInfo.CurrentCulture) + (_more ? "+" : ""), 11.5, on ? Hb.OnSlabSoft : Hb.InkSoft);
+        var more = key is null && _more ? "+" : "";
+        var n = Hb.Text(count.ToString(CultureInfo.CurrentCulture) + more, 11.5, on ? Hb.OnSlabSoft : Hb.InkSoft);
         n.VerticalAlignment = VerticalAlignment.Center;
         n.Margin = new Thickness(8, 0, 0, 0);
         g.Children.Add(Hb.At(n, 2));
@@ -219,21 +236,43 @@ public partial class NotificationCenterPanel : UserControl
             Margin = new Thickness(0, 0, 0, 4),
             Cursor = Cursors.Hand,
             Child = g,
+            // Reachable with Tab and Enter/Space, and named for screen readers, as the chips were.
+            Focusable = true,
+            FocusVisualStyle = Res<Style>("RailFocus"),
         };
+        System.Windows.Automation.AutomationProperties.SetName(tile, label);
         if (!on)
         {
             tile.MouseEnter += (_, _) => tile.Background = Hb.Plate;
             tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
         }
-        tile.MouseLeftButtonUp += (_, _) =>
+        tile.MouseLeftButtonUp += (_, _) => Pick(key);
+        tile.KeyDown += (_, args) =>
         {
-            if (_filter == key) return;
-            _filter = key;
-            Render();
-            ListScroll.ScrollToTop();
+            if (args.Key is not (Key.Enter or Key.Space)) return;
+            args.Handled = true;
+            Pick(key);
         };
         return tile;
     }
+
+    private void Pick(string? key)
+    {
+        if (_filter == key) return;
+        _filter = key;
+        Render();
+        ListScroll.ScrollToTop();
+        // The tiles were rebuilt: keep the keyboard on the one just picked.
+        FilterPanel.Children.OfType<Border>()
+            .FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetName(b) == LabelFor(key))?.Focus();
+    }
+
+    private string LabelFor(string? key) => key switch
+    {
+        null => L.CenterAll,
+        AlertFilter => L.CenterAlerts,
+        _ => key,
+    };
 
     private bool Matches(HistoryEntry e) => _filter switch
     {

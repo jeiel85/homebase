@@ -72,11 +72,12 @@ public partial class SettingsPanel : UserControl
 
     /// <summary>
     /// The window was hidden — what closing the Settings window used to be: forget unsaved input
-    /// (the bot token above all) and read everything afresh next time.
+    /// (the bot token above all) and a shown pairing code, and read everything afresh next time.
     /// </summary>
     internal void Discard()
     {
         TokenInput.Clear();
+        PhonePanel.Forget();
         TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = string.Empty;
         _loaded = false;
     }

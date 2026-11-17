@@ -98,7 +98,7 @@ public partial class DashboardWindow : ThemedWindow
     // ── Pages ──
 
     /// <summary>The page in front, as the tray needs to know whether a new notification is being looked at.</summary>
-    internal bool ShowsNotifications => _tab == DashTab.Notifications && IsVisible && WindowState != WindowState.Minimized;
+    internal bool ShowsNotifications => CenterView.InView;
 
     /// <summary>Brings a page to the front (and, for Settings, one of its areas). The window is not shown here.</summary>
     public void ShowTab(DashTab tab, SettingsTab? area = null)
