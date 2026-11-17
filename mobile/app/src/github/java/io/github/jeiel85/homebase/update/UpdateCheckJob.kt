@@ -61,6 +61,19 @@ class UpdateCheckJobService : JobService() {
         fun runCheck(context: Context, isStopped: () -> Boolean = { false }) {
             val preferences = UpdatePreferences(context)
             val manifest = UpdateRefresh.run(preferences) ?: return
+            // 앱을 쓰지 않는 중이고 조건이 맞으면 알림 대신 확인 없이 설치한다(DECISIONS M-56). 세션을
+            // 맡겼으면 결과는 UpdateInstallReceiver가 받는다 — 확인을 요구받거나 실패하면 거기서 알린다.
+            if (!isStopped() && SilentInstaller.shouldTry(context, preferences, manifest) &&
+                SilentInstaller.install(context, manifest, isStopped)
+            ) {
+                return
+            }
+            notifyIfDue(context, manifest, isStopped)
+        }
+
+        /** 알릴 버전을 한 번 알린다(버전당 한 번, 권한·채널·설정을 다시 본다). */
+        fun notifyIfDue(context: Context, manifest: UpdateManifest, isStopped: () -> Boolean = { false }) {
+            val preferences = UpdatePreferences(context)
             val post = UpdateDecision.shouldPostNotification(
                 stopped = isStopped(),
                 enabled = preferences.isEnabled(),

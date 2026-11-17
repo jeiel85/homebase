@@ -76,6 +76,37 @@ internal object UpdateNotifier {
         return channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE
     }
 
+    /**
+     * 확인 없이 설치를 마친 뒤 새 프로세스에서 한 번(DECISIONS M-56): 무엇이 바뀌었는지 사용자가 알게 한다.
+     * 같은 ID라 "새 버전" 알림이 남아 있었다면 이것으로 바뀐다. 누르면 앱이 열린다.
+     */
+    fun showUpdated(context: Context, versionName: String): Boolean {
+        if (!canShow(context)) return false
+        val open = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Homebase $versionName(으)로 업데이트했습니다")
+            .setContentText("앱을 쓰지 않는 동안 새 버전을 설치했습니다.")
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        return try {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
     /** 설치했거나 건너뛰었거나 확인을 껐을 때, 남아 있는 알림을 치운다. */
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)

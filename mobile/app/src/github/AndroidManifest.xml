@@ -5,6 +5,8 @@
 
     <!-- The in-app updater hands the verified APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Installs a new version without asking while the app is out of sight (Android 12+, DECISIONS M-56). -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <application>
         <!-- Background update check → "new version" notification (DECISIONS M-22). -->
@@ -12,6 +14,15 @@
             android:name=".update.UpdateCheckJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Results of the background install session, and "this app was just replaced" (DECISIONS M-56). -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Hands the downloaded APK to the installer (update/UpdateInstaller.kt). -->
         <provider

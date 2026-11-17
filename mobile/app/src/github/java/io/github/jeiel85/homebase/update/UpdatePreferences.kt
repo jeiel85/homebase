@@ -89,8 +89,50 @@ internal class UpdatePreferences(context: Context) : UpdateStore {
         prefs.edit().remove(KEY_PENDING_INSTALL_VERSION_CODE).remove(KEY_PENDING_INSTALL_AT).apply()
     }
 
+    /** "새 버전 자동 설치"(DECISIONS M-56). 기본 켜짐 — "업데이트 확인"이 켜져 있을 때만 의미가 있다. */
+    fun isAutoInstallEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_INSTALL, true)
+
+    fun setAutoInstallEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_INSTALL, enabled).apply()
+    }
+
+    /** 확인 없는 설치에 시스템이 확인을 요구한 versionCode. 없으면 0 — 그 버전은 다시 받지 않는다. */
+    fun needsConfirmVersionCode(): Int = prefs.getInt(KEY_NEEDS_CONFIRM_VERSION_CODE, 0)
+
+    fun setNeedsConfirmVersionCode(versionCode: Int) {
+        prefs.edit().putInt(KEY_NEEDS_CONFIRM_VERSION_CODE, versionCode).apply()
+    }
+
+    /** 확인 없는 설치가 실패한 versionCode와 그 버전의 실패 횟수. */
+    fun silentFailedVersionCode(): Int = prefs.getInt(KEY_SILENT_FAILED_VERSION_CODE, 0)
+
+    fun silentFailures(): Int = prefs.getInt(KEY_SILENT_FAILURES, 0)
+
+    /** 그 버전의 실패를 하나 센다. 다른 버전이면 1부터. */
+    fun addSilentFailure(versionCode: Int) {
+        val count = if (silentFailedVersionCode() == versionCode) silentFailures() + 1 else 1
+        prefs.edit().putInt(KEY_SILENT_FAILED_VERSION_CODE, versionCode).putInt(KEY_SILENT_FAILURES, count).apply()
+    }
+
+    /**
+     * 확인 없이 설치를 맡긴(세션을 커밋한) versionCode. 없으면 0. 교체된 뒤 새 프로세스가
+     * (`MY_PACKAGE_REPLACED`) 이 값이 자기 버전이면 "업데이트했습니다"를 한 번 알린다 — 사용자가 직접
+     * 설치한 업데이트에는 알리지 않는다.
+     */
+    fun silentInstallingVersionCode(): Int = prefs.getInt(KEY_SILENT_INSTALLING_VERSION_CODE, 0)
+
+    fun setSilentInstallingVersionCode(versionCode: Int) {
+        // commit: 바로 뒤에 이 프로세스가 교체될 수 있다 — apply의 비동기 쓰기가 사라지면 안 된다.
+        prefs.edit().putInt(KEY_SILENT_INSTALLING_VERSION_CODE, versionCode).commit()
+    }
+
     private companion object {
         const val NAME = "homebase_update"
+        const val KEY_AUTO_INSTALL = "auto_install"
+        const val KEY_NEEDS_CONFIRM_VERSION_CODE = "needs_confirm_version_code"
+        const val KEY_SILENT_FAILED_VERSION_CODE = "silent_failed_version_code"
+        const val KEY_SILENT_FAILURES = "silent_failures"
+        const val KEY_SILENT_INSTALLING_VERSION_CODE = "silent_installing_version_code"
         const val KEY_NOTIFIED_VERSION_CODE = "notified_version_code"
         const val KEY_ENABLED = "enabled"
         const val KEY_LAST_CHECKED_AT = "last_checked_at"
