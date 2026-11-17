@@ -36,6 +36,12 @@ object NotificationStack {
     }
 
     /**
+     * The summary's last line when the stack's limits took [dropped] notifications out of the shade (#69):
+     * they are not lost, the notification center keeps every one. Null when none were.
+     */
+    fun droppedLine(dropped: Int): String? = if (dropped > 0) "이전 알림 ${dropped}건은 알림 센터에 있습니다" else null
+
+    /**
      * One line of the summary: the notification's header (sender and app, see [NotificationLook.header]),
      * then its title and the first line of its body — "작업실 · 카카오톡 — 홍길동: 오늘 회의 몇 시예요?".
      */

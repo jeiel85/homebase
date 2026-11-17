@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -52,6 +53,11 @@ public sealed class MobileBridgeServer : BackgroundService
     {
         public Stream Stream { get; } = stream;
         public SemaphoreSlim WriteLock { get; } = new(1, 1);
+
+        /// <summary>Approvals this Tray waits on; withdrawn when it disconnects (#64).</summary>
+        public ConcurrentDictionary<string, byte> Approvals { get; } = new(StringComparer.Ordinal);
+
+        public volatile bool Closed;
     }
 
     public MobileBridgeServer(
@@ -179,6 +185,10 @@ public sealed class MobileBridgeServer : BackgroundService
         finally
         {
             lock (_gate) _connections.Remove(conn);
+            // A Tray that went away can no longer hand an answer to its hook, and the hook already
+            // fell back to the PC: withdraw its prompts now rather than at their deadline (#64).
+            conn.Closed = true;
+            foreach (var approvalId in conn.Approvals.Keys) _approvals?.Cancel(approvalId);
             await pipe.DisposeAsync();
         }
     }
@@ -193,7 +203,8 @@ public sealed class MobileBridgeServer : BackgroundService
         }
         if (op == MobileBridge.OpAgentAlert)
         {
-            await SendAgentAlertAsync(payload, ct);
+            // A push takes seconds; sent off the read loop so this connection's session reports keep flowing (#61).
+            _ = Task.Run(() => SendAgentAlertAsync(payload, ct), CancellationToken.None);
             return;
         }
         if (op == MobileBridge.OpApprovalCancel)
@@ -333,25 +344,43 @@ public sealed class MobileBridgeServer : BackgroundService
             _logger.LogDebug("AI session alert {Kind} held back by the rate limit", alert.Kind);
             return;
         }
-        var result = await _router.DeliverAsync(AgentAlertGate.ToNotification(alert, now), ct);
-        _logger.LogInformation("AI session alert {Kind} ({App}): delivered={Delivered}", alert.Kind, alert.App, result.Delivered);
+        try
+        {
+            var result = await _router.DeliverAsync(AgentAlertGate.ToNotification(alert, now), ct);
+            _logger.LogInformation("AI session alert {Kind} ({App}): delivered={Delivered}", alert.Kind, alert.App, result.Delivered);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI session alert {Kind} ({App}) could not be sent", alert.Kind, alert.App);
+        }
     }
 
     /// <summary>A Claude Code permission prompt for the phones (M-48); answers null (ask on the PC) on any failure.</summary>
     private async Task AskApprovalAsync(Connection conn, string id, JsonNode? payload, CancellationToken ct)
     {
         string? decision = null;
+        string? requestId = null;
         try
         {
             var request = payload?.Deserialize<ApprovalRequest>(MobileProtocol.Json);
             if (_approvals is not null && request is not null && !string.IsNullOrEmpty(request.Id))
+            {
+                requestId = request.Id;
+                conn.Approvals[requestId] = 0;
+                if (conn.Closed) return; // the Tray left before the prompt went out
                 decision = await _approvals.AskAsync(request, ct);
+            }
         }
         catch (JsonException) { }
         catch (OperationCanceledException) { return; }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Claude approval failed; the PC asks as usual");
+        }
+        finally
+        {
+            if (requestId is not null) conn.Approvals.TryRemove(requestId, out _);
         }
         try { await SendAsync(conn, MobileBridge.Response(id, true, new ApprovalAskResult(decision)), ct); }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }

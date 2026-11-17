@@ -70,6 +70,27 @@ foreach ($dr in ($driverRoots | Select-Object -Unique)) {
     }
 }
 
+# 4b) Take the Claude Code phone-approval hook (DECISIONS M-48) out of each user's settings.json,
+#     before the Tray that knows the format is deleted. Only our hook goes; the rest of the file stays
+#     (the previous file is kept as settings.json.homebase.bak). A hook left behind would only be
+#     refused at once, but it stays in the user's own file (#64).
+$hookRoots = @($DefaultRoot)
+if ($InstallDir) { $hookRoots += $InstallDir }
+$trayExe = $hookRoots | Select-Object -Unique |
+    ForEach-Object { Join-Path $_ "Tray\Homebase.Tray.exe" } |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
+$profileRoot = Split-Path -Parent $env:PUBLIC
+if ($trayExe -and $profileRoot) {
+    Get-ChildItem -Path $profileRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $settings = Join-Path $_.FullName ".claude\settings.json"
+        if ((Test-Path $settings) -and (Select-String -Path $settings -Pattern "X-Homebase-Token" -SimpleMatch -Quiet)) {
+            $p = Start-Process -FilePath $trayExe -ArgumentList @("--remove-claude-hook", "`"$settings`"") -Wait -PassThru -WindowStyle Hidden
+            if ($p.ExitCode -eq 0) { Write-Host "Removed the Claude Code hook from $settings" }
+            else { Write-Warning "Couldn't remove the Claude Code hook from $settings (exit $($p.ExitCode))" }
+        }
+    }
+}
+
 # 5) Remove binaries from the default location and, if given, the actual install dir.
 $roots = @($DefaultRoot)
 if ($InstallDir) { $roots += $InstallDir }

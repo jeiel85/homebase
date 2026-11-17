@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
 import io.github.jeiel85.homebase.data.KeystoreCipher
+import io.github.jeiel85.homebase.data.PcMarks
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,11 @@ data class HistoryEntry(
     val shown: Boolean,
     /** Kept out of the shade on purpose: its priority was "센터에만" (DECISIONS M-37). */
     val quiet: Boolean = false,
+    /**
+     * Index into [io.github.jeiel85.homebase.data.PcMarks.PALETTE] of the badge it wore when it came, so a
+     * PC removed since, or a relayed device, keeps its colour here (#57). Null in entries from before.
+     */
+    val color: Int? = null,
 ) {
     /** Unique enough for list keys: the same id can arrive twice (e.g. a PC re-sending after a restart). */
     val key: String get() = "$pcId/$id/$receivedAt"
@@ -48,7 +54,7 @@ data class HistoryEntry(
     val bundleKey: String get() = NotificationPriority.bundleKey(category, pcId, source)
 
     companion object {
-        fun of(message: PushMessage, receivedAt: Long, shown: Boolean, quiet: Boolean = false) = HistoryEntry(
+        fun of(message: PushMessage, receivedAt: Long, shown: Boolean, quiet: Boolean = false, color: Int? = null) = HistoryEntry(
             id = message.id,
             pcId = message.pcId,
             pcName = message.pcName,
@@ -61,6 +67,7 @@ data class HistoryEntry(
             receivedAt = receivedAt,
             shown = shown,
             quiet = quiet,
+            color = color,
         )
     }
 }
@@ -141,7 +148,8 @@ object PushHistoryRules {
                     .put("sentAt", e.sentAt)
                     .put("receivedAt", e.receivedAt)
                     .put("shown", e.shown)
-                    .put("quiet", e.quiet),
+                    .put("quiet", e.quiet)
+                    .apply { e.color?.let { put("color", it) } },
             )
         }
         return JSONObject().put("v", FORMAT).put("entries", array).toString()
@@ -169,6 +177,8 @@ object PushHistoryRules {
                     shown = o.optBoolean("shown", true),
                     // Absent in entries from before M-37.
                     quiet = o.optBoolean("quiet", false),
+                    // Absent before #57; a colour a newer build added is dropped.
+                    color = PcMarks.validColor(if (o.has("color")) o.optInt("color", -1) else null),
                 )
             } catch (_: Exception) {
                 null

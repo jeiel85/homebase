@@ -43,6 +43,7 @@ internal sealed class MobileBridgeClient : IDisposable
     private IReadOnlyList<ClaudeSession> _transcripts = Array.Empty<ClaudeSession>();
     private DateTime _transcriptsAt;
     private bool _watchErrorLogged;
+    private readonly HashSet<string> _formatLogged = new(StringComparer.Ordinal);
 
     public MobileBridgeClient(bool claudeSessions)
     {
@@ -295,6 +296,8 @@ internal sealed class MobileBridgeClient : IDisposable
         var now = DateTime.UtcNow;
         var live = _status.Read();
         var codex = _codex.ReadActive(now);
+        LogFormatIssue(_status.FormatIssue);
+        LogFormatIssue(_codex.FormatIssue);
         if (IsWatching && now - _transcriptsAt >= ClaudeInterval)
         {
             _transcripts = _claude.ReadTranscripts(now);
@@ -321,6 +324,18 @@ internal sealed class MobileBridgeClient : IDisposable
                 .Select(c => new AgentState("codex:" + c.Agent!.SessionId, c.App, c.Title, c.Detail,
                     c.Agent.Status, null, c.Agent.StatusSince)));
         return _detector.Update(states, DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>
+    /// A session file this build reads without the fields it needs (#61): said once per reader, so a
+    /// Claude Code or Codex update that changed the format explains empty cards in tray.log.
+    /// </summary>
+    private void LogFormatIssue(string? issue)
+    {
+        if (issue is null) return;
+        var reader = issue.StartsWith("Codex", StringComparison.Ordinal) ? "codex" : "claude";
+        if (!_formatLogged.Add(reader)) return;
+        TrayLog.Warn("agent-sessions", $"Session format not recognized; cards and alerts may miss it: {issue}");
     }
 
     private static string? FolderName(string? cwd) =>

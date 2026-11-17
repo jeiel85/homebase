@@ -67,6 +67,15 @@ object PcMarks {
     /** A stored colour index, or null when it is missing or outside [PALETTE] (a newer build's). */
     fun validColor(index: Int?): Int? = index?.takeIf { it in PALETTE.indices }
 
-    /** The mark of a PC this phone is not paired with (any more), or of a relayed device: its name decides it. */
-    fun unpaired(name: String): PcMark = PcMark(letter(name), slot(name.trim().lowercase(Locale.ROOT)))
+    /**
+     * The mark of a PC this phone is not paired with (any more), or of a relayed device: its name
+     * decides it. The colour starts at the name's [slot] and skips the ones in [taken] — the paired
+     * PCs' — so a device's badge is not mistaken for a PC's (#57); only when every colour is taken
+     * does it share one.
+     */
+    fun unpaired(name: String, taken: Collection<Int> = emptyList()): PcMark {
+        val start = slot(name.trim().lowercase(Locale.ROOT))
+        val color = PALETTE.indices.map { (start + it) % PALETTE.size }.firstOrNull { it !in taken } ?: start
+        return PcMark(letter(name), color)
+    }
 }

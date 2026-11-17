@@ -24,6 +24,15 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Uninstall: take our Claude Code hook out of one settings.json and exit — no window, no mutex
+        // (uninstall-service.ps1, once per user profile). Exit code 0 = done or nothing to do (#64).
+        //   Homebase.Tray.exe --remove-claude-hook <path to .claude\settings.json>
+        if (ArgAfter(e.Args, "--remove-claude-hook") is { } settingsPath)
+        {
+            Shutdown(Services.Mobile.ClaudeHookSetup.RemoveFrom(settingsPath) ? 0 : 1);
+            return;
+        }
+
         // Design preview of the Homebase window with made-up devices and notifications (no tray icon, no
         // mutex). Settings is the real page: it reads this PC's configuration and, on the Phone area,
         // asks this PC's Agent for a pairing code as the tray does:

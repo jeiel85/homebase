@@ -35,7 +35,8 @@ internal static class UpdateAutoOutcome
 {
     private const string FileName = "update-auto-outcome.txt";
 
-    private static string FilePath => Path.Combine(
+    /// <summary>The record's file; tests point it elsewhere so they never touch the user's own.</summary>
+    internal static string FilePath { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Homebase", FileName);
 
     public static void Write(Version version, AutoInstallResult result)

@@ -69,6 +69,29 @@ internal static class ClaudeHookSetup
         }
     }
 
+    /// <summary>
+    /// Uninstall (<c>Homebase.Tray.exe --remove-claude-hook &lt;settings.json&gt;</c>, run by
+    /// uninstall-service.ps1 for each user profile): takes our hook out of that file and leaves the
+    /// rest, with the previous file kept as <c>.homebase.bak</c>. A hook left behind did no harm — its
+    /// call is refused at once — but it stayed in the user's file (#64). True when nothing is left to do.
+    /// </summary>
+    public static bool RemoveFrom(string settingsPath)
+    {
+        try
+        {
+            var text = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
+            if (ClaudeHook.InstalledCommand(text) is null) return true;
+            WriteSettings(settingsPath, ClaudeHook.ApplyToSettings(text, null));
+            TrayLog.Info("claude-hook", $"Phone approval hook removed from {settingsPath} (uninstall).");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            TrayLog.Warn("claude-hook", $"Removing the phone approval hook from {settingsPath} failed.", ex);
+            return false;
+        }
+    }
+
     /// <summary>At Tray start: when the hook is installed, listen again (and fix the hook if the port changed).</summary>
     public static void Resume()
     {
@@ -127,13 +150,15 @@ internal static class ClaudeHookSetup
 
     private static string? ReadSettings() => File.Exists(SettingsPath) ? File.ReadAllText(SettingsPath) : null;
 
+    private static void WriteSettings(string json) => WriteSettings(SettingsPath, json);
+
     /// <summary>Atomic replace, keeping the previous file as <c>settings.json.homebase.bak</c>.</summary>
-    private static void WriteSettings(string json)
+    private static void WriteSettings(string path, string json)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-        if (File.Exists(SettingsPath)) File.Copy(SettingsPath, SettingsPath + ".homebase.bak", overwrite: true);
-        var tmp = SettingsPath + ".homebase.tmp";
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (File.Exists(path)) File.Copy(path, path + ".homebase.bak", overwrite: true);
+        var tmp = path + ".homebase.tmp";
         File.WriteAllText(tmp, json);
-        File.Move(tmp, SettingsPath, overwrite: true);
+        File.Move(tmp, path, overwrite: true);
     }
 }

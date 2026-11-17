@@ -256,6 +256,61 @@ public class AgentSessionTests
     }
 
     [Fact]
+    public void A_new_codex_session_in_todays_folder_shows_before_the_next_full_search()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "hb-codex-n-" + Guid.NewGuid().ToString("N"));
+        var now = DateTime.UtcNow;
+        var today = now.ToLocalTime();
+        var day = Directory.CreateDirectory(Path.Combine(home, "sessions", today.ToString("yyyy"), today.ToString("MM"), today.ToString("dd"))).FullName;
+        var old = Directory.CreateDirectory(Path.Combine(home, "sessions", "2020", "01", "01")).FullName;
+        try
+        {
+            var reader = new CodexSessionReader(home);
+            Assert.Empty(reader.ReadActive(now)); // the full search ran: nothing yet
+
+            File.WriteAllText(Path.Combine(day, "rollout-x-01a1e375-84c9-7741-a7f3-120940bdace8.jsonl"),
+                """{"type":"event_msg","payload":{"type":"task_started"}}""" + "\n");
+            // Another day's folder waits for the full search (an old date written now, e.g. a resumed session).
+            File.WriteAllText(Path.Combine(old, "rollout-y-01a1e375-0000-7741-a7f3-120940bdace8.jsonl"),
+                """{"type":"event_msg","payload":{"type":"task_started"}}""" + "\n");
+            var soon = Assert.Single(reader.ReadActive(now.AddSeconds(3)));
+            Assert.Equal("01a1e375-84c9-7741-a7f3-120940bdace8", soon.Agent!.SessionId);
+            Assert.Equal(2, reader.ReadActive(now + CodexSessionReader.DiscoveryInterval).Count);
+        }
+        finally { Directory.Delete(home, recursive: true); }
+    }
+
+    [Fact]
+    public void A_codex_rollout_of_unknown_lines_is_reported_once_large_enough()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "hb-codex-u-" + Guid.NewGuid().ToString("N"));
+        var day = Directory.CreateDirectory(Path.Combine(home, "sessions", "2026", "11", "16")).FullName;
+        var file = Path.Combine(day, "rollout-x-01a1e375-84c9-7741-a7f3-120940bdace8.jsonl");
+        try
+        {
+            var line = """{"type":"renamed_event","payload":{"kind":"started"}}""" + "\n";
+            File.WriteAllText(file, line);
+            var reader = new CodexSessionReader(home);
+            reader.ReadActive(DateTime.UtcNow);
+            Assert.Null(reader.FormatIssue); // a short new rollout has nothing to say yet
+
+            File.AppendAllText(file, string.Concat(Enumerable.Repeat(line, CodexSessionReader.UnrecognizedAfterBytes / line.Length + 1)));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddSeconds(1));
+            reader.ReadActive(DateTime.UtcNow);
+            Assert.Contains(Path.GetFileName(file), reader.FormatIssue);
+        }
+        finally { Directory.Delete(home, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("""{"pid":1,"sessionId":"s","status":"busy"}""", null)]
+    [InlineData("""{"pid":1,"sessionId":"s"}""", "status")]
+    [InlineData("""{"processId":1,"id":"s","state":"busy"}""", "pid, sessionId, status")]
+    [InlineData("""{"pid":1,"sessio""", null)] // half-written: nothing to say
+    public void Claude_status_files_missing_needed_fields_are_named(string json, string? expected) =>
+        Assert.Equal(expected, ClaudeStatusReader.MissingFields(json));
+
+    [Fact]
     public void A_codex_turn_running_a_long_quiet_command_stays_listed_until_it_ends()
     {
         var home = Path.Combine(Path.GetTempPath(), "hb-codex-q-" + Guid.NewGuid().ToString("N"));
@@ -302,7 +357,8 @@ public class AgentSessionTests
     public void The_first_view_only_records_and_waiting_alerts_once()
     {
         var d = new AgentAlertDetector();
-        Assert.Empty(d.Update(new[] { State(AgentStatus.Waiting, T0, "승인") }, T0)); // already waiting at start
+        // Waiting since long before the Tray started: an old state, not replayed.
+        Assert.Empty(d.Update(new[] { State(AgentStatus.Waiting, T0.AddMinutes(-30), "승인") }, T0));
         Assert.Empty(d.Update(new[] { State(AgentStatus.Busy, T0.AddSeconds(5)) }, T0.AddSeconds(5)));
         var alert = Assert.Single(d.Update(new[] { State(AgentStatus.Waiting, T0.AddSeconds(9), "Bash 실행 승인") }, T0.AddSeconds(9)));
         Assert.Equal(AgentAlertKind.Waiting, alert.Kind);
@@ -334,7 +390,24 @@ public class AgentSessionTests
         var d = new AgentAlertDetector();
         d.Update(new[] { State(AgentStatus.Busy, T0) }, T0);
         d.Update(Array.Empty<AgentState>(), T0.AddMinutes(5));
-        Assert.Empty(d.Update(new[] { State(AgentStatus.Waiting, T0.AddMinutes(6)) }, T0.AddMinutes(6)));
+        // Remembered as busy since T0, this would be a 6-minute "done".
+        Assert.Empty(d.Update(new[] { State(AgentStatus.Idle, T0.AddMinutes(6)) }, T0.AddMinutes(6)));
+    }
+
+    [Fact]
+    public void A_session_found_waiting_lately_alerts_once_when_first_seen()
+    {
+        // The Tray restarted (an update) while the session asked: it would otherwise never be told (#61).
+        var d = new AgentAlertDetector();
+        var alert = Assert.Single(d.Update(new[] { State(AgentStatus.Waiting, T0.AddMinutes(-3), "승인") }, T0));
+        Assert.Equal(AgentAlertKind.Waiting, alert.Kind);
+        Assert.Empty(d.Update(new[] { State(AgentStatus.Waiting, T0.AddMinutes(-3), "승인") }, T0.AddSeconds(3)));
+
+        // Past the window, or with no start time, it is only recorded.
+        var other = new AgentAlertDetector();
+        Assert.Empty(other.Update(new[] { State(AgentStatus.Waiting, T0 - AgentAlertDetector.FirstSightWaiting - TimeSpan.FromSeconds(1)) }, T0));
+        Assert.Empty(new AgentAlertDetector().Update(
+            new[] { new AgentState("codex:B", "Codex", "x", null, AgentStatus.Waiting, null, null) }, T0));
     }
 
     [Theory]

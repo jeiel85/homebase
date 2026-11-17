@@ -104,7 +104,8 @@ public static class MobileServiceCollectionExtensions
             sp.GetRequiredService<DeviceHub>(), sp.GetRequiredService<HubLinkService>()));
         services.AddHostedService(sp => sp.GetRequiredService<HubLinkService>());
         // Claude Code permission prompts waiting for a phone (M-48).
-        services.AddSingleton(sp => new ApprovalBroker(sp.GetRequiredService<ILogger<ApprovalBroker>>(), sp.GetService<IOutboundRouter>()));
+        services.AddSingleton(sp => new ApprovalBroker(sp.GetRequiredService<ILogger<ApprovalBroker>>(), sp.GetService<IOutboundRouter>(),
+            devices: sp.GetRequiredService<IMobileDeviceStore>()));
         services.AddSingleton(sp =>
         {
             var api = new MobileApiServer(

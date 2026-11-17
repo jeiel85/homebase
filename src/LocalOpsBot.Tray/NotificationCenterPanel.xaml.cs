@@ -159,10 +159,10 @@ public partial class NotificationCenterPanel : UserControl
 
     private async void Clear_Click(object sender, RoutedEventArgs e)
     {
-        if (!MessageDialog.Show(L.CenterClearTitle, L.CenterClearMessage, L.CenterClearConfirm, L.Cancel)) return;
+        if (!MessageDialog.Show(L.CenterClearTitle, L.CenterClearMessage, L.CenterClearConfirm, L.Cancel, owner: Window.GetWindow(this))) return;
         if (!await NotificationCenter.ClearAsync())
         {
-            MessageDialog.Show(L.CenterClearTitle, L.CenterFailed);
+            MessageDialog.Show(L.CenterClearTitle, L.CenterFailed, owner: Window.GetWindow(this));
             return;
         }
         if (_filter is not null && _filter != AlertFilter) _filter = null;

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using LocalOpsBot.Agent.Services.Mobile;
 using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using LocalOpsBot.Infrastructure.Mobile;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -242,6 +243,34 @@ public class ClaudeApprovalTests
         var soon = Request(DateTimeOffset.UtcNow) with { ExpiresAt = DateTimeOffset.UtcNow.AddMilliseconds(300) };
         Assert.Null(await new ApprovalBroker(NullLogger<ApprovalBroker>.Instance, new FakeRouter(true)).AskAsync(soon, CancellationToken.None));
         Assert.Null(await new ApprovalBroker(NullLogger<ApprovalBroker>.Instance).AskAsync(Request(DateTimeOffset.UtcNow), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Prompts_no_phone_takes_go_back_to_the_pc_at_once()
+    {
+        // The push channel counts a muted category as delivered (M-25): without this the hook waited 10 minutes (#64).
+        var store = new InMemoryDeviceStore();
+        var a = store.Add("S24", null, "aa");
+        var b = store.Add("Tab", null, "bb");
+        PushSubscription Sub(params string[] muted) => new("https://push.example/x", "p", "a", DateTimeOffset.UnixEpoch, muted);
+        store.SetPushSubscription(a.DeviceId, Sub(ClaudeHook.Category));
+        store.SetPushSubscription(b.DeviceId, Sub(ClaudeHook.Category, "agent-done"));
+        var router = new FakeRouter(true);
+        var broker = new ApprovalBroker(NullLogger<ApprovalBroker>.Instance, router, devices: store);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Null(await broker.AskAsync(Request(DateTimeOffset.UtcNow), CancellationToken.None));
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2), $"took {sw.Elapsed}");
+        Assert.Empty(router.Sent);
+
+        // One phone that still takes them is enough.
+        store.SetPushSubscription(b.DeviceId, Sub("agent-done"));
+        var r = Request(DateTimeOffset.UtcNow);
+        var ask = broker.AskAsync(r, CancellationToken.None);
+        await router.Delivered.Task;
+        broker.Cancel(r.Id);
+        Assert.Null(await ask);
+        Assert.Single(router.Sent);
     }
 
     private sealed class SlowRouter(TimeSpan delay) : IOutboundRouter

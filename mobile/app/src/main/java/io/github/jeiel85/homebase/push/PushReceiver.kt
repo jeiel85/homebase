@@ -87,7 +87,8 @@ class PushReceiver : BroadcastReceiver() {
             Log.w(TAG, "dropped an unreadable push: ${e.message}")
             return
         }
-        val pc = PcStore(context).get(message.pcId) ?: run {
+        val pcs = PcStore(context).all()
+        val pc = pcs.firstOrNull { it.pcId == message.pcId } ?: run {
             Log.i(TAG, "dropped a push from an unpaired PC")
             return
         }
@@ -107,11 +108,12 @@ class PushReceiver : BroadcastReceiver() {
         // Shown under the user's alias for the PC, else the name the PC sent; the history keeps what the
         // PC sent and maps it when drawn. The badge is the PC's (or the relayed device's), as on its card (M-38).
         val shownMessage = message.copy(pcName = pc.shownName(message.pcName))
-        val shown = PushNotifier.show(context, shownMessage, profile, NotificationLook.mark(shownMessage, pc))
+        val mark = NotificationLook.mark(shownMessage, pc, pcs.mapNotNull { it.color })
+        val shown = PushNotifier.show(context, shownMessage, profile, mark)
         // The notification center keeps it even when Android blocked the notification (DECISIONS M-31)
         // or the user keeps this kind out of the shade.
         try {
-            PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown, quiet = !profile.shade))
+            PushHistory.record(context, HistoryEntry.of(message, System.currentTimeMillis(), shown, quiet = !profile.shade, color = mark.colorIndex))
             // The file is written on the history's own thread; keep the broadcast open until it is on disk.
             PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
         } catch (e: Exception) {

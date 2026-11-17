@@ -364,7 +364,7 @@ public sealed class TrayIconManager : IDisposable
     {
         try
         {
-            var uri = new Uri("pack://application:,,,/Resources/homebase.ico");
+            var uri = new Uri("pack://application:,,,/Homebase.Tray;component/Resources/homebase.ico");
             using var stream = Application.GetResourceStream(uri)!.Stream;
             return new Icon(stream, SystemInformation.SmallIconSize);
         }

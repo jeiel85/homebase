@@ -4,6 +4,7 @@ import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcMark
 import io.github.jeiel85.homebase.data.PcMarks
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NotificationLookTest {
@@ -72,5 +73,31 @@ class NotificationLookTest {
         )
         // A PC no longer paired: its id still picks the colour, its name the letter.
         assertEquals(PcMark("작", PcMarks.slot("pc-1")), NotificationLook.mark(msg("boot", "boot", "t"), null))
+    }
+
+    @Test
+    fun a_relayed_title_loses_the_app_prefix_also_alone_or_under_another_device_name() {
+        // #69: the expanded stack showed "카카오톡: 김철수" under a header that already says 카카오톡.
+        assertEquals("김철수", NotificationLook.title(msg(NotificationGroups.DEVICE, "Galaxy S24 · 카카오톡", "카카오톡: 김철수")))
+        assertEquals("김철수", NotificationLook.title(msg(NotificationGroups.DEVICE, "내 폰 · 카카오톡", "Galaxy S24 · 카카오톡: 김철수")))
+        // Only the app's own prefix goes; another "x: y" title stays whole.
+        assertEquals("회의: 3시", NotificationLook.title(msg(NotificationGroups.DEVICE, "Galaxy S24 · 카카오톡", "회의: 3시")))
+        assertEquals("카카오톡: 김철수", NotificationLook.title(msg("windows-toast", "Slack", "카카오톡: 김철수")))
+        assertEquals("카카오톡:", NotificationLook.title(msg(NotificationGroups.DEVICE, "Galaxy S24 · 카카오톡", "카카오톡:")))
+    }
+
+    @Test
+    fun a_relayed_device_badge_avoids_the_paired_pcs_colours_and_history_keeps_the_one_it_wore() {
+        val free = PcMarks.unpaired("Galaxy S24")
+        val relayed = msg(NotificationGroups.DEVICE, "Galaxy S24 · 카카오톡", "t")
+        val shifted = NotificationLook.mark(relayed, pc, listOf(free.colorIndex))
+        assertEquals("G", shifted.letter)
+        assertTrue(shifted.colorIndex != free.colorIndex)
+
+        // The notification center draws what the shade drew, whatever is paired now (#57).
+        assertEquals(PcMark("G", 5), NotificationLook.mark(NotificationGroups.DEVICE, "Galaxy S24 · 카카오톡", "pc-1", "작업실", pc, stored = 5))
+        assertEquals(PcMark("작", 6), NotificationLook.mark("boot", "boot", "pc-gone", "작업실", null, stored = 6))
+        // A paired PC is drawn with its own mark.
+        assertEquals(pc.mark, NotificationLook.mark("boot", "boot", "pc-1", "작업실", pc, stored = 6))
     }
 }

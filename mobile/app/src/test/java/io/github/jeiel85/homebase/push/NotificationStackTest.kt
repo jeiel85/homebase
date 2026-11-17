@@ -39,6 +39,12 @@ class NotificationStackTest {
     }
 
     @Test
+    fun the_summary_says_where_dropped_notifications_went_only_when_some_were() {
+        assertEquals(null, NotificationStack.droppedLine(0))
+        assertEquals("이전 알림 3건은 알림 센터에 있습니다", NotificationStack.droppedLine(3))
+    }
+
+    @Test
     fun a_summary_line_names_who_sent_it_then_what_it_says() {
         assertEquals("작업실 · 카카오톡 — 홍길동: 오늘 회의 몇 시예요?", NotificationStack.line("작업실 · 카카오톡", "홍길동", "오늘 회의 몇 시예요?\n둘째 줄"))
         assertEquals("거실 · 프로세스 감시 — backup.exe 멈춤", NotificationStack.line("거실 · 프로세스 감시", "backup.exe 멈춤", null))

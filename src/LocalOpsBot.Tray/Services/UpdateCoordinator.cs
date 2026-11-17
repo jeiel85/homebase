@@ -28,6 +28,9 @@ internal sealed class UpdateCoordinator
         _updater = new UpdateService(http);
     }
 
+    /// <summary>For tests: an updater over a fake HTTP handler.</summary>
+    internal UpdateCoordinator(UpdateService updater) => _updater = updater;
+
     public string CurrentVersion => _updater.GetCurrentVersionString();
 
     /// <summary>An update flow (dialog, download or install) is open; a new one would return <see cref="UpdateOutcome.Busy"/>.</summary>
@@ -179,7 +182,7 @@ internal sealed class UpdateCoordinator
     /// startup countdown started it, so nobody may be watching: each way it can end is recorded
     /// (<see cref="UpdateAutoOutcome"/>) for tray.log and the next update popup (issue #18).
     /// </summary>
-    private async Task<UpdateOutcome> DownloadAndApplyAsync(UpdateInfo info, IProgress<string>? status, bool unattended)
+    internal async Task<UpdateOutcome> DownloadAndApplyAsync(UpdateInfo info, IProgress<string>? status, bool unattended)
     {
         var window = new UpdateProgressWindow();
         window.SetStatus(L.UpdDownloading);
@@ -267,10 +270,22 @@ internal sealed class UpdateCoordinator
         // The result notice must replace the progress window, not sit under it: shown while the
         // window was still open, the modal notice opened behind it and disabled it, so the window
         // stayed on "Installing… approve the administrator prompt" at 100% with Cancel and X dead.
+        //
+        // An unattended install (the startup countdown ran out) shows no notice at all: nobody may be
+        // there to close it, and until it is closed this flow stays busy, so the daily check and
+        // "Check for updates" would only answer Busy (#71). Its outcome is already recorded
+        // (UpdateAutoOutcome) and the next update popup says where it stopped.
         void CloseThenShow(string title, string detail)
         {
             CloseQuietly(window);
+            if (unattended)
+            {
+                TrayLog.Info("Update", $"Unattended install of v{info.Version}: no notice shown ({title}); the next update popup tells");
+                return;
+            }
+            TrayLog.Info("Update", $"Result notice shown: {title}");
             MessageDialog.Show(title, detail);
+            TrayLog.Info("Update", $"Result notice closed: {title}");
         }
     }
 

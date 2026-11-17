@@ -26,9 +26,13 @@ jobs:
         with:
           dotnet-version: '9.0'
 
-      # The whole solution, so the Tray (WPF, not referenced by the tests) has to compile too.
+      # The whole solution: the Tray (WPF) and its own tests compile too.
       - name: Build
         run: dotnet build LocalOpsBot.sln -c Release
 
       - name: Test
         run: dotnet test tests/LocalOpsBot.Tests/LocalOpsBot.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+      # Tray windows (update flow) on a WPF dispatcher, #71.
+      - name: Test (Tray)
+        run: dotnet test tests/LocalOpsBot.Tray.Tests/LocalOpsBot.Tray.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"

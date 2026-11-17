@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import io.github.jeiel85.homebase.MainActivity
 import io.github.jeiel85.homebase.R
 import io.github.jeiel85.homebase.data.PcMark
+import io.github.jeiel85.homebase.data.PcMarks
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 
@@ -61,14 +62,22 @@ object PushNotifier {
     /** The one Android group every bundled Homebase notification joins (M-52). */
     private const val STACK_GROUP = "hb.stack"
 
+    /** The per-source groups of v0.38 and earlier (M-37), moved into [STACK_GROUP] by [tidy]. */
+    private const val OLD_GROUP_PREFIX = "hb.b."
+
     /** Extras a stacked notification carries for the summary and the per-source limit. */
     private const val EXTRA_BUNDLE_KEY = "io.github.jeiel85.homebase.BUNDLE_KEY"
     private const val EXTRA_SENDER = "io.github.jeiel85.homebase.SENDER"
+    private const val EXTRA_MARK_LETTER = "io.github.jeiel85.homebase.MARK_LETTER"
+    private const val EXTRA_MARK_COLOR = "io.github.jeiel85.homebase.MARK_COLOR"
 
     /** Lines a bundle's summary lists (lock screen, watches, Android versions that show the summary). */
     private const val SUMMARY_LINES = 5
 
     private const val SUMMARY_TAG = "hb.bundle"
+
+    /** Badges drawn so far, by mark and size: a burst of one PC's notifications draws its badge once (#57). */
+    private val badges = object : android.util.LruCache<String, Bitmap>(16) {}
 
     fun canNotify(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -120,6 +129,9 @@ object PushNotifier {
                     Bundle().apply {
                         putString(EXTRA_BUNDLE_KEY, bundleKey(message))
                         putString(EXTRA_SENDER, NotificationLook.sender(message))
+                        // So a summary rebuilt later (a notification dismissed) can still wear its badge.
+                        putString(EXTRA_MARK_LETTER, mark.letter)
+                        putInt(EXTRA_MARK_COLOR, mark.colorIndex)
                     },
                 )
                 // Only the notifications themselves ring; the summary updates silently.
@@ -130,7 +142,7 @@ object PushNotifier {
         val id = message.id.hashCode()
         message.approval?.let { addApprovalActions(context, builder, message, it, id) }
         if (!post(context, null, id, builder.build())) return false
-        if (stacked) updateStack(context, channelId, message, id, mark, badge)
+        if (stacked) updateStack(context, channelId, message, id, mark)
         return true
     }
 
@@ -179,8 +191,13 @@ object PushNotifier {
     }
 
     /**
-     * Removes bundle summaries left without notifications — the user swiped them away one by one or
-     * opened them. Android would otherwise keep showing the summary on its own.
+     * Keeps the shade's bundles true to what is left in them, after notifications were swiped away or
+     * opened (no push follows those):
+     * - a summary left without notifications is removed — Android would keep showing it on its own;
+     * - the Homebase stack's summary is rewritten from the notifications still in it, so its count and
+     *   lines match (#69);
+     * - notifications still in the per-source bundles of an earlier version are moved into the stack
+     *   (#69). Their old summaries empty out and go on the next pass (the app runs two, see MainActivity).
      */
     fun tidy(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -189,9 +206,44 @@ object PushNotifier {
         } catch (_: Exception) {
             return
         }
+        if (moveOldBundles(context, active)) return // the moves are queued; the next pass sees them
         val withChildren = active.filterNot { it.isSummary() }.mapNotNull { it.notification.group }.toSet()
         active.filter { it.isSummary() && it.tag == SUMMARY_TAG && it.notification.group !in withChildren }
             .forEach { nm.cancel(it.tag, it.id) }
+        val children = active.filter { it.notification.group == STACK_GROUP && !it.isSummary() }.sortedByDescending { it.postTime }
+        if (children.isEmpty()) {
+            StackDrops.reset(context) // the stack is gone: the next one starts its own count
+            return
+        }
+        // No summary yet: one notification needs none; two or more (moved in from old bundles) get one.
+        if (active.none { it.isStackSummary() } && children.size < 2) return
+        writeSummary(context, nm, children.map(::childOf), StackDrops.get(context), children.first().notification.category)
+    }
+
+    /**
+     * Notifications of the per-source bundles from before M-52 (`hb.b.…`) re-posted into the one stack,
+     * silently and in place (same id). Their summaries are not cancelled here: cancelling a summary
+     * takes its group's notifications with it, and the re-posts may not have landed yet. True when any moved.
+     */
+    private fun moveOldBundles(context: Context, active: Array<StatusBarNotification>): Boolean {
+        val old = active.filter { !it.isSummary() && it.notification.group?.startsWith(OLD_GROUP_PREFIX) == true }
+        old.forEach { sbn ->
+            val n = sbn.notification
+            val moved = Notification.Builder.recoverBuilder(context, n)
+                .setGroup(STACK_GROUP)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .setOnlyAlertOnce(true)
+                .setDeleteIntent(dismissed(context))
+                .build()
+            moved.extras.putString(EXTRA_BUNDLE_KEY, n.extras.getString(EXTRA_BUNDLE_KEY) ?: n.group)
+            moved.extras.putString(
+                EXTRA_SENDER,
+                n.extras.getString(EXTRA_SENDER)
+                    ?: n.extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.substringBefore(" · ").orEmpty(),
+            )
+            post(context, sbn.tag, sbn.id, moved)
+        }
+        return old.isNotEmpty()
     }
 
     /**
@@ -261,8 +313,8 @@ object PushNotifier {
     /**
      * Keeps the Homebase stack in order after a notification joined it: drops the oldest past
      * [MAX_IN_BUNDLE] of its source and past [MAX_IN_STACK] in all, then adds or updates the summary
-     * once the stack holds two or more. The notification just posted may not be listed as active yet —
-     * `notify` is queued — so it is counted by hand.
+     * once the stack holds two or more (or keeps one up to date that is already there). The
+     * notification just posted may not be listed as active yet — `notify` is queued — so it is counted by hand.
      */
     private fun updateStack(
         context: Context,
@@ -270,7 +322,6 @@ object PushNotifier {
         message: PushMessage,
         postedId: Int,
         mark: PcMark,
-        badge: Bitmap,
     ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         val active = try {
@@ -289,23 +340,55 @@ object PushNotifier {
         )
         others.filterIndexed { i, _ -> i in dropped }.forEach { nm.cancel(it.tag, it.id) }
         val kept = others.filterIndexed { i, _ -> i !in dropped }
-        if (kept.isEmpty()) return // one notification needs no summary
-        val count = kept.size + 1
-        val senders = listOf(NotificationLook.sender(message)) +
-            kept.map { it.notification.extras.getString(EXTRA_SENDER).orEmpty() }
-        val lines = listOf(NotificationStack.line(NotificationLook.header(message), NotificationLook.title(message), message.body)) +
-            kept.map {
-                val extras = it.notification.extras
-                NotificationStack.line(
-                    extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
-                    extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
-                    extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
-                )
-            }
+        val previous = active.firstOrNull { it.isStackSummary() }
+        if (kept.isEmpty() && previous == null) return // one notification needs no summary
+        val posted = StackChild(
+            NotificationLook.sender(message),
+            NotificationStack.line(NotificationLook.header(message), NotificationLook.title(message), message.body),
+            channelId,
+            mark,
+        )
+        writeSummary(context, nm, listOf(posted) + kept.map(::childOf), StackDrops.add(context, dropped.size), category(message))
+    }
+
+    /** One notification of the stack as its summary lists it. */
+    private class StackChild(val sender: String, val line: String, val channelId: String, val mark: PcMark?)
+
+    private fun childOf(sbn: StatusBarNotification): StackChild {
+        val extras = sbn.notification.extras
+        val mark = extras.getString(EXTRA_MARK_LETTER)?.let { letter ->
+            PcMarks.validColor(extras.getInt(EXTRA_MARK_COLOR, -1))?.let { PcMark(letter, it) }
+        }
+        return StackChild(
+            extras.getString(EXTRA_SENDER).orEmpty(),
+            NotificationStack.line(
+                extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
+                extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+                extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            ),
+            sbn.notification.channelId,
+            mark,
+        )
+    }
+
+    /**
+     * Posts (or rewrites) the stack's summary for [children], newest first: "새 알림 N건", who sent them,
+     * a line each, and — when the stack's limits took [dropped] out of the shade — where those went.
+     */
+    private fun writeSummary(
+        context: Context,
+        nm: NotificationManager,
+        children: List<StackChild>,
+        dropped: Int,
+        category: String?,
+    ) {
+        val count = children.size
+        val senders = children.map { it.sender }
         val from = NotificationStack.senders(senders)
         val title = "새 알림 ${count}건"
         val style = NotificationCompat.InboxStyle().setBigContentTitle(title).setSummaryText(from)
-        lines.take(SUMMARY_LINES).forEach { style.addLine(it) }
+        children.take(SUMMARY_LINES).forEach { style.addLine(it.line) }
+        NotificationStack.droppedLine(dropped)?.let { style.addLine(it) }
         val center = PendingIntent.getActivity(
             context,
             REQUEST_CENTER,
@@ -317,20 +400,22 @@ object PushNotifier {
         // Android files a stack in the alerting section when its summary or any of its notifications
         // is alerting. The summary takes the stack's least important channel, so the notifications
         // alone decide — also after the alerting ones are dismissed, which no push follows.
-        val summaryChannel = (listOf(channelId) + kept.map { it.notification.channelId }).distinct()
+        val summaryChannel = children.map { it.channelId }.distinct()
             .mapNotNull { id -> nm.getNotificationChannel(id)?.importance?.takeIf { it > NotificationManager.IMPORTANCE_NONE }?.let { id to it } }
-            .minByOrNull { it.second }?.first ?: channelId
+            .minByOrNull { it.second }?.first ?: children.first().channelId
         // One sender's stack wears its badge; a mixed one keeps the app's own look.
-        val oneSender = senders.distinct().size == 1
+        val mark = children.first().mark.takeIf { senders.distinct().size == 1 }
         val summary = NotificationCompat.Builder(context, summaryChannel)
             .setSmallIcon(R.drawable.ic_notification)
-            .apply { if (oneSender) setColor(mark.argb).setLargeIcon(badge) }
+            .apply { if (mark != null) setColor(mark.argb).setLargeIcon(badge(context, mark)) }
             .setContentTitle(title)
             .setContentText(from)
             .setStyle(style)
             .setSubText(from)
             .setNumber(count)
-            .setCategory(category(message))
+            .setCategory(category)
+            // Clearing the whole stack lands in tidy, which then starts the dropped count over.
+            .setDeleteIntent(dismissed(context))
             .setGroup(STACK_GROUP)
             .setGroupSummary(true)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
@@ -343,10 +428,17 @@ object PushNotifier {
 
     /**
      * The round badge shown as the notification's large icon: the mark's colour with its letter in
-     * white, at the size Android shows large icons.
+     * white, at the size Android shows large icons. Drawn once per mark and kept ([badges]); the
+     * bitmap is only read after, by the notifications that carry it.
      */
     private fun badge(context: Context, mark: PcMark): Bitmap {
         val size = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_width).coerceAtLeast(48)
+        val key = "${mark.letter}|${mark.colorIndex}|$size"
+        badges.get(key)?.let { return it }
+        return drawBadge(mark, size).also { badges.put(key, it) }
+    }
+
+    private fun drawBadge(mark: PcMark, size: Int): Bitmap {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val half = size / 2f
@@ -377,6 +469,8 @@ object PushNotifier {
     )
 
     private fun StatusBarNotification.isSummary(): Boolean = notification.flags and Notification.FLAG_GROUP_SUMMARY != 0
+
+    private fun StatusBarNotification.isStackSummary(): Boolean = isSummary() && tag == SUMMARY_TAG && notification.group == STACK_GROUP
 
     private fun category(message: PushMessage): String =
         if (NotificationPriority.hasApps(message.category)) NotificationCompat.CATEGORY_MESSAGE else NotificationCompat.CATEGORY_STATUS
@@ -419,5 +513,33 @@ object PushNotifier {
 class NotificationDismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         PushNotifier.tidy(context)
+    }
+}
+
+/**
+ * How many notifications the Homebase stack's limits took out of the shade since the stack began
+ * (#69), for its summary. Kept on its own rather than in the summary's extras: notifications are
+ * posted asynchronously, so a burst reads a summary that is not updated yet and the count was lost.
+ * Back to 0 once the stack is empty (see [PushNotifier.tidy]).
+ */
+internal object StackDrops {
+    private const val PREFS = "push_stack"
+    private const val KEY = "dropped"
+
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    @Synchronized
+    fun add(context: Context, n: Int): Int {
+        val total = get(context) + n
+        if (n > 0) prefs(context).edit().putInt(KEY, total).apply()
+        return total
+    }
+
+    @Synchronized
+    fun get(context: Context): Int = prefs(context).getInt(KEY, 0)
+
+    @Synchronized
+    fun reset(context: Context) {
+        if (get(context) != 0) prefs(context).edit().putInt(KEY, 0).apply()
     }
 }

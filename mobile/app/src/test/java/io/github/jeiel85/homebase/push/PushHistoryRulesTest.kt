@@ -128,4 +128,15 @@ class PushHistoryRulesTest {
         assertEquals(42L, e.receivedAt)
         assertEquals(42L, HistoryEntry.of(msg.copy(ts = "not a time"), 42L, false).sentAt)
     }
+
+    @Test
+    fun theBadgeColourIsKeptAndAnUnknownOneDropped() {
+        val coloured = entry("c", 1_000).copy(color = 3)
+        assertEquals(3, PushHistoryRules.fromJson(PushHistoryRules.toJson(listOf(coloured))).single().color)
+        // Entries from before #57 have none, and a newer build's colour outside the palette is dropped.
+        assertNull(PushHistoryRules.fromJson(PushHistoryRules.toJson(listOf(entry("n", 1_000)))).single().color)
+        val root = JSONObject(PushHistoryRules.toJson(listOf(coloured)))
+        root.getJSONArray("entries").getJSONObject(0).put("color", 99)
+        assertNull(PushHistoryRules.fromJson(root.toString()).single().color)
+    }
 }
