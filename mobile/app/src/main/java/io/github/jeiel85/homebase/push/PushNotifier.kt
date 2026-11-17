@@ -314,10 +314,12 @@ object PushNotifier {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // Android files a stack under its summary — alerting or silent — so the summary goes in the
-        // channel of the stack's most important notification, not of the newest.
+        // Android files a stack in the alerting section when its summary or any of its notifications
+        // is alerting. The summary takes the stack's least important channel, so the notifications
+        // alone decide — also after the alerting ones are dismissed, which no push follows.
         val summaryChannel = (listOf(channelId) + kept.map { it.notification.channelId }).distinct()
-            .maxByOrNull { nm.getNotificationChannel(it)?.importance ?: NotificationManager.IMPORTANCE_NONE } ?: channelId
+            .mapNotNull { id -> nm.getNotificationChannel(id)?.importance?.takeIf { it > NotificationManager.IMPORTANCE_NONE }?.let { id to it } }
+            .minByOrNull { it.second }?.first ?: channelId
         // One sender's stack wears its badge; a mixed one keeps the app's own look.
         val oneSender = senders.distinct().size == 1
         val summary = NotificationCompat.Builder(context, summaryChannel)

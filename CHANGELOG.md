@@ -9,8 +9,8 @@
   ("작업실, 거실 외 1"), expanding it shows each notification with its PC badge and "PC · app" line, and
   tapping the summary opens the notification center. Each source still keeps its newest 8 in the shade,
   and the stack its newest 24 in all; everything stays in the notification center (DECISIONS M-52).
-- The stack is filed (alerting or silent) by its most important notification, so a quiet app joining it
-  no longer moves urgent PC alerts into the silent section.
+- The stack sits in the alerting section while it holds an alerting notification and moves to the silent
+  section once those are dismissed, whatever order quiet and urgent notifications arrived in.
 
 ### Unchanged
 - Claude Code permission prompts (허용/거부), kinds or apps set to "하나씩" (bundling off), and the tray's
