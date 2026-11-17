@@ -92,7 +92,7 @@ public class ProtocolGoldenTests
         new[] { "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b" });
 
     // The device group (M-47): HOME-PC holds WORK-PC's token, LAPTOP linked to it only one way so far.
-    // The group's aliases (M-50): WORK-PC and a phone named, LAPTOP's alias cleared.
+    // The group's aliases (M-51): WORK-PC and a phone named, LAPTOP's alias cleared.
     public static GroupResponse SampleGroup() => new(MobileProtocol.Schema, "6f1c0d2e9b8a4c7d", "HOME-PC",
         new[] { new GroupMember("3b9e1f5a7c2d4e60", "LAPTOP", false), new GroupMember("a1b2c3d4e5f60718", "WORK-PC", true) },
         new[] { new GroupRemoval("pc:0fedcba987654321", new DateTimeOffset(2026, 11, 16, 12, 0, 0, TimeSpan.Zero)) },

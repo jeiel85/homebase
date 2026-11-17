@@ -5,7 +5,7 @@ using Xunit;
 
 namespace LocalOpsBot.Tests.Mobile;
 
-/// <summary>The group's aliases (DECISIONS M-49, M-50).</summary>
+/// <summary>The group's aliases (DECISIONS M-50, M-51).</summary>
 public sealed class DeviceAliasTableTests : IDisposable
 {
     private const string Work = "pc:a1b2c3d4e5f60718";

@@ -18,7 +18,7 @@ data class PcEntry(
     val lastGood: String? = null,
     /** PC time (epoch ms) of the last path list received by push; older or replayed pushes are ignored. */
     val pushedEndpointsAt: Long? = null,
-    /** The user's own name for this PC, shared with the device group (DECISIONS M-36, M-50); null = the PC's name. */
+    /** The user's own name for this PC, shared with the device group (DECISIONS M-36, M-51); null = the PC's name. */
     val alias: String? = null,
     /** This phone's time (epoch ms) when that path list was applied; lets a PC whose clock went back be heard. */
     val pushedEndpointsReceivedAt: Long? = null,
@@ -26,7 +26,7 @@ data class PcEntry(
     val color: Int? = null,
     /**
      * When [alias] was set or cleared (epoch ms, by the clock of the device where it was done), for the
-     * group's latest-wins rule (DECISIONS M-50); null for an alias set before aliases were shared.
+     * group's latest-wins rule (DECISIONS M-51); null for an alias set before aliases were shared.
      */
     val aliasAt: Long? = null,
 ) {
@@ -79,7 +79,7 @@ class PcStore(context: Context) {
 
     /**
      * Sets or clears (blank, or the PC's own name) the alias the user typed, stamped now for the group
-     * (DECISIONS M-50). True when it changed — then it is to be shared ([io.github.jeiel85.homebase.mesh.GroupSync.shareAlias]).
+     * (DECISIONS M-51). True when it changed — then it is to be shared ([io.github.jeiel85.homebase.mesh.GroupSync.shareAlias]).
      */
     @Synchronized
     fun setAlias(pcId: String, input: String?, nowMillis: Long = System.currentTimeMillis()): Boolean {

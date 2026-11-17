@@ -8,13 +8,13 @@ import java.time.OffsetDateTime
 /*
  * The device group (DECISIONS M-47). Wire shape: docs/mobile-protocol/group.v1.json
  * (`GET /api/v1/group`): the answering PC and the PCs it is linked with; `token` = it holds that PC's
- * token, so it can introduce it. Since v0.37.0 it also carries the group's aliases (DECISIONS M-50).
+ * token, so it can introduce it. Since v0.38.0 it also carries the group's aliases (DECISIONS M-51).
  */
 
 data class GroupMember(val pcId: String, val pcName: String, val token: Boolean)
 
 /**
- * One alias of the group (DECISIONS M-50): [key] is `pc:<pcId>` for a PC (phones are named on the PCs
+ * One alias of the group (DECISIONS M-51): [key] is `pc:<pcId>` for a PC (phones are named on the PCs
  * only), [name] what the device reported, [alias] null when it was cleared, [atMillis] when it was set
  * or cleared — the latest wins everywhere.
  */
@@ -43,7 +43,7 @@ data class GroupAlias(val key: String, val name: String, val alias: String?, val
 }
 
 /**
- * [aliasesKnown]: the PC answered with an `aliases` list (v0.37.0 or later), so it takes them too —
+ * [aliasesKnown]: the PC answered with an `aliases` list (v0.38.0 or later), so it takes them too —
  * an older PC is not sent any.
  */
 data class GroupInfo(
@@ -78,6 +78,6 @@ internal fun groupJoinBody(offerJson: String): String =
 internal fun groupIntroduceBody(pcId: String): String =
     JSONObject().put("schema", SCHEMA).put("pcId", pcId).toString()
 
-/** `POST /api/v1/group/alias` body (DECISIONS M-50). */
+/** `POST /api/v1/group/alias` body (DECISIONS M-51). */
 internal fun groupAliasBody(entries: List<GroupAlias>): String =
     JSONObject().put("schema", SCHEMA).put("aliases", JSONArray().apply { entries.forEach { put(it.toJson()) } }).toString()

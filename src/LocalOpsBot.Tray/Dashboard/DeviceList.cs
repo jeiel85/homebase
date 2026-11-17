@@ -19,7 +19,7 @@ internal enum DeviceRole
 
 /// <summary>
 /// One entry of the dashboard's device list (DECISIONS M-46). <c>Name</c> is what the device reports;
-/// <c>Alias</c> the group's name for it (M-50), shown in its place (<see cref="Shown"/>). <c>AliasKey</c>
+/// <c>Alias</c> the group's name for it (M-51), shown in its place (<see cref="Shown"/>). <c>AliasKey</c>
 /// is its group key, to set that alias — null while a PC linked here has not said its id yet.
 /// </summary>
 internal sealed record DeviceItem(
@@ -55,7 +55,7 @@ internal static class DeviceList
     /// This PC first, then PCs (linked either way), then phones; online before offline, then by the name
     /// shown. A device paired here and also listed by a linked PC appears once (the copy that can show
     /// more). With <paramref name="aliases"/>, each device and the PC it is seen through carry the group's
-    /// alias for them (M-50).
+    /// alias for them (M-51).
     /// </summary>
     public static IReadOnlyList<DeviceItem> Build(DeviceOverview? overview, string selfName, DeviceAliasTable? aliases = null)
     {
@@ -68,7 +68,7 @@ internal static class DeviceList
         }));
     }
 
-    /// <summary>The group key of a device on a PC's device list (M-47, M-50): its pcId for a PC, name and model for a phone.</summary>
+    /// <summary>The group key of a device on a PC's device list (M-47, M-51): its pcId for a PC, name and model for a phone.</summary>
     public static string? KeyOf(DeviceEntry d) => d.Kind == DeviceKind.Pc
         ? d.PcId is { Length: > 0 } pcId ? GroupKeys.Pc(pcId) : null
         : GroupKeys.PhoneByName(d.Name, d.Model);

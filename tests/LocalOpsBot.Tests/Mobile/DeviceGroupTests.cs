@@ -102,7 +102,7 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         Assert.True((await b.Links.LinkAsync(PairingLink.Build(a.Api.CreateOffer()!), _cts.Token)).Linked);
         await Until(() => a.Links.Hub("pc-b"), _cts.Token);
 
-        // Named on A's tray (M-50): A answers at once and hands it to B in the background.
+        // Named on A's tray (M-51): A answers at once and hands it to B in the background.
         Assert.True(a.Group.SetAlias("pc:pc-b", "PC-B", "작업실"));
         Assert.False(a.Group.SetAlias("pc:pc-b", "PC-B", "작업실"));
         Assert.Equal("작업실", await Until(() => b.Group.Aliases.Get("pc:pc-b"), _cts.Token));

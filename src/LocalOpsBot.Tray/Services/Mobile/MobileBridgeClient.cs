@@ -62,7 +62,7 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>A notification from another device to show here (DECISIONS M-28). Background thread.</summary>
     public event Action<TrayToast>? ToastRequested;
 
-    /// <summary>The group's aliases (M-50): sent on connect and whenever they change. Background thread.</summary>
+    /// <summary>The group's aliases (M-51): sent on connect and whenever they change. Background thread.</summary>
     public event Action<IReadOnlyList<DeviceAlias>>? AliasesReceived;
 
     /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>

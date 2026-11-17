@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/** The group's aliases on the phone (DECISIONS M-50). */
+/** The group's aliases on the phone (DECISIONS M-51). */
 class AliasSyncTest {
     private fun fixture(name: String): String = File("../../docs/mobile-protocol/$name").readText(Charsets.UTF_8)
 
@@ -58,7 +58,7 @@ class AliasSyncTest {
                 "pc1" to group("pc1", entry("pc1", "집", 200)), // older
                 "pc2" to group("pc2"), // has none
                 "pc3" to group("pc3", entry("pc1", "작업실", 300)), // already has it
-                "pc4" to group("pc4", known = false), // older than v0.37.0
+                "pc4" to group("pc4", known = false), // older than v0.38.0
             ),
         )
         assertTrue(plan.apply.isEmpty())

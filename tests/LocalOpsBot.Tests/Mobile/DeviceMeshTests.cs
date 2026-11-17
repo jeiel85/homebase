@@ -351,7 +351,7 @@ public class HubLinkEndToEndTests : IDisposable
                 DateTimeOffset.UtcNow, "raw", NotificationSensitivity.Normal));
             var atB = await Until(() => routerB.Snapshot().FirstOrDefault(n => n.Title.StartsWith("HUB-A · Outlook")), cts.Token);
             Assert.Equal(NotificationForwardingService.DeviceCategory, atB.Category);
-            // The balloon names its sender apart, so B's tray can show the alias given to A there (M-49).
+            // The balloon names its sender apart, so B's tray can show the alias given to A there (M-50).
             Assert.Contains(toastsB.Snapshot(), t => t is { Title: "HUB-A · Outlook", Source: "HUB-A", SourceKind: DeviceKind.Pc, App: "Outlook" });
             var keptAtB = Assert.Single((await historyB.History.ListAsync(null, 10, cts.Token)).Entries);
             Assert.Equal(("HUB-A", DeviceKind.Pc, "Outlook"), (keptAtB.Source, keptAtB.SourceKind, keptAtB.App));

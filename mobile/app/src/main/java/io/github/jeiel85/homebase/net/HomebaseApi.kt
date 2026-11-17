@@ -196,7 +196,7 @@ class HomebaseApi(
             code in 200..299 && JSONObject(text ?: "{}").let { it.optBoolean("linked") || it.optBoolean("already") }
         }
 
-    /** Hands the group's aliases this phone decided to [pc] (DECISIONS M-50); false for a PC older than v0.37.0. */
+    /** Hands the group's aliases this phone decided to [pc] (DECISIONS M-51); false for a PC older than v0.38.0. */
     suspend fun groupAlias(pc: PcEntry, entries: List<GroupAlias>): Boolean =
         authedCall(pc, "/api/v1/group/alias", Request.Builder().post(groupAliasBody(entries).toRequestBody(JSON))) { code, _ ->
             code in 200..299

@@ -725,7 +725,7 @@ public sealed class MobileApiServer : BackgroundService
             }
             case ("POST", GroupPaths.Alias):
             {
-                // From any member: a phone where the user named a PC, or another PC's tray (M-50).
+                // From any member: a phone where the user named a PC, or another PC's tray (M-51).
                 var req = Read<GroupAliasRequest>(body);
                 if (req is not { Aliases: not null } || req.Schema != MobileProtocol.Schema) return (400, Error("bad_request", "Invalid aliases."));
                 return (200, Json(new GroupAliasResponse(MobileProtocol.Schema, _group.AcceptAliases(req.Aliases))));

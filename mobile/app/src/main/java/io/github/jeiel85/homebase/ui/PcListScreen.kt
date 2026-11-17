@@ -270,7 +270,7 @@ fun PcListScreen(
         AliasDialog(
             pc,
             onSave = { input ->
-                // Shared with the device group at once (DECISIONS M-50); a PC that is off gets it later.
+                // Shared with the device group at once (DECISIONS M-51); a PC that is off gets it later.
                 if (store.setAlias(pc.pcId, input)) PushRegistrar.scope.launch { GroupSync.shareAlias(api, store, pc.pcId) }
                 store.get(pc.pcId)?.let { PushNotifier.renamePc(context, it.pcId, it.displayName) }
                 pcs = store.all()
@@ -469,7 +469,7 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRename: 
     }
 }
 
-/** Names [pc] for the device group (DECISIONS M-50); an empty field (or "원래 이름") goes back to the PC's own name. */
+/** Names [pc] for the device group (DECISIONS M-51); an empty field (or "원래 이름") goes back to the PC's own name. */
 @Composable
 private fun AliasDialog(pc: PcEntry, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
     var text by remember(pc.pcId) { mutableStateOf(pc.alias ?: "") }

@@ -25,7 +25,7 @@ import kotlinx.coroutines.sync.Mutex
  *  - pairs itself with the group's PCs it is missing, through a PC that holds their token
  *    (`POST /api/v1/group/introduce`).
  * A PC the user deleted on this phone is not joined again automatically (pairing it by hand undoes that).
- * The same pass reconciles the PCs' aliases with the group's (DECISIONS M-50, [AliasSync]).
+ * The same pass reconciles the PCs' aliases with the group's (DECISIONS M-51, [AliasSync]).
  */
 object GroupSync {
     private const val TAG = "HomebaseGroup"
@@ -148,7 +148,7 @@ object GroupSync {
 
     /**
      * Takes the group's newer aliases for this phone's PCs and hands the PCs what this phone decided
-     * later than they know (DECISIONS M-50). True when a PC's shown name changed.
+     * later than they know (DECISIONS M-51). True when a PC's shown name changed.
      */
     private suspend fun syncAliases(context: Context, api: HomebaseApi, store: PcStore, groups: Map<String, GroupInfo>): Boolean {
         val plan = AliasSync.plan(store.all(), groups)

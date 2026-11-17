@@ -122,8 +122,8 @@ public sealed record DeviceStatus(
 
 /// <summary>
 /// One device paired with a hub PC. <c>Online</c>: it reported within <see cref="DeviceStatusBoard.OnlineWindow"/>.
-/// <c>Status</c> is null until its first report since the hub started. <c>PcId</c> (v0.37.0): a linked PC's
-/// own id from its last report, so the group's alias for it can be found (M-50).
+/// <c>Status</c> is null until its first report since the hub started. <c>PcId</c> (v0.38.0): a linked PC's
+/// own id from its last report, so the group's alias for it can be found (M-51).
 /// </summary>
 public sealed record DeviceEntry(
     string DeviceId,

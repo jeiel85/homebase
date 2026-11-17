@@ -246,7 +246,7 @@ public sealed class MobileBridgeServer : BackgroundService
         }
         if (op == MobileBridge.OpAliasesSet)
         {
-            // The user named a device in the tray (M-50): shared with the whole group.
+            // The user named a device in the tray (M-51): shared with the whole group.
             var req = payload?.Deserialize<AliasSetRequest>(MobileProtocol.Json);
             if (_group is null || req is not { Key.Length: > 0, Name.Length: > 0 } || !GroupKeys.IsValid(req.Key))
             {

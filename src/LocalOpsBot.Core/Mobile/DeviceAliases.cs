@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace LocalOpsBot.Core.Mobile;
 
 /// <summary>
-/// One alias of the device group (DECISIONS M-50). <c>Key</c> names the device the way the group does
+/// One alias of the device group (DECISIONS M-51). <c>Key</c> names the device the way the group does
 /// (<see cref="GroupKeys"/>): <c>pc:&lt;pcId&gt;</c>, or <c>phone-name:&lt;name&gt;|&lt;model&gt;</c> for a phone
 /// (phones have a different device id on every PC). <c>Name</c> is what the device reported when it was
 /// named, so places that know only a sender's name (a relayed notification) still find it. <c>Alias</c>
@@ -13,20 +13,20 @@ namespace LocalOpsBot.Core.Mobile;
 /// </summary>
 public sealed record DeviceAlias(string Key, string Name, string? Alias, DateTimeOffset At);
 
-/// <summary><c>POST /api/v1/group/alias</c> body: aliases a member set (or learned), to merge (M-50).</summary>
+/// <summary><c>POST /api/v1/group/alias</c> body: aliases a member set (or learned), to merge (M-51).</summary>
 public sealed record GroupAliasRequest(int Schema, IReadOnlyList<DeviceAlias> Aliases);
 
 /// <summary><c>POST /api/v1/group/alias</c> answer: how many entries changed here.</summary>
 public sealed record GroupAliasResponse(int Schema, int Changed);
 
-/// <summary>Bridge <c>aliases.set</c> (Tray → Agent): the user named a device on this PC (M-50).</summary>
+/// <summary>Bridge <c>aliases.set</c> (Tray → Agent): the user named a device on this PC (M-51).</summary>
 public sealed record AliasSetRequest(string Key, string Name, string? Alias);
 
 /// <summary>Bridge <c>aliases</c> push (Agent → Tray): the whole table, cleared entries included.</summary>
 public sealed record AliasListPayload(IReadOnlyList<DeviceAlias> Aliases);
 
 /// <summary>
-/// The group's aliases (DECISIONS M-50, after M-36 and M-49): names the user gave PCs and phones, shared by
+/// The group's aliases (DECISIONS M-51, after M-36 and M-50): names the user gave PCs and phones, shared by
 /// every member. Each PC's Agent keeps one table, serves it with its group answer, and merges the tables of
 /// the PCs it syncs with; phones merge it into their PC list. Per key the newest entry wins, a tie going to
 /// the larger alias text, so every member ends with the same table whatever order changes arrive in.

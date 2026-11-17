@@ -5,7 +5,7 @@ using LocalOpsBot.Core.Mobile;
 namespace LocalOpsBot.Tray.Services.Mobile;
 
 /// <summary>
-/// The group's aliases as this tray shows them (DECISIONS M-50): a copy of the Agent's table, which the
+/// The group's aliases as this tray shows them (DECISIONS M-51): a copy of the Agent's table, which the
 /// Agent sends when the tray connects and again whenever it changes — set here, on a phone, or on another
 /// PC of the group. The dashboard, the notification center, Settings › Phone and the balloons all show a
 /// device through <see cref="Show"/>; <see cref="SetAsync"/> asks the Agent, which shares it with the group.

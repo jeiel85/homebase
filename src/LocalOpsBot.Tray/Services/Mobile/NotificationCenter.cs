@@ -27,11 +27,20 @@ internal static class NotificationCenter
     public static event Action<int>? UnreadChanged;
 
     /// <summary>
+    /// Design preview only (<c>--preview-dashboard</c>): made-up history instead of the bridge, and a
+    /// read marker kept in memory so the preview never touches this user's real one.
+    /// </summary>
+    internal static HistoryPage? Preview { get; set; }
+
+    private static DateTimeOffset _previewSeen = DateTimeOffset.UtcNow.AddHours(-1);
+
+    /// <summary>
     /// When this user last opened the center. The first time ever it is "now", so a new install does
     /// not greet the user with 30 days of old alerts as unread.
     /// </summary>
     public static DateTimeOffset LastSeen()
     {
+        if (Preview is not null) return _previewSeen;
         lock (Gate)
         {
             if (Read() is { } seen) return seen;
@@ -44,9 +53,16 @@ internal static class NotificationCenter
     /// <summary>Marks everything up to <paramref name="at"/> as read (never moves the marker back).</summary>
     public static void MarkSeen(DateTimeOffset at)
     {
-        lock (Gate)
+        if (Preview is not null)
         {
-            if (Read() is not { } seen || at > seen) Write(at);
+            if (at > _previewSeen) _previewSeen = at;
+        }
+        else
+        {
+            lock (Gate)
+            {
+                if (Read() is not { } seen || at > seen) Write(at);
+            }
         }
         SetUnread(0);
     }
@@ -82,6 +98,7 @@ internal static class NotificationCenter
     /// <summary>One page of history, newest first, or why there is none.</summary>
     public static async Task<(HistoryPage? Page, Failure Failure)> ListAsync(HistoryCursor? after, int limit)
     {
+        if (Preview is { } preview) return (after is null ? preview : new HistoryPage(Array.Empty<HistoryEntry>(), false), Failure.None);
         if (MobileHost.Client is not { } client) return (null, Failure.FeatureOff);
         if (!client.IsConnected) return (null, Failure.NoAgent);
         try
@@ -100,7 +117,7 @@ internal static class NotificationCenter
     /// <summary>Deletes the relayed notifications (the alert log stays). False when the Agent refused or was unreachable.</summary>
     public static async Task<bool> ClearAsync()
     {
-        if (MobileHost.Client is not { IsConnected: true } client) return false;
+        if (Preview is not null || MobileHost.Client is not { IsConnected: true } client) return false;
         try
         {
             var r = await client.RequestAsync(MobileBridge.OpHistoryClear);

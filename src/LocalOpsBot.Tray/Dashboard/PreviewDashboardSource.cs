@@ -1,4 +1,5 @@
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Notifications;
 
 namespace LocalOpsBot.Tray.Dashboard;
 
@@ -123,5 +124,27 @@ internal sealed class PreviewDashboardSource : IDashboardSource
             new[] { new DiskUsage("C:", 510_891_388_928, 327_434_858_496), new DiskUsage("D:", 1_447_034_875_904, 1_400_076_177_408) },
             new PingStats("1.1.1.1", _ping, 10.3, 0, 30));
         return new LiveSnapshot(1, now, name, sys, true, true, apps, procs, Array.Empty<ClaudeSession>(), work, hw);
+    }
+
+    /// <summary>Made-up notification history for the preview's Notifications page (newest first).</summary>
+    public static HistoryPage History()
+    {
+        var now = DateTimeOffset.UtcNow;
+        HistoryEntry Dev(long id, double minutesAgo, string source, string kind, string app, string title, string? body) =>
+            new(HistoryKind.Device, id, now.AddMinutes(-minutesAgo), source, kind, null, app, title, body);
+        HistoryEntry Alert(long id, double minutesAgo, string kind, string title, string body, string severity, string status = "Sent") =>
+            new(HistoryKind.Alert, id, now.AddMinutes(-minutesAgo), null, null, null, kind, title, body, severity, status);
+        return new HistoryPage(new[]
+        {
+            Dev(9, 3, "Galaxy S24", DeviceKind.Phone, "카카오톡", "김민수", "내일 회의 10시로 옮겨도 될까요?"),
+            Dev(8, 12, "LAPTOP-JEIEL", DeviceKind.Pc, "Outlook", "주간 보고 초안", "첨부한 초안 확인 부탁드립니다. 수정할 부분은 메모로 남겨 주세요."),
+            Alert(7, 26, "process_watch", "ollama 프로세스가 멈췄습니다", "감시 중인 프로세스 ollama가 실행 중이 아닙니다.", "Warning"),
+            Dev(6, 48, "Galaxy S24", DeviceKind.Phone, "Gmail", "GitHub", "[jeiel85/homebase] CI passed for #64"),
+            Dev(5, 95, "Galaxy Tab S9", DeviceKind.Phone, "YouTube", "새 동영상", "구독한 채널에 새 동영상이 올라왔습니다."),
+            Alert(4, 60 * 20, "service_watch", "Spooler 서비스가 다시 실행됩니다", "감시 중인 서비스 Spooler가 다시 Running입니다.", "Recovery"),
+            Alert(3, 60 * 21, "service_watch", "Spooler 서비스가 멈췄습니다", "감시 중인 서비스 Spooler가 Stopped 상태입니다.", "Critical", "Failed"),
+            Dev(2, 60 * 26, "LAPTOP-JEIEL", DeviceKind.Pc, "Teams", "박지은", "자료 공유했습니다"),
+            Dev(1, 60 * 50, "Galaxy S24", DeviceKind.Phone, "문자", "택배", "고객님의 택배가 오늘 배송될 예정입니다."),
+        }, More: false);
     }
 }

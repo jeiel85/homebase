@@ -60,7 +60,7 @@ public class ThemedWindow : Window
     }
 
     /// <summary>
-    /// A fixed-height window (Settings 660, the dashboard 640 …) is taller than the work area of a
+    /// A fixed-height window (the Homebase window's 680 …) is taller than the work area of a
     /// small screen — a 1366×768 laptop at 125 % has about 580 DIPs — which put its bottom row
     /// (Close / Apply) out of reach (issue #22). Shrink it to the work area; the content between the
     /// header and the buttons already scrolls.

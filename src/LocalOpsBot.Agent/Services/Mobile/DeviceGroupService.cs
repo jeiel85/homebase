@@ -18,7 +18,7 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// that PC's token fetches a one-time offer for it);</item>
 /// <item>a device taken out of the group on any member is taken out here too (removals travel with the
 /// group answers and are kept for a week, so a member that was offline catches up);</item>
-/// <item>the group's aliases (M-50) travel the same way: each answer carries this PC's table, each sync
+/// <item>the group's aliases (M-51) travel the same way: each answer carries this PC's table, each sync
 /// merges the other's, and an alias set on this PC's tray goes to every linked PC at once.</item>
 /// </list>
 /// Phones join the same way from their side: they read the group from any PC and pair with the rest.
@@ -81,11 +81,11 @@ public sealed class DeviceGroupService : BackgroundService
             _removed.List(), _aliases.List());
     }
 
-    /// <summary>The group's aliases (M-50), cleared ones included.</summary>
+    /// <summary>The group's aliases (M-51), cleared ones included.</summary>
     public DeviceAliasTable Aliases => _aliases;
 
     /// <summary>
-    /// The user named a device on this PC's tray (M-50): kept here at once and sent in the background to
+    /// The user named a device on this PC's tray (M-51): kept here at once and sent in the background to
     /// every PC this one holds a token for; a PC that is off gets it from the next sync. False when nothing
     /// changed (the same alias, or not a group key).
     /// </summary>
@@ -298,7 +298,7 @@ public sealed class DeviceGroupService : BackgroundService
     }
 }
 
-/// <summary>The group's aliases persisted in <c>aliases.json</c> next to <c>group.json</c> (same ACL; M-50).</summary>
+/// <summary>The group's aliases persisted in <c>aliases.json</c> next to <c>group.json</c> (same ACL; M-51).</summary>
 public static class DeviceAliasFile
 {
     public static DeviceAliasTable Open(string directory, TimeProvider time, ILogger logger)

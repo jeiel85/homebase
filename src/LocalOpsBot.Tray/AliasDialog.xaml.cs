@@ -5,7 +5,7 @@ using LocalOpsBot.Core.Mobile;
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// Asks for a device's alias for the group (DECISIONS M-49, M-50). <see cref="Ask"/> returns the text to
+/// Asks for a device's alias for the group (DECISIONS M-50, M-51). <see cref="Ask"/> returns the text to
 /// keep — empty for "Original name" — or null when the user cancelled; the Agent's
 /// <see cref="DeviceAliasTable.Set"/> then applies the phone app's rules (trim, one space, 40 code points,
 /// own name = none).

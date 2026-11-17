@@ -12,7 +12,7 @@
         FontFamily="Segoe UI, Malgun Gothic"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
-  <!-- Names a device for the group (DECISIONS M-49, M-50): the dashboard's light console look, the phone
+  <!-- Names a device for the group (DECISIONS M-50, M-51): the dashboard's light console look, the phone
        app's alias dialog (M-36) — field with the original name as a hint, a 40-character counter, and
        "Original name" while an alias is set. -->
   <StackPanel Margin="18,16,18,16">

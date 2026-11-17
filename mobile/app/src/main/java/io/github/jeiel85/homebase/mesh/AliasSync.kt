@@ -5,7 +5,7 @@ import io.github.jeiel85.homebase.net.GroupAlias
 import io.github.jeiel85.homebase.net.GroupInfo
 
 /**
- * The phone's side of the group's aliases (DECISIONS M-50). Each PC keeps the group's table and serves it
+ * The phone's side of the group's aliases (DECISIONS M-51). Each PC keeps the group's table and serves it
  * with its group answer; the phone compares it, PC by PC, with the aliases it holds for its own PCs. Per
  * PC the latest decision wins — a tie goes to the larger alias text, the Agent's rule — so the phone and
  * every PC end with the same name whatever order changes arrive in.

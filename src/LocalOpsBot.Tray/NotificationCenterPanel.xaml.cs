@@ -5,47 +5,74 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Core.Notifications;
+using LocalOpsBot.Tray.Dashboard;
 using LocalOpsBot.Tray.Services;
 using LocalOpsBot.Tray.Services.Mobile;
 
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// The PC's notification center (DECISIONS M-32): notifications other devices relayed here and this
-/// PC's alerts, newest first, grouped by day. Filters are by source; a row expands to its full text.
-/// Opening it marks everything shown as read; new arrivals while it is open are added at the top.
-/// Senders show under the group's alias for them (M-50); the history keeps the name they sent, so
+/// The PC's notification center (DECISIONS M-32), the dashboard's Notifications tab (M-49):
+/// notifications other devices relayed here and this PC's alerts, newest first, grouped by day.
+/// Sources are down the left; a row expands to its full text. Coming into view marks everything
+/// shown as read; new arrivals while it is in view are added at the top.
+/// Senders show under the group's alias for them (M-51); the history keeps the name they sent, so
 /// renaming a device renames its past notifications too.
 /// </summary>
-public partial class NotificationCenterWindow : ThemedWindow
+public partial class NotificationCenterPanel : UserControl
 {
     private const int PageSize = 50;
     private const string AlertFilter = "\u0001alert";
 
     private readonly List<HistoryEntry> _entries = new();
-    private readonly DateTimeOffset _seenAtOpen;
+    private DateTimeOffset _seenAtOpen;
     private bool _more;
     private bool _loading;
+    private bool _inView;
+    private bool _newWhileLoading;
     private string? _filter; // null = all, AlertFilter, or a device name (as sent, not its alias)
+    private readonly Action _onAliases;
 
-    public NotificationCenterWindow()
+    /// <summary>
+    /// The tab is in front of a shown window: this page adds new notifications and marks them read
+    /// itself, so the tray does not count them as unread.
+    /// </summary>
+    internal bool InView => _inView;
+
+    public NotificationCenterPanel()
     {
         InitializeComponent();
-        _seenAtOpen = NotificationCenter.LastSeen();
-        Loaded += async (_, _) => await ReloadAsync();
         MobileHost.ToastRequested += OnToastRequested;
-        Action onAliases = () => Dispatcher.BeginInvoke(() => { if (_entries.Count > 0) Render(); });
-        DeviceNames.Aliases.Changed += onAliases;
-        Closed += (_, _) =>
-        {
-            MobileHost.ToastRequested -= OnToastRequested;
-            DeviceNames.Aliases.Changed -= onAliases;
-        };
+        // A device renamed here, on a phone or on another PC (M-51) shows under its new name at once.
+        _onAliases = () => Dispatcher.BeginInvoke(() => { if (_entries.Count > 0) Render(); });
+        DeviceNames.Aliases.Changed += _onAliases;
+    }
+
+    /// <summary>
+    /// The dashboard calls this when the tab comes into view (picked, or the window shown or restored)
+    /// and when it leaves. Each time it comes into view it reads the list again, and what was new
+    /// since the last look gets the unread dot — as opening the window used to.
+    /// </summary>
+    internal async void SetInView(bool inView)
+    {
+        if (inView == _inView) return;
+        _inView = inView;
+        if (!inView) return;
+        _seenAtOpen = NotificationCenter.LastSeen();
+        await ReloadAsync();
+    }
+
+    /// <summary>The tray is shutting down.</summary>
+    internal void Stop()
+    {
+        MobileHost.ToastRequested -= OnToastRequested;
+        DeviceNames.Aliases.Changed -= _onAliases;
     }
 
     private void OnToastRequested(TrayToast _) =>
         // The Agent writes the history before it sends the balloon, so the new entry is already there.
-        Dispatcher.BeginInvoke(new Action(async () => await AddNewestAsync()));
+        // Out of view the tray counts it as unread instead.
+        Dispatcher.BeginInvoke(new Action(async () => { if (_inView) await AddNewestAsync(); }));
 
     private async Task ReloadAsync()
     {
@@ -67,16 +94,39 @@ public partial class NotificationCenterWindow : ThemedWindow
             _entries.Clear();
             _entries.AddRange(page.Entries);
             _more = page.More;
-            MarkShownAsSeen();
+            // A source picked last time that is no longer in the list would leave nothing picked.
+            if (_filter is not null && !_entries.Any(Matches)) _filter = null;
+            // Left the tab while the list was read: nothing was looked at, so nothing becomes read
+            // (the list is read again when the tab comes back).
+            if (_inView) MarkShownAsSeen();
             Render();
         }
         finally { _loading = false; }
+        // One arrived while the list was being read; the read may have missed it.
+        if (_newWhileLoading) await AddNewestAsync();
     }
 
     private async Task AddNewestAsync()
     {
-        if (_loading || !IsLoaded) return;
+        if (_loading)
+        {
+            _newWhileLoading = true;
+            return;
+        }
+        _newWhileLoading = false;
+        // The tray did not count it because this tab was in view when it arrived; if the tab has been
+        // left since (before or during the read), count it as unread instead of showing it.
+        if (!_inView)
+        {
+            await NotificationCenter.RefreshUnreadAsync();
+            return;
+        }
         var (page, _) = await NotificationCenter.ListAsync(null, PageSize);
+        if (!_inView)
+        {
+            await NotificationCenter.RefreshUnreadAsync();
+            return;
+        }
         if (page is null) return;
         var newest = _entries.Count > 0 ? _entries[0].At : DateTimeOffset.MinValue;
         var fresh = page.Entries.Where(e => e.At > newest).ToList();
@@ -118,8 +168,6 @@ public partial class NotificationCenterWindow : ThemedWindow
         if (_filter is not null && _filter != AlertFilter) _filter = null;
         await ReloadAsync();
     }
-
-    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void MarkShownAsSeen() =>
         NotificationCenter.MarkSeen(_entries.Count > 0 ? _entries[0].At : DateTimeOffset.UtcNow);
@@ -167,31 +215,89 @@ public partial class NotificationCenterWindow : ThemedWindow
         }
     }
 
+    // Source tiles, drawn like the device list's: everything, this PC's alerts, then each device that
+    // sent something (with its PC or phone outline). Counts are of what is loaded; the total gets a
+    // "+" while older ones remain (which source they are from is not known until they are loaded).
     private void RenderFilters()
     {
         FilterPanel.Children.Clear();
-        FilterPanel.Children.Add(FilterChip(L.CenterAll, null));
-        if (_entries.Any(e => e.Kind == HistoryKind.Alert)) FilterPanel.Children.Add(FilterChip(L.CenterAlerts, AlertFilter));
-        foreach (var (name, label) in _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
-                     .GroupBy(e => e.Source!, StringComparer.Ordinal)
-                     .Select(g => (g.Key, DeviceNames.Show(g.First().SourceKind, g.Key)))
-                     .OrderBy(x => x.Item2, StringComparer.CurrentCulture))
-            FilterPanel.Children.Add(FilterChip(label, name));
+        FilterPanel.Children.Add(FilterTile(L.CenterAll, null, _entries.Count, pc: null));
+        var alerts = _entries.Count(e => e.Kind == HistoryKind.Alert);
+        if (alerts > 0) FilterPanel.Children.Add(FilterTile(L.CenterAlerts, AlertFilter, alerts, pc: null));
+
+        var sources = _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
+            .GroupBy(e => e.Source!, StringComparer.Ordinal)
+            .Select(g => (Group: g, Label: DeviceNames.Show(g.First().SourceKind, g.Key)))
+            .OrderBy(x => x.Label, StringComparer.CurrentCulture)
+            .ToList();
+        if (sources.Count == 0) return;
+        var head = Hb.Label(L.CenterFrom, Hb.InkSoft, 11);
+        head.Margin = new Thickness(6, 12, 0, 6);
+        FilterPanel.Children.Add(head);
+        // The group's alias on the tile; the filter keeps the name the device sent (M-51).
+        foreach (var (g, label) in sources)
+            FilterPanel.Children.Add(FilterTile(label, g.Key, g.Count(), pc: g.First().SourceKind == DeviceKind.Pc));
     }
 
-    private Button FilterChip(string label, string? key)
+    private Border FilterTile(string label, string? key, int count, bool? pc)
     {
-        var selected = _filter == key;
-        var chip = new Button
+        var on = _filter == key;
+        var g = Hb.Columns(Hb.Px(pc is null ? 0 : 30), Hb.Star(), Hb.Auto);
+        if (pc is { } isPc) g.Children.Add(Hb.At(Hb.Glyph(isPc, on ? Hb.OnSlab : Hb.Ink, 18), 0));
+        var name = Hb.Text(label, 13, on ? Hb.OnSlab : Hb.Ink, FontWeights.SemiBold);
+        name.VerticalAlignment = VerticalAlignment.Center;
+        g.Children.Add(Hb.At(name, 1));
+        var more = key is null && _more ? "+" : "";
+        var n = Hb.Text(count.ToString(CultureInfo.CurrentCulture) + more, 11.5, on ? Hb.OnSlabSoft : Hb.InkSoft);
+        n.VerticalAlignment = VerticalAlignment.Center;
+        n.Margin = new Thickness(8, 0, 0, 0);
+        g.Children.Add(Hb.At(n, 2));
+
+        var tile = new Border
         {
-            Content = label,
-            Style = Res<Style>(selected ? "Button.Amber" : "Button.Carbon"),
-            Padding = new Thickness(10, 4, 10, 4),
-            Margin = new Thickness(0, 0, 6, 6),
+            Background = on ? Hb.Slab : Brushes.Transparent,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 9, 12, 9),
+            Margin = new Thickness(0, 0, 0, 4),
+            Cursor = Cursors.Hand,
+            Child = g,
+            // Reachable with Tab and Enter/Space, and named for screen readers, as the chips were.
+            Focusable = true,
+            FocusVisualStyle = Res<Style>("RailFocus"),
         };
-        chip.Click += (_, _) => { _filter = key; Render(); };
-        return chip;
+        System.Windows.Automation.AutomationProperties.SetName(tile, label);
+        if (!on)
+        {
+            tile.MouseEnter += (_, _) => tile.Background = Hb.Plate;
+            tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
+        }
+        tile.MouseLeftButtonUp += (_, _) => Pick(key);
+        tile.KeyDown += (_, args) =>
+        {
+            if (args.Key is not (Key.Enter or Key.Space)) return;
+            args.Handled = true;
+            Pick(key);
+        };
+        return tile;
     }
+
+    private void Pick(string? key)
+    {
+        if (_filter == key) return;
+        _filter = key;
+        Render();
+        ListScroll.ScrollToTop();
+        // The tiles were rebuilt: keep the keyboard on the one just picked.
+        FilterPanel.Children.OfType<Border>()
+            .FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetName(b) == LabelFor(key))?.Focus();
+    }
+
+    private string LabelFor(string? key) => key switch
+    {
+        null => L.CenterAll,
+        AlertFilter => L.CenterAlerts,
+        _ => key,
+    };
 
     private bool Matches(HistoryEntry e) => _filter switch
     {

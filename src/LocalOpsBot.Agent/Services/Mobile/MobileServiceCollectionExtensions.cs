@@ -84,7 +84,7 @@ public static class MobileServiceCollectionExtensions
         // The device group (M-47): links both ways, introductions, removals that reach every member.
         services.AddSingleton(sp => GroupTombstoneFile.Open(MobileDeviceStore.DefaultDirectory,
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>()));
-        // The group's aliases (M-50) travel with the group answers.
+        // The group's aliases (M-51) travel with the group answers.
         services.AddSingleton(sp => DeviceAliasFile.Open(MobileDeviceStore.DefaultDirectory,
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>()));
         services.AddSingleton(sp =>

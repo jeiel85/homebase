@@ -23,7 +23,7 @@ public static class GroupPaths
     /// <summary><c>POST {key}</c>: take a device out of the group on this PC.</summary>
     public const string Remove = "/api/v1/group/remove";
 
-    /// <summary><c>POST {aliases}</c>: aliases a member set, to merge here (M-50).</summary>
+    /// <summary><c>POST {aliases}</c>: aliases a member set, to merge here (M-51).</summary>
     public const string Alias = "/api/v1/group/alias";
 }
 
@@ -33,7 +33,7 @@ public sealed record GroupMember(string PcId, string PcName, bool Token);
 /// <summary>
 /// <c>GET /api/v1/group</c>: the answering PC (<c>PcId</c>, <c>PcName</c>), the other PCs it is linked
 /// with either way, what was taken out of the group lately (<see cref="GroupRemoval"/>), and the group's
-/// aliases (v0.37.0, <see cref="DeviceAlias"/>, cleared ones included).
+/// aliases (v0.38.0, <see cref="DeviceAlias"/>, cleared ones included).
 /// </summary>
 public sealed record GroupResponse(
     int Schema,

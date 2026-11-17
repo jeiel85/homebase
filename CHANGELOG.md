@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.37.0 — Device aliases for the whole group
+## v0.38.0 — Device aliases for the whole group
 
 ### Added
 - **Name your devices on the PC.** On the tray dashboard, click the pencil next to a device's name (or
@@ -9,24 +9,45 @@
   the tray shows it: the device list and header, "via …" lines, the notification center (senders and
   filters, past notifications included), the balloons of relayed notifications, and Settings › Phone.
   The reported name stays visible in small print. Leave the field empty, or choose "원래 이름"
-  (Original name), to go back (DECISIONS M-49).
+  (Original name), to go back (DECISIONS M-50).
 - **Aliases are shared across the device group.** An alias set on any phone or PC of the group shows on
   every member: a PC named on the phone shows under that name on the other phones and in every PC's tray,
   and a phone or PC named in one tray shows under it in the others and (for PCs) on the phones. The name
   set last wins. Other PCs get it at once (a PC that was off, within 2 minutes of coming back); phones when
   their PC list refreshes (pull to refresh, or within 10 minutes while the app is open). Aliases already
   set on a phone are shared the first time it syncs, and any alias set since wins over them
-  (DECISIONS M-50).
+  (DECISIONS M-51).
 
 ### Changed
 - The phone app's alias dialog now says the name is shown on every phone and PC of the group.
 
 ### Known limits
-- Phones and PCs on v0.36.0 or older neither send nor receive aliases.
+- Phones and PCs on v0.37.0 or older neither send nor receive aliases.
 - A phone that renames itself (its Android device name) loses its alias until it is named again; a PC
   renamed in Windows keeps its alias.
 - The phone app shows aliases of PCs only; phone aliases show in PC trays.
-- Balloons show the alias only when the Agent is v0.37.0 or later.
+- Balloons show the alias only when the Agent is v0.38.0 or later.
+
+## v0.37.0 — Notifications and Settings are tabs of the Homebase window
+
+### Changed
+- **One window instead of three.** The tray window now has three tabs in its header — **기기 (Devices)**,
+  **알림 센터 (Notifications)** and **설정 (Settings)** — instead of opening the notification center and Settings
+  as windows of their own (DECISIONS M-49). The tray menu's "알림 센터" and "설정…", a notification balloon and the
+  setup checklist's Telegram button open the same window on that tab. The unread count sits on the Notifications tab.
+  - Every tab has a list down the left like the device list. Settings lists its areas — Phone, Telegram, Notification
+    forwarding, Watch list, Updates — each with a line on what it holds. The notification center lists its sources —
+    everything, this PC's alerts and each device that sent something, with how many — and "모두 지우기" sits under them.
+  - The chips on this PC's page (notification forwarding, phone connection, Telegram) open the Settings area they
+    belong to instead of always the Phone area.
+  - Switching tabs keeps what you typed in Settings; hiding the window drops unsaved input, the bot token included,
+    as closing the Settings window did. A pairing QR that ran out while you were elsewhere is replaced when the Phone
+    area comes back into view.
+  - Nothing is read for a tab until it is in view, and the device page stops asking for live views while another tab
+    is in front.
+- English UI: the Settings area for notification forwarding is now called "Notification forwarding" (it was
+  "Notifications", which is now the notification center's tab).
+
 
 ## v0.36.0 — Answer Claude Code's permission prompts from your phone
 
