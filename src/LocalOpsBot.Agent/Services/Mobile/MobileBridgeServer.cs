@@ -43,6 +43,8 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
     private readonly AgentAlertGate _agentAlerts = new();
+    private readonly SemaphoreSlim _aliasSends = new(1, 1);
+    private static readonly TimeSpan AliasSendTimeout = TimeSpan.FromSeconds(5);
     private readonly ApprovalBroker? _approvals;
     private readonly List<Connection> _connections = new();
 
@@ -151,7 +153,8 @@ public sealed class MobileBridgeServer : BackgroundService
         try
         {
             await SendAsync(conn, MobileBridge.Message(MobileBridge.OpWatch, WatchPayload()), ct);
-            if (_group is not null) await SendAsync(conn, MobileBridge.Message(MobileBridge.OpAliases, AliasesPayload()), ct);
+            // In turn with the change broadcasts, so a change racing this connect can't leave the tray an older table.
+            if (_group is not null) await SendAliasesAsync(new[] { conn }, ct);
             while (!ct.IsCancellationRequested)
             {
                 var msg = await MobileBridge.ReadFrameAsync(pipe, ct);
@@ -381,19 +384,45 @@ public sealed class MobileBridgeServer : BackgroundService
         }
     }
 
-    private AliasListPayload AliasesPayload() => new(_group?.Aliases.List() ?? Array.Empty<DeviceAlias>());
-
     /// <summary>Every tray gets the group's aliases again when they change (set here, by a phone, or by a sync).</summary>
     private void OnAliasesChanged()
     {
         List<Connection> conns;
         lock (_gate) conns = _connections.ToList();
-        var message = MobileBridge.Message(MobileBridge.OpAliases, AliasesPayload());
-        foreach (var c in conns)
+        _ = SendAliasesAsync(conns, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Sends the group's alias table to <paramref name="conns"/>. The tray replaces its whole table with each
+    /// one, so sends run one at a time and each takes its snapshot only once it is its turn: a later send
+    /// always carries a table at least as new as an earlier one, whatever thread raised the change (Codex
+    /// review on #65). A send that can't finish within 5 s (a tray not reading) is dropped for that tray.
+    /// </summary>
+    private async Task SendAliasesAsync(IReadOnlyList<Connection> conns, CancellationToken ct)
+    {
+        try
         {
-            _ = SendAsync(c, message, CancellationToken.None)
-                .ContinueWith(t => _logger.LogDebug("Aliases to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
-                    TaskContinuationOptions.OnlyOnFaulted);
+            await _aliasSends.WaitAsync(ct);
+        }
+        catch (OperationCanceledException) { return; }
+        try
+        {
+            var message = MobileBridge.Message(MobileBridge.OpAliases,
+                new AliasListPayload(_group?.Aliases.List() ?? Array.Empty<DeviceAlias>()));
+            foreach (var c in conns)
+            {
+                using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                limit.CancelAfter(AliasSendTimeout);
+                try { await SendAsync(c, message, limit.Token); }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+                {
+                    _logger.LogDebug("Aliases to Tray failed: {Message}", ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            _aliasSends.Release();
         }
     }
 
