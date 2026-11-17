@@ -57,6 +57,9 @@ public partial class App : Application
             }
             MainWindow = preview;
             preview.Show();
+            // Count the made-up history as the tray does, so the Notifications tab shows its badge
+            // until the tab is opened.
+            _ = Services.Mobile.NotificationCenter.RefreshUnreadAsync();
             return;
         }
 

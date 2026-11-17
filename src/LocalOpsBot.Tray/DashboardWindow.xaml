@@ -68,8 +68,23 @@
                    FontSize="17" Foreground="White" Text="HOMEBASE"/>
         <RadioButton x:Name="NavDevices" DockPanel.Dock="Left" GroupName="DashNav" Style="{StaticResource Dash.NavTab}"
                      IsChecked="True" Checked="Nav_Checked" Content="{x:Static local:L.NavDevices}"/>
+        <!-- The unread count floats over the tab's top-right corner, like the phone app's bell badge,
+             so the tab keeps its width when the count comes and goes (it used to be part of the label,
+             and reading the notifications shortened the tab and moved Settings). Drawn above Settings. -->
         <RadioButton x:Name="NavNotifications" DockPanel.Dock="Left" GroupName="DashNav" Style="{StaticResource Dash.NavTab}"
-                     Margin="2,0,0,0" Checked="Nav_Checked"/>
+                     Margin="2,0,0,0" Checked="Nav_Checked" Panel.ZIndex="1">
+          <Grid>
+            <TextBlock Text="{x:Static local:L.NavNotificationsLabel}"/>
+            <Canvas HorizontalAlignment="Right" VerticalAlignment="Top" Width="0" Height="0">
+              <Border x:Name="UnreadBadge" Canvas.Left="1" Canvas.Top="-8" MinWidth="16" Height="16"
+                      CornerRadius="8" Padding="3,0" Background="#ECAB37" Visibility="Collapsed"
+                      IsHitTestVisible="False">
+                <TextBlock x:Name="UnreadText" FontSize="10" FontWeight="Bold" Foreground="#21242E"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+            </Canvas>
+          </Grid>
+        </RadioButton>
         <RadioButton x:Name="NavSettings" DockPanel.Dock="Left" GroupName="DashNav" Style="{StaticResource Dash.NavTab}"
                      Margin="2,0,0,0" Checked="Nav_Checked" Content="{x:Static local:L.NavSettings}"/>
         <Border x:Name="StatusBadge" DockPanel.Dock="Right" VerticalAlignment="Center"

@@ -484,9 +484,12 @@ public static class L
     public static string MenuNotifications(int unread) => unread > 0
         ? T($"Notification center ({Count(unread)})", $"알림 센터 ({Count(unread)})")
         : T("Notification center", "알림 센터");
+    // The masthead tab shows the label with the count as a badge; the spoken name carries both.
+    public static string NavNotificationsLabel => T("Notifications", "알림 센터");
     public static string NavNotifications(int unread) => unread > 0
-        ? T($"Notifications · {Count(unread)}", $"알림 센터 · {Count(unread)}")
-        : T("Notifications", "알림 센터");
+        ? T($"Notifications, {Count(unread)} new", $"알림 센터, 새 알림 {Count(unread)}건")
+        : NavNotificationsLabel;
+    public static string UnreadCount(int n) => Count(n);
     private static string Count(int n) => n > 99 ? "99+" : n.ToString(CultureInfo.InvariantCulture);
     public static string CenterAll => T("Everything", "전체");
     public static string CenterAlerts => T("This PC's alerts", "이 PC 경보");

@@ -70,8 +70,8 @@ public partial class DashboardWindow : ThemedWindow
             if (selected is not null) _selected = selected;
         }
 
-        NavNotifications.Content = L.NavNotifications(NotificationCenter.Unread);
-        Action<int> onUnread = n => NavNotifications.Content = L.NavNotifications(n);
+        ShowUnread(NotificationCenter.Unread);
+        Action<int> onUnread = ShowUnread;
         NotificationCenter.UnreadChanged += onUnread;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -144,6 +144,14 @@ public partial class DashboardWindow : ThemedWindow
             _ticks = 0;
             Refresh();
         }
+    }
+
+    /// <summary>The unread count as the Notifications tab's corner badge (and in its spoken name).</summary>
+    private void ShowUnread(int n)
+    {
+        UnreadText.Text = L.UnreadCount(n);
+        UnreadBadge.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
+        System.Windows.Automation.AutomationProperties.SetName(NavNotifications, L.NavNotifications(n));
     }
 
     /// <summary>Tells the Notifications and Settings pages whether they are in view now.</summary>
