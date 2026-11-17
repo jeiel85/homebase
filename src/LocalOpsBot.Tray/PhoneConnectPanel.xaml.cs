@@ -57,6 +57,10 @@ public partial class PhoneConnectPanel : UserControl
         _countdown.Tick += (_, _) => UpdateCountdown();
         _statusTimer.Tick += async (_, _) => await PollStatusAsync();
         _clipboardWipe.Tick += (_, _) => WipeCopiedSecret();
+        // A device renamed from the dashboard, a phone or another PC (M-50) shows here at once.
+        Action onAliases = () => Dispatcher.BeginInvoke(async () => { if (_inView) await LoadDevicesAsync(); });
+        Loaded += (_, _) => { DeviceNames.Aliases.Changed -= onAliases; DeviceNames.Aliases.Changed += onAliases; };
+        Unloaded += (_, _) => DeviceNames.Aliases.Changed -= onAliases;
     }
 
     /// <summary>The tab came into view: load everything the first time, then resume polling.</summary>

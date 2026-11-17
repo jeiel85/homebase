@@ -65,6 +65,9 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>The group's aliases (M-50): sent on connect and whenever they change. Background thread.</summary>
     public event Action<IReadOnlyList<DeviceAlias>>? AliasesReceived;
 
+    /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>
+    public IReadOnlyList<DeviceAlias>? LastAliases { get; private set; }
+
     /// <summary>Raised on a background thread whenever <see cref="IsWatching"/> changes.</summary>
     public event Action<bool>? WatchingChanged;
 
@@ -214,7 +217,10 @@ internal sealed class MobileBridgeClient : IDisposable
                 try
                 {
                     if (msg["payload"]?.Deserialize<AliasListPayload>(MobileProtocol.Json) is { Aliases: { } aliases })
+                    {
+                        LastAliases = aliases;
                         AliasesReceived?.Invoke(aliases);
+                    }
                 }
                 catch (JsonException) { /* a malformed table keeps the one shown */ }
                 break;

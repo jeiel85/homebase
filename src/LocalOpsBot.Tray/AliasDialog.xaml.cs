@@ -53,7 +53,7 @@ public partial class AliasDialog : ThemedWindow
         {
             // Like the phone: an edit past the limit is refused. A long paste into an empty field keeps what fits.
             var caret = AliasBox.CaretIndex;
-            var keep = _last.Length > 0 ? _last : FirstCodePoints(text, DeviceAliasTable.MaxLength);
+            var keep = _last.Length > 0 ? _last : DeviceAliasTable.Cut(text, DeviceAliasTable.MaxLength);
             AliasBox.Text = keep;
             AliasBox.CaretIndex = Math.Clamp(caret - (text.Length - keep.Length), 0, keep.Length);
             return; // the assignment raises TextChanged again
@@ -65,13 +65,6 @@ public partial class AliasDialog : ThemedWindow
     {
         _last = AliasBox.Text;
         CounterText.Text = $"{DeviceAliasTable.Length(_last)}/{DeviceAliasTable.MaxLength}";
-    }
-
-    private static string FirstCodePoints(string s, int max)
-    {
-        var sb = new System.Text.StringBuilder();
-        foreach (var r in s.EnumerateRunes().Take(max)) sb.Append(r.ToString());
-        return sb.ToString();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
