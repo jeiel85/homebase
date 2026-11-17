@@ -11,7 +11,7 @@ namespace LocalOpsBot.Tray;
 /// <summary>
 /// First-run setup checklist. It probes what is ready (Agent service, Telegram connection,
 /// optional Ollama) and points at the next step for each item. It never writes config itself:
-/// the Telegram connection is entered in <see cref="SettingsWindow"/>, reached from the
+/// the Telegram connection is entered on the Settings page (<see cref="SettingsPanel"/>), reached from the
 /// "Connect Telegram" button (<see cref="OpenTelegramSettingsRequested"/>).
 /// </summary>
 public partial class OnboardingWindow : ThemedWindow

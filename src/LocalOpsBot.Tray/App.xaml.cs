@@ -24,8 +24,11 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // Design preview of the device page with made-up devices (no tray icon, no Agent, no mutex):
-        //   Homebase.Tray.exe --preview-dashboard [--select <device key>] [--lang en]
+        // Design preview of the Homebase window with made-up devices and notifications (no tray icon, no
+        // mutex). Settings is the real page: it reads this PC's configuration and, on the Phone area,
+        // asks this PC's Agent for a pairing code as the tray does:
+        //   Homebase.Tray.exe --preview-dashboard [--view devices|notifications|settings]
+        //                     [--area phone|telegram|forwarding|monitors|updates] [--select <device key>] [--lang en]
         if (e.Args.Contains("--preview-dashboard"))
         {
             base.OnStartup(e);
@@ -33,7 +36,10 @@ public partial class App : Application
             if (lang is not null) CultureInfo.CurrentUICulture = CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo(lang);
             else ApplyLanguage();
             ShutdownMode = ShutdownMode.OnMainWindowClose;
-            var preview = new DashboardWindow(new Dashboard.PreviewDashboardSource(), preview: true);
+            Services.Mobile.NotificationCenter.Preview = Dashboard.PreviewDashboardSource.History();
+            var preview = new DashboardWindow(new Dashboard.PreviewDashboardSource(), preview: true, new UpdateCoordinator());
+            if (Enum.TryParse<DashTab>(ArgAfter(e.Args, "--view"), ignoreCase: true, out var view))
+                preview.ShowTab(view, Enum.TryParse<SettingsTab>(ArgAfter(e.Args, "--area"), ignoreCase: true, out var area) ? area : null);
             if (ArgAfter(e.Args, "--select") is { } key) preview.PreviewSelect(key);
             if (int.TryParse(ArgAfter(e.Args, "--tab"), out var tab)) Dashboard.PcLiveView.PreviewTab = tab;
             if (ArgAfter(e.Args, "--size")?.Split('x') is [var w, var h] && double.TryParse(w, out var pw) && double.TryParse(h, out var ph))

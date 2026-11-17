@@ -16,7 +16,7 @@ using QRCoder;
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// The Settings window's "Phone" tab: picks the paths (LAN / Tailscale / Cloudflare Tunnel) and
+/// Settings › Phone (the Settings page of the Homebase window): picks the paths (LAN / Tailscale / Cloudflare Tunnel) and
 /// turns the feature on (one UAC step), shows the one-time pairing QR that carries every path,
 /// shows each path's state with an install button for a missing connector, and lists/revokes
 /// paired phones. Nothing runs until the tab is first shown; status is polled only while the tab
@@ -30,7 +30,7 @@ public partial class PhoneConnectPanel : UserControl
     private readonly DispatcherTimer _statusTimer = new() { Interval = StatusPoll };
 
     // The copied pairing link or 24-word code, wiped from the clipboard when its offer expires (#39).
-    // A timer of its own, so it still fires after the Settings window has closed.
+    // A timer of its own, so it still fires while the Phone area is out of view.
     private readonly DispatcherTimer _clipboardWipe = new();
     private string? _copiedSecret;
     private DateTimeOffset _expiresAt;
@@ -77,6 +77,10 @@ public partial class PhoneConnectPanel : UserControl
         _statusTimer.Start();
         if (_busy) return;
         await PollStatusAsync();
+        // The code ran out (or nearly) while the area was out of view: show a new one, as opening the
+        // old Settings window always did, rather than an expired QR.
+        if (PairPanel.Visibility == Visibility.Visible && _expiresAt - DateTimeOffset.UtcNow < TimeSpan.FromMinutes(1))
+            await NewOfferAsync();
         await LoadDevicesAsync();
     }
 
@@ -87,7 +91,21 @@ public partial class PhoneConnectPanel : UserControl
         _statusTimer.Stop();
     }
 
-    /// <summary>The Settings window closed.</summary>
+    /// <summary>
+    /// The window was hidden (what closing the Settings window used to be): put away a shown 24-word
+    /// code, which stays valid until the offer expires, drop unsaved edits (paths, tunnel token and
+    /// hostname) and load everything afresh — settings and a new QR — the next time the area is shown.
+    /// While an APPLY or INSTALL runs it reloads by itself when it finishes.
+    /// </summary>
+    public void Forget()
+    {
+        CodeBox.Visibility = Visibility.Collapsed;
+        CodeBox.Text = "";
+        TunnelTokenBox.Clear();
+        if (!_busy) _started = false;
+    }
+
+    /// <summary>The tray is shutting down.</summary>
     public void Stop()
     {
         Hide();
