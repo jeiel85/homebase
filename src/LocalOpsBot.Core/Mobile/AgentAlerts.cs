@@ -33,12 +33,17 @@ public sealed record AgentAlert(string Kind, string App, string Title, string? P
 /// Turns successive views of the AI sessions into alerts (DECISIONS M-45): a session that starts
 /// waiting for the user, and one that goes from busy to idle after working at least
 /// <see cref="MinTurnForDone"/> (a short answer the user just watched needs no notification).
-/// The first view of a session only records it, so starting the Tray does not replay old states.
+/// The first view of a session only records it, so starting the Tray does not replay old states —
+/// except a session already waiting for at most <see cref="FirstSightWaiting"/>: one that started
+/// waiting while the Tray restarted (an update) would otherwise never be told (#61).
 /// Pure: the caller reads the files, decides whether the user is away and sends the alerts.
 /// </summary>
 public sealed class AgentAlertDetector
 {
     public static readonly TimeSpan MinTurnForDone = TimeSpan.FromSeconds(60);
+
+    /// <summary>How recently a session seen for the first time must have started waiting to be alerted.</summary>
+    public static readonly TimeSpan FirstSightWaiting = TimeSpan.FromMinutes(10);
 
     private readonly Dictionary<string, (string? Status, DateTimeOffset BusySince)> _last = new(StringComparer.Ordinal);
 
@@ -54,7 +59,15 @@ public sealed class AgentAlertDetector
                 ? (known && prev.Status == AgentStatus.Busy ? prev.BusySince : s.StatusSince ?? now)
                 : prev.BusySince;
             _last[s.Key] = (s.Status, busySince);
-            if (!known || prev.Status == s.Status) continue;
+            if (!known)
+            {
+                // Without a start time its age is unknown: recorded only, as before.
+                if (s.Status == AgentStatus.Waiting && s.StatusSince is { } since
+                    && now - since <= FirstSightWaiting && since <= now + TimeSpan.FromMinutes(1))
+                    alerts.Add(new AgentAlert(AgentAlertKind.Waiting, s.App, s.Title, s.Project, s.WaitingFor));
+                continue;
+            }
+            if (prev.Status == s.Status) continue;
 
             if (s.Status == AgentStatus.Waiting)
                 alerts.Add(new AgentAlert(AgentAlertKind.Waiting, s.App, s.Title, s.Project, s.WaitingFor));

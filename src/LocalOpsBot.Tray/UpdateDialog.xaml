@@ -4,7 +4,7 @@
         x:Class="LocalOpsBot.Tray.UpdateDialog"
         Style="{StaticResource Window.Chrome}"
         Title="{x:Static local:L.UpdProgressTitle}"
-        Icon="pack://application:,,,/Resources/homebase.ico"
+        Icon="pack://application:,,,/Homebase.Tray;component/Resources/homebase.ico"
         Width="520" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         ShowInTaskbar="True"

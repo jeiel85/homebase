@@ -498,7 +498,7 @@ public partial class PhoneConnectPanel : UserControl
     private async void Unlink_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not string pcId || MobileHost.Client is not { } client) return;
-        if (!MessageDialog.Show("Homebase", L.PhoneUnlinkConfirm, L.PhoneUnlink, L.Cancel)) return;
+        if (!MessageDialog.Show("Homebase", L.PhoneUnlinkConfirm, L.PhoneUnlink, L.Cancel, owner: Window.GetWindow(this))) return;
         try { await client.RequestAsync(MobileBridge.OpHubsUnlink, new { pcId }, timeout: TimeSpan.FromSeconds(20)); }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
         await LoadDevicesAsync();
@@ -563,12 +563,12 @@ public partial class PhoneConnectPanel : UserControl
         var host = TunnelHostBox.Text.Trim();
         if (CloudflareCheck.IsChecked == true && token.Length > 0 && host.Length == 0)
         {
-            MessageDialog.Show("Homebase", "터널 토큰을 쓰려면 Cloudflare 대시보드에서 이 터널에 연결한 공개 호스트명도 넣어야 합니다.");
+            MessageDialog.Show("Homebase", "터널 토큰을 쓰려면 Cloudflare 대시보드에서 이 터널에 연결한 공개 호스트명도 넣어야 합니다.", owner: Window.GetWindow(this));
             return;
         }
         if (LanCheck.IsChecked != true && TailscaleCheck.IsChecked != true && CloudflareCheck.IsChecked != true)
         {
-            MessageDialog.Show("Homebase", "연결 경로를 하나 이상 고르세요.");
+            MessageDialog.Show("Homebase", "연결 경로를 하나 이상 고르세요.", owner: Window.GetWindow(this));
             return;
         }
 
@@ -605,7 +605,7 @@ public partial class PhoneConnectPanel : UserControl
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException)
         {
-            MessageDialog.Show("Homebase", "설정을 적용하지 못했습니다: " + ex.Message);
+            MessageDialog.Show("Homebase", "설정을 적용하지 못했습니다: " + ex.Message, owner: Window.GetWindow(this));
         }
         finally
         {
@@ -640,7 +640,7 @@ public partial class PhoneConnectPanel : UserControl
     {
         if (!MessageDialog.Show("Homebase",
                 $"winget으로 {name}을(를) 설치할까요? 설치 관리자가 관리자 승인을 물을 수 있고, 패키지 사용 약관에 동의하게 됩니다.",
-                "Install", "Cancel"))
+                "Install", "Cancel", owner: Window.GetWindow(this)))
             return;
         _busy = true;
         StatusText.Text = $"{name} 설치 중… (1~2분 걸릴 수 있습니다)";
@@ -667,7 +667,7 @@ public partial class PhoneConnectPanel : UserControl
     private async void Revoke_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not string id || MobileHost.Client is not { } client) return;
-        if (!MessageDialog.Show("Homebase", L.PhoneRevokeConfirm, "Revoke", "Cancel"))
+        if (!MessageDialog.Show("Homebase", L.PhoneRevokeConfirm, "Revoke", "Cancel", owner: Window.GetWindow(this)))
             return;
         try { await client.RequestAsync(MobileBridge.OpDevicesRevoke, new { deviceId = id }); }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }

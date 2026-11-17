@@ -4,7 +4,7 @@
         x:Class="LocalOpsBot.Tray.MessageDialog"
         Style="{StaticResource Window.Chrome}"
         Title="Homebase"
-        Icon="pack://application:,,,/Resources/homebase.ico"
+        Icon="pack://application:,,,/Homebase.Tray;component/Resources/homebase.ico"
         Width="400" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         ShowInTaskbar="True"

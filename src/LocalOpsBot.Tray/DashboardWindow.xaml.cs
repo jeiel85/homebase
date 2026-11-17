@@ -234,7 +234,7 @@ public partial class DashboardWindow : ThemedWindow
         var text = AliasDialog.Ask(this, d.Name, d.Alias);
         if (text is null) return;
         if (!await DeviceNames.SetAsync(aliasKey, d.Name, text))
-            MessageDialog.Show(L.AliasTitle, L.AliasNotSaved);
+            MessageDialog.Show(L.AliasTitle, L.AliasNotSaved, owner: this);
     }
 
     /// <summary>Shows the current aliases on the list and the header from the last overview.</summary>
@@ -261,7 +261,7 @@ public partial class DashboardWindow : ThemedWindow
             var clear = new MenuItem { Header = L.AliasClear };
             clear.Click += async (_, _) =>
             {
-                if (!await DeviceNames.SetAsync(aliasKey, d.Name, "")) MessageDialog.Show(L.AliasTitle, L.AliasNotSaved);
+                if (!await DeviceNames.SetAsync(aliasKey, d.Name, "")) MessageDialog.Show(L.AliasTitle, L.AliasNotSaved, owner: this);
             };
             menu.Items.Add(clear);
         }

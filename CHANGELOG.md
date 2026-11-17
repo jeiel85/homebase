@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.40.0 — Hardening: updates, AI-session alerts, approvals and the phone's notification stack
+
+### Fixed
+- **An install that started on its own while you were away no longer leaves a notice that blocks updates.**
+  When the startup countdown's install was not approved at the administrator prompt or failed, a notice
+  waited for someone to close it, and until then the daily check and "업데이트 확인" (Check for updates) only
+  answered that an update was already in progress. The notice is no longer shown for these installs; the next
+  update window says where the install stopped, as before (DECISIONS M-55). Notices for installs you start
+  yourself are unchanged.
+- Homebase notices now open over the window that asked (the Homebase window, the update window) and stay
+  above it, instead of possibly behind it when the tray had lost the foreground.
+- **Claude Code permission prompts no longer wait 10 minutes when no phone takes them.** If every phone has
+  "AI 세션 권한 요청" (AI session permission requests) turned off, the prompt is asked on the PC at once
+  (DECISIONS M-54).
+- A permission prompt whose tray disconnected (closed or restarted) is withdrawn from the phones right away
+  instead of at its 10-minute deadline.
+- **Uninstalling Homebase removes its Claude Code hook** from each user's `.claude\settings.json`, leaving
+  the rest of the file (the previous file is kept as `settings.json.homebase.bak`).
+- Phone: **the Homebase stack's summary stays true after you clear notifications.** Its "새 알림 N건"
+  (N new notifications) count and lines are rewritten from what is left when one is swiped away or opened.
+- Phone: when the stack's limits (8 per source, 24 in all) take older notifications out of the shade, the
+  summary now says so — "이전 알림 N건은 알림 센터에 있습니다" (N earlier notifications are in the notification
+  center).
+- Phone: bundles left in the shade by v0.38 and earlier move into the single Homebase stack when the app
+  opens.
+- Phone: a notification relayed from another device no longer repeats the app's name in its title
+  ("카카오톡: 김철수" → "김철수"); the line above already names the device and the app.
+
+### Changed
+- **An AI session found already waiting when the tray starts is announced once** if it started waiting in
+  the last 10 minutes — for example while an update restarted the tray. Older waits are not replayed
+  (DECISIONS M-53).
+- New Codex sessions appear in the phone's work tab and alerts within a few seconds instead of up to
+  30 seconds later.
+- Phone: a relayed device's badge colour no longer matches one of your paired PCs' colours (unless all eight
+  are taken), and the notification center keeps the colour each notification had when it arrived — also for
+  PCs removed since.
+
+### Diagnostics
+- tray.log notes, once, when Claude Code or Codex session files stop having the fields Homebase reads (after
+  an update of those tools changed their format), and when an update result notice was shown and closed.
+- Phone: notification badges are drawn once per PC instead of for every notification.
+- The tray now has automated tests (update flow windows), run in CI and before every release.
+
+### Known limits
+- Android 16 still gathers stand-alone Homebase notifications (permission prompts, kinds set to "하나씩")
+  under one more "Homebase" entry of its own; giving each its own group does not change that (checked on the
+  emulator), so it is left to Android.
+
 ## v0.39.1 — The update window no longer gets stuck at 100%
 
 ### Fixed

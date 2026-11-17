@@ -125,6 +125,10 @@ jobs:
       - name: Test
         run: dotnet test tests/LocalOpsBot.Tests/LocalOpsBot.Tests.csproj -c Release
 
+      # A separate step: pwsh only fails a step on the last command's exit code.
+      - name: Test (Tray)
+        run: dotnet test tests/LocalOpsBot.Tray.Tests/LocalOpsBot.Tray.Tests.csproj -c Release
+
       # Single source of truth for the version: the git tag. Stamped into the assemblies
       # (so UpdateService.CurrentVersion is correct and auto-update compares properly),
       # the installer, and the setup banner. Tag "v0.3.0" -> VER "0.3.0".

@@ -36,6 +36,13 @@ public sealed class ClaudeStatusReader
         _isAlive = isAlive ?? IsAlive;
     }
 
+    /// <summary>
+    /// Set when a status file written in the last <see cref="ClaudeSessionReader.ActiveWindow"/> lacks a
+    /// field this reader needs (pid, sessionId, status) — the format is Claude Code's own, so a change
+    /// shows only as sessions missing from the cards. The caller logs it once (#61).
+    /// </summary>
+    public string? FormatIssue { get; private set; }
+
     public static string DefaultDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "sessions");
 
@@ -49,20 +56,23 @@ public sealed class ClaudeStatusReader
             // of ended sessions only age, so however many of those pile up they fall past the limit.
             var files = new DirectoryInfo(_dir).EnumerateFiles("*.json")
                 .OrderByDescending(f => f.LastWriteTimeUtc)
-                .Take(MaxFiles)
-                .Select(f => f.FullName);
+                .Take(MaxFiles);
+            var now = DateTime.UtcNow;
             foreach (var file in files)
             {
                 string text;
                 try
                 {
-                    using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                     if (fs.Length > 64 * 1024) continue;
                     using var reader = new StreamReader(fs);
                     text = reader.ReadToEnd();
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
                 if (Parse(text, _isAlive) is { } s) list.Add(s);
+                // Ended sessions' files can be from older versions; only a fresh one says what the format is now.
+                if (now - file.LastWriteTimeUtc <= ClaudeSessionReader.ActiveWindow && MissingFields(text) is { } missing)
+                    FormatIssue = $"Claude status file {file.Name}: no {missing}";
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* partial result is fine */ }
@@ -94,6 +104,26 @@ public sealed class ClaudeStatusReader
                 status == AgentStatus.Waiting ? Trim(Str(r, "waitingFor"), 200) : null,
                 since,
                 bridge is not null && RemoteId.IsMatch(bridge) ? "https://claude.ai/code/" + bridge : null);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// The fields <see cref="Parse"/> relies on that a complete status file lacks ("pid, status"); null
+    /// when all are there, or when the text is not a whole JSON object (half-written: nothing to say).
+    /// </summary>
+    public static string? MissingFields(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            if (r.ValueKind != JsonValueKind.Object) return null;
+            var missing = new List<string>();
+            if (!r.TryGetProperty("pid", out var p) || p.ValueKind != JsonValueKind.Number) missing.Add("pid");
+            if (Str(r, "sessionId") is null) missing.Add("sessionId");
+            if (Str(r, "status") is null) missing.Add("status");
+            return missing.Count == 0 ? null : string.Join(", ", missing);
         }
         catch (JsonException) { return null; }
     }

@@ -10,6 +10,10 @@
     <ApplicationIcon>Resources\homebase.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The update-flow window tests (tests/LocalOpsBot.Tray.Tests, issue #71). -->
+    <InternalsVisibleTo Include="LocalOpsBot.Tray.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\LocalOpsBot.Core\LocalOpsBot.Core.csproj" />
     <ProjectReference Include="..\LocalOpsBot.Infrastructure\LocalOpsBot.Infrastructure.csproj" />
   </ItemGroup>

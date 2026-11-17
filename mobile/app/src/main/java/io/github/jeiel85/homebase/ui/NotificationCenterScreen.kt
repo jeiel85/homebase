@@ -104,8 +104,10 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     // Paired PCs; an entry is drawn under the PC's alias (M-36), else the name it was sent with.
     val paired = remember { store.all().associateBy { it.pcId } }
     fun nameOf(pcId: String, sent: String) = paired[pcId]?.shownName(sent) ?: sent
-    // The badge its Android notification carried (M-38).
-    fun markOf(e: HistoryEntry) = NotificationLook.mark(e.category, e.source, e.pcId, nameOf(e.pcId, e.pcName), paired[e.pcId])
+    // The badge its Android notification carried (M-38), in the colour it wore then (#57).
+    val pcColors = remember(paired) { paired.values.mapNotNull { it.color } }
+    fun markOf(e: HistoryEntry) =
+        NotificationLook.mark(e.category, e.source, e.pcId, nameOf(e.pcId, e.pcName), paired[e.pcId], e.color, pcColors)
 
     val entries = history.entries
     val groups = remember(entries) { entries.map { PushHistoryRules.categoryLabel(it.category) }.distinct() }

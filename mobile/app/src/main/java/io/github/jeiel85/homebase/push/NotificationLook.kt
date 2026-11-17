@@ -44,21 +44,53 @@ object NotificationLook {
      * The bold line: the PC sends "카카오톡: 홍길동" (or "카카오톡: 알림 3건"); the header already names
      * the app, so it is dropped here. A notification with no title of its own keeps the app's name.
      */
-    fun title(message: PushMessage): String =
-        message.title.removePrefix("${message.source}: ").trim().ifEmpty { message.title }
-
-    /** The badge: the paired PC's own mark, or for a relayed notification one made from the device's name. */
-    fun mark(message: PushMessage, pc: PcEntry?): PcMark =
-        mark(message.category, message.source, message.pcId, message.pcName, pc)
+    fun title(message: PushMessage): String {
+        val title = message.title
+        val rest = prefixOf(message)?.let { title.substring(it.length + 2) } ?: return title
+        return rest.trim().ifEmpty { title }
+    }
 
     /**
-     * [mark] for a notification center entry; [pc] is null for a PC no longer paired, which keeps the
-     * colour its id starts from (the one it most likely had) and the first letter of its name.
+     * The "who: " part the PC put in front of [message]'s title, without the ": ". For a relayed
+     * notification that is "device · app", also when the device is now called something else, or the
+     * app alone (#69): the header names both already.
      */
-    fun mark(category: String, source: String, pcId: String, pcName: String, pc: PcEntry?): PcMark = when {
-        category == NotificationGroups.DEVICE -> PcMarks.unpaired(deviceOf(source))
+    private fun prefixOf(message: PushMessage): String? {
+        val title = message.title
+        if (title.startsWith("${message.source}: ")) return message.source
+        if (message.category != NotificationGroups.DEVICE) return null
+        val app = appOf(message.source).ifEmpty { return null }
+        val head = title.substringBefore(": ", "").ifEmpty { return null }
+        return head.takeIf { it == app || it.endsWith("$DEVICE_SEPARATOR$app") }
+    }
+
+    /**
+     * The badge: the paired PC's own mark, or for a relayed notification one made from the device's
+     * name in a colour no paired PC wears ([pcColors], see [PcMarks.unpaired]).
+     */
+    fun mark(message: PushMessage, pc: PcEntry?, pcColors: Collection<Int> = emptyList()): PcMark =
+        mark(message.category, message.source, message.pcId, message.pcName, pc, pcColors = pcColors)
+
+    /**
+     * [mark] for a notification center entry; [pc] is null for a PC no longer paired. [stored] is the
+     * colour the entry's notification wore when it came (#57): a removed PC, or a relayed device, keeps
+     * it, whatever was paired or removed since. Entries from before that have none and fall back to
+     * the colour the PC's id starts from (the one it most likely had).
+     */
+    fun mark(
+        category: String,
+        source: String,
+        pcId: String,
+        pcName: String,
+        pc: PcEntry?,
+        stored: Int? = null,
+        pcColors: Collection<Int> = emptyList(),
+    ): PcMark = when {
+        category == NotificationGroups.DEVICE -> deviceOf(source).let { device ->
+            stored?.let { PcMark(PcMarks.letter(device), it) } ?: PcMarks.unpaired(device, pcColors)
+        }
         pc != null -> pc.mark
-        else -> PcMark(PcMarks.letter(pcName), PcMarks.slot(pcId))
+        else -> PcMark(PcMarks.letter(pcName), stored ?: PcMarks.slot(pcId))
     }
 
     /** The device part of a relayed notification's source; the whole source when it has no device part. */

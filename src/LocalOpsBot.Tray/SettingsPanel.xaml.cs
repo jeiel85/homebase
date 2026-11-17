@@ -306,7 +306,7 @@ public partial class SettingsPanel : UserControl
             var saved = await NotificationForwardingConfigurator.SetEnabledAsync(enable);
             if (!saved)
             {
-                MessageDialog.Show(L.FwConfirmTitle(enable), L.FwNotSaved, L.Ok);
+                MessageDialog.Show(L.FwConfirmTitle(enable), L.FwNotSaved, L.Ok, owner: Window.GetWindow(this));
                 LoadForwardingState();
                 return;
             }
@@ -314,12 +314,12 @@ public partial class SettingsPanel : UserControl
             _forwardingPersisted = enable;
             LoadForwardingState();
             // The tray must restart to start/stop the notification listener with the new state.
-            if (MessageDialog.Show(L.FwConfirmTitle(enable), L.FwRestart(enable), L.RestartNow, L.Later))
+            if (MessageDialog.Show(L.FwConfirmTitle(enable), L.FwRestart(enable), L.RestartNow, L.Later, owner: Window.GetWindow(this)))
                 RestartTray();
         }
         catch (Exception ex)
         {
-            MessageDialog.Show(L.FwConfirmTitle(enable), L.Failed(ex.Message), L.Ok);
+            MessageDialog.Show(L.FwConfirmTitle(enable), L.Failed(ex.Message), L.Ok, owner: Window.GetWindow(this));
             LoadForwardingState();
         }
         finally

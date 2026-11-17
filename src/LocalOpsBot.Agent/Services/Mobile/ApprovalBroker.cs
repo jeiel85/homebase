@@ -25,14 +25,22 @@ public sealed class ApprovalBroker
     private sealed record Pending(ApprovalRequest Request, TaskCompletionSource<string?> Answer);
 
     private readonly IOutboundRouter? _router;
+    private readonly IMobileDeviceStore? _devices;
     private readonly TimeProvider _time;
     private readonly ILogger<ApprovalBroker> _logger;
     private readonly ConcurrentDictionary<string, Pending> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _askedSessions = new(StringComparer.Ordinal);
 
-    public ApprovalBroker(ILogger<ApprovalBroker> logger, IOutboundRouter? router = null, TimeProvider? time = null)
+    /// <param name="devices">
+    /// The phones that get pushes. When every one of them turned approvals off, a prompt is not sent:
+    /// the push channel counts a muted category as delivered (M-25), so the hook would otherwise wait
+    /// the whole deadline for an answer no phone can give (#64).
+    /// </param>
+    public ApprovalBroker(ILogger<ApprovalBroker> logger, IOutboundRouter? router = null, TimeProvider? time = null,
+        IMobileDeviceStore? devices = null)
     {
         _router = router;
+        _devices = devices;
         _time = time ?? TimeProvider.System;
         _logger = logger;
     }
@@ -43,6 +51,11 @@ public sealed class ApprovalBroker
     public async Task<string?> AskAsync(ApprovalRequest request, CancellationToken ct)
     {
         if (_router is null) return null;
+        if (_devices is not null && !_devices.PushTargets().Any(t => !t.Subscription.Mutes(ClaudeHook.Category)))
+        {
+            _logger.LogInformation("Claude approval not sent: no phone takes approval notifications; asking on the PC");
+            return null;
+        }
         var now = _time.GetUtcNow();
         var deadline = request.ExpiresAt < now + ClaudeHook.WaitLimit ? request.ExpiresAt : now + ClaudeHook.WaitLimit;
         if (deadline <= now) return null;

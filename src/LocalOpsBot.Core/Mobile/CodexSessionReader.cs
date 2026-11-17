@@ -32,6 +32,18 @@ public sealed class CodexSessionReader
     private DateTime _indexWriteUtc;
     private Dictionary<string, string> _titles = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Read this much of a rollout and recognized none of the lines used: Codex's format likely changed.
+    /// </summary>
+    public const int UnrecognizedAfterBytes = 64 * 1024;
+
+    /// <summary>
+    /// Set when a rollout of <see cref="UnrecognizedAfterBytes"/> or more gave none of the fields this
+    /// reader uses — the rollout is Codex's internal format, so a change shows only as empty cards.
+    /// The caller logs it once (#61).
+    /// </summary>
+    public string? FormatIssue { get; private set; }
+
     private sealed class FileState
     {
         public DateTime WriteUtc;
@@ -71,7 +83,9 @@ public sealed class CodexSessionReader
                     .ToArray();
                 _nextDiscovery = nowUtc + DiscoveryInterval;
             }
-            foreach (var path in _candidates.Concat(_files.Keys).Distinct().ToList())
+            // A new session is written under today's folder: that one folder is listed every pass, so it
+            // shows within a pass instead of up to DiscoveryInterval later (#61).
+            foreach (var path in _candidates.Concat(TodaysRollouts(sessions, nowUtc)).Concat(_files.Keys).Distinct().ToList())
             {
                 var file = new FileInfo(path);
                 if (!file.Exists) continue;
@@ -88,6 +102,8 @@ public sealed class CodexSessionReader
                 {
                     Follow(file.FullName, state);
                     state.WriteUtc = write;
+                    if (state.Offset >= UnrecognizedAfterBytes && state.Details == new CodexDetails())
+                        FormatIssue = $"Codex rollout {file.Name}: {state.Offset / 1024} KB read, no turn_context, session_meta, token_count or task lines recognized";
                 }
                 active.Add((write, SessionId(file.Name), state.Details));
             }
@@ -207,6 +223,22 @@ public sealed class CodexSessionReader
             catch (JsonException) { }
         }
         return d;
+    }
+
+    /// <summary>
+    /// Rollouts in the dated folder of today — by the local date Codex names folders with, and the UTC
+    /// one in case it is another day there — without walking the rest of the tree.
+    /// </summary>
+    private static IEnumerable<string> TodaysRollouts(string sessions, DateTime nowUtc)
+    {
+        var days = new[] { nowUtc.ToLocalTime().Date, nowUtc.Date }.Distinct();
+        foreach (var day in days)
+        {
+            var dir = Path.Combine(sessions, day.ToString("yyyy", CultureInfo.InvariantCulture),
+                day.ToString("MM", CultureInfo.InvariantCulture), day.ToString("dd", CultureInfo.InvariantCulture));
+            if (!Directory.Exists(dir)) continue;
+            foreach (var f in Directory.EnumerateFiles(dir, "rollout-*.jsonl")) yield return f;
+        }
     }
 
     /// <summary><c>rollout-2026-11-13T17-04-49-&lt;uuid&gt;.jsonl</c> → the uuid (36 chars).</summary>

@@ -4,7 +4,7 @@
         x:Class="LocalOpsBot.Tray.OnboardingWindow"
         Style="{StaticResource Window.Chrome}"
         Title="{x:Static local:L.SetupTitle}"
-        Icon="pack://application:,,,/Resources/homebase.ico"
+        Icon="pack://application:,,,/Homebase.Tray;component/Resources/homebase.ico"
         Width="460" Height="620"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen"

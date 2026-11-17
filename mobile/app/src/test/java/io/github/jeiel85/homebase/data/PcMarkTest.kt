@@ -99,4 +99,13 @@ class PcMarkTest {
         assertEquals(PcMarks.unpaired("Galaxy S24"), PcMarks.unpaired(" galaxy s24 ").copy(letter = "G"))
         assertEquals("G", PcMarks.unpaired("Galaxy S24").letter)
     }
+
+    @Test
+    fun an_unpaired_colour_skips_the_ones_paired_pcs_wear_until_all_are_taken() {
+        val start = PcMarks.unpaired("Galaxy S24").colorIndex
+        val next = (start + 1) % PcMarks.PALETTE.size
+        assertEquals(next, PcMarks.unpaired("Galaxy S24", listOf(start)).colorIndex)
+        assertEquals((start + 2) % PcMarks.PALETTE.size, PcMarks.unpaired("Galaxy S24", listOf(start, next)).colorIndex)
+        assertEquals(start, PcMarks.unpaired("Galaxy S24", PcMarks.PALETTE.indices.toList()).colorIndex)
+    }
 }
