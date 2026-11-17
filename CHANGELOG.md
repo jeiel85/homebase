@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.39.1 — The update window no longer gets stuck at 100%
+
+### Fixed
+- **The update window no longer stays stuck on "설치하는 중… 관리자 승인 창에서 허용하세요" (Installing… approve the
+  administrator prompt) at 100%.** When the administrator prompt was declined or closed unanswered, or the
+  download or installer launch failed, the result notice opened *behind* the progress window and locked it:
+  the window stayed at 100% with its Cancel and X buttons dead, and the notice that would have closed it could
+  not be seen. The progress window now closes first, and the notice ("업데이트 취소" and the like) appears in its
+  place.
+- Homebase notices (update results and other confirmations) now have their own taskbar button, so one that opens
+  behind another window can still be found and answered.
+
 ## v0.39.0 — Phone notifications stack under one Homebase entry
 
 ### Changed

@@ -7,7 +7,7 @@
         Icon="pack://application:,,,/Resources/homebase.ico"
         Width="400" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="False"
+        ShowInTaskbar="True"
         Background="{StaticResource Brush.Canvas}"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
