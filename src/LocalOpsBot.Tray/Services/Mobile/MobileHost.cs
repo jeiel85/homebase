@@ -33,6 +33,9 @@ internal static class MobileHost
         _client = new MobileBridgeClient(claude);
         _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
         _client.ToastRequested += t => ToastRequested?.Invoke(t);
+        _client.AliasesReceived += DeviceNames.Apply;
+        // The client connects from its constructor: the first table may already be in (Apply is idempotent).
+        if (_client.LastAliases is { } aliases) DeviceNames.Apply(aliases);
         // Phone approvals for Claude Code (M-48) need the bridge; listen again if the user turned them on.
         ClaudeHookSetup.Resume();
         return _client;

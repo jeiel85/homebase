@@ -29,6 +29,7 @@ public partial class App : Application
         // asks this PC's Agent for a pairing code as the tray does:
         //   Homebase.Tray.exe --preview-dashboard [--view devices|notifications|settings]
         //                     [--area phone|telegram|forwarding|monitors|updates] [--select <device key>] [--lang en]
+        //                     [--alias "<group key>=<alias>"] [--rename]   (pc:pc-work, phone-name:galaxy s24|samsung sm-s921n)
         if (e.Args.Contains("--preview-dashboard"))
         {
             base.OnStartup(e);
@@ -37,9 +38,16 @@ public partial class App : Application
             else ApplyLanguage();
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             Services.Mobile.NotificationCenter.Preview = Dashboard.PreviewDashboardSource.History();
+            // Aliases stay in memory: the preview never reaches the Agent or the group (M-51).
+            Services.Mobile.DeviceNames.UseMemoryOnly();
+            // A phone key carries its name (phone-name:<name>|<model>), so the notification center finds it too.
+            if (ArgAfter(e.Args, "--alias")?.Split('=', 2) is [var aliasKey, var alias])
+                Services.Mobile.DeviceNames.Aliases.Set(aliasKey,
+                    aliasKey.StartsWith("phone-name:", StringComparison.Ordinal) ? aliasKey[11..].Split('|')[0] : aliasKey, alias);
             var preview = new DashboardWindow(new Dashboard.PreviewDashboardSource(), preview: true, new UpdateCoordinator());
             if (Enum.TryParse<DashTab>(ArgAfter(e.Args, "--view"), ignoreCase: true, out var view))
                 preview.ShowTab(view, Enum.TryParse<SettingsTab>(ArgAfter(e.Args, "--area"), ignoreCase: true, out var area) ? area : null);
+            if (e.Args.Contains("--rename")) preview.ContentRendered += (_, _) => preview.PreviewRename();
             if (ArgAfter(e.Args, "--select") is { } key) preview.PreviewSelect(key);
             if (int.TryParse(ArgAfter(e.Args, "--tab"), out var tab)) Dashboard.PcLiveView.PreviewTab = tab;
             if (ArgAfter(e.Args, "--size")?.Split('x') is [var w, var h] && double.TryParse(w, out var pw) && double.TryParse(h, out var ph))

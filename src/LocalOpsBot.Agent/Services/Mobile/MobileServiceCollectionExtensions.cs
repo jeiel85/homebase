@@ -84,13 +84,17 @@ public static class MobileServiceCollectionExtensions
         // The device group (M-47): links both ways, introductions, removals that reach every member.
         services.AddSingleton(sp => GroupTombstoneFile.Open(MobileDeviceStore.DefaultDirectory,
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>()));
+        // The group's aliases (M-51) travel with the group answers.
+        services.AddSingleton(sp => DeviceAliasFile.Open(MobileDeviceStore.DefaultDirectory,
+            sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>()));
         services.AddSingleton(sp =>
         {
             var api = new Lazy<MobileApiServer>(() => sp.GetRequiredService<MobileApiServer>());
             return new DeviceGroupService(sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<IMobileDeviceStore>(),
                 sp.GetRequiredService<DeviceStatusBoard>(), sp.GetRequiredService<GroupTombstones>(),
                 () => api.Value.CreateOffer(introduction: true), Environment.MachineName,
-                sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>());
+                sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DeviceGroupService>>(),
+                sp.GetRequiredService<DeviceAliasTable>());
         });
         services.AddHostedService(sp => sp.GetRequiredService<DeviceGroupService>());
         // The Tray's device page (M-46): this PC, linked PCs and PCs linked here, live while it looks.

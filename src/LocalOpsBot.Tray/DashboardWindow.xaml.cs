@@ -25,7 +25,8 @@ public enum DashTab { Devices, Notifications, Settings }
 /// <item>Devices, a device hub (M-46): every device on the left — this PC, the PCs linked either way,
 /// the phones — and the selected one on the right at the level the phone app shows a PC. PCs are live
 /// (this PC from the Agent's own sampler, a linked PC over its live view); phones show their last
-/// report. Read-only by design.</item>
+/// report. Read-only by design, but for the names: a device can be given an alias for the whole
+/// group (M-50, M-51) from the pencil beside its name, F2, or its tile's right-click menu.</item>
 /// <item>The notification center (<see cref="NotificationCenterPanel"/>, M-32).</item>
 /// <item>Settings (<see cref="SettingsPanel"/>).</item>
 /// </list>
@@ -45,6 +46,7 @@ public partial class DashboardWindow : ThemedWindow
     private readonly DispatcherTimer _timer;
     private readonly Dictionary<string, History> _histories = new(StringComparer.Ordinal);
     private IReadOnlyList<DeviceItem> _items = Array.Empty<DeviceItem>();
+    private DeviceOverview? _overview;
     private string _selected = DeviceList.SelfKey;
     private PcLiveView? _live;
     private string? _liveKey;
@@ -86,10 +88,21 @@ public partial class DashboardWindow : ThemedWindow
         };
         // Minimized is out of view too: the Settings page stops polling the Agent (M-13).
         StateChanged += (_, _) => SyncPages();
+        // An alias set here, on a phone or on another PC renames the device at once, without waiting for the next poll.
+        Action onAliases = () => Dispatcher.BeginInvoke(ApplyAliases);
+        DeviceNames.Aliases.Changed += onAliases;
+        PreviewKeyDown += (_, e) =>
+        {
+            // F2 renames the selected device on the Devices page only (Settings has text fields of its own).
+            if (e.Key != Key.F2 || _tab != DashTab.Devices || _items.Count == 0) return;
+            e.Handled = true;
+            Rename(_selected);
+        };
         Closed += (_, _) =>
         {
             _timer.Stop();
             NotificationCenter.UnreadChanged -= onUnread;
+            DeviceNames.Aliases.Changed -= onAliases;
             CenterView.Stop();
             SettingsView.Stop();
         };
@@ -162,7 +175,8 @@ public partial class DashboardWindow : ThemedWindow
                 // A failed answer keeps what is shown; no bridge at all leaves just this PC.
                 if (overview is not null || !_source.Connected || _items.Count == 0)
                 {
-                    _items = DeviceList.Build(overview, Environment.MachineName);
+                    _overview = overview;
+                    _items = DeviceList.Build(overview, Environment.MachineName, DeviceNames.Aliases);
                     if (_items.All(i => i.Key != _selected)) _selected = DeviceList.SelfKey;
                     RenderRail();
                 }
@@ -195,7 +209,56 @@ public partial class DashboardWindow : ThemedWindow
     /// <summary>Design preview only: open on a given device (<c>--select</c>).</summary>
     internal void PreviewSelect(string key) => _selected = key;
 
+    /// <summary>Design preview only: open the alias dialog for the selected device (<c>--rename</c>).</summary>
+    internal void PreviewRename() => Dispatcher.BeginInvoke(() => Rename(_selected), DispatcherPriority.ApplicationIdle);
+
     private DeviceItem Selected() => _items.FirstOrDefault(i => i.Key == _selected) ?? _items[0];
+
+    // ── Aliases (DECISIONS M-50) ──
+
+    /// <summary>
+    /// Asks for the alias of the device <paramref name="key"/> and hands it to the Agent, which shares it
+    /// with the group; the table it sends back redraws (through the change event).
+    /// </summary>
+    private async void Rename(string key)
+    {
+        if (_items.FirstOrDefault(i => i.Key == key) is not { AliasKey: { } aliasKey } d) return;
+        var text = AliasDialog.Ask(this, d.Name, d.Alias);
+        if (text is null) return;
+        if (!await DeviceNames.SetAsync(aliasKey, d.Name, text))
+            MessageDialog.Show(L.AliasTitle, L.AliasNotSaved);
+    }
+
+    /// <summary>Shows the current aliases on the list and the header from the last overview.</summary>
+    private void ApplyAliases()
+    {
+        if (_items.Count == 0) return;
+        _items = DeviceList.Build(_overview, Environment.MachineName, DeviceNames.Aliases);
+        if (_items.All(i => i.Key != _selected)) _selected = DeviceList.SelfKey;
+        RenderRail();
+        RenderHeader(Selected());
+    }
+
+    private void Rename_Click(object sender, RoutedEventArgs e) => Rename(_selected);
+
+    private ContextMenu? TileMenu(DeviceItem d)
+    {
+        if (d.AliasKey is not { } aliasKey) return null; // a PC linked here that hasn't said its id yet
+        var menu = new ContextMenu { FontFamily = Ui };
+        var set = new MenuItem { Header = d.Alias is null ? L.AliasSet : L.AliasChange };
+        set.Click += (_, _) => Rename(d.Key);
+        menu.Items.Add(set);
+        if (d.Alias is not null)
+        {
+            var clear = new MenuItem { Header = L.AliasClear };
+            clear.Click += async (_, _) =>
+            {
+                if (!await DeviceNames.SetAsync(aliasKey, d.Name, "")) MessageDialog.Show(L.AliasTitle, L.AliasNotSaved);
+            };
+            menu.Items.Add(clear);
+        }
+        return menu;
+    }
 
     // ── Device list ──
 
@@ -232,9 +295,11 @@ public partial class DashboardWindow : ThemedWindow
         glyph.Margin = new Thickness(0, 2, 0, 0);
         g.Children.Add(At(glyph, 0));
         var text = new StackPanel();
-        text.Children.Add(Text(d.Name, 13, on ? OnSlab : Ink, FontWeights.SemiBold));
+        text.Children.Add(Text(d.Shown, 13, on ? OnSlab : Ink, FontWeights.SemiBold));
         text.Children.Add(Text(DeviceList.Summary(d), 11.5, on ? OnSlabSoft : InkSoft));
-        if (RoleLine(d) is { } role) text.Children.Add(Text(role, 10.5, on ? Accent : InkSoft));
+        // With an alias, the name the device reports stays in small print (as on the phone, M-36).
+        var small = string.Join(" · ", new[] { d.Alias is null ? null : d.Name, RoleLine(d) }.Where(x => x is not null));
+        if (small.Length > 0) text.Children.Add(Text(small, 10.5, on ? Accent : InkSoft));
         g.Children.Add(At(text, 1));
         var led = Led(d.Online ? LedOn : Idle, 8);
         led.VerticalAlignment = VerticalAlignment.Top;
@@ -255,6 +320,7 @@ public partial class DashboardWindow : ThemedWindow
             tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
         }
         tile.MouseLeftButtonUp += (_, _) => Select(d.Key);
+        tile.ContextMenu = TileMenu(d);
         return tile;
     }
 
@@ -347,8 +413,8 @@ public partial class DashboardWindow : ThemedWindow
                     Show(d.Key, Waiting(d.Role switch
                     {
                         DeviceRole.Self => L.DetCollecting,
-                        DeviceRole.LinkedHere => L.DetAskingShare(d.Name),
-                        _ => L.DetConnectingTo(d.Name),
+                        DeviceRole.LinkedHere => L.DetAskingShare(d.Shown),
+                        _ => L.DetConnectingTo(d.Shown),
                     }));
                 }
                 return true;
@@ -426,9 +492,11 @@ public partial class DashboardWindow : ThemedWindow
     private void RenderHeader(DeviceItem d)
     {
         HeaderGlyphBox.Child = Glyph(d.IsPc, OnSlab, 24);
-        HeaderName.Text = d.Name;
+        HeaderName.Text = d.Shown;
+        RenameButton.Visibility = d.AliasKey is null ? Visibility.Collapsed : Visibility.Visible;
         var s = d.Status;
         var parts = new List<string>();
+        if (d.Alias is not null) parts.Add(d.Name);
         if (!d.IsPc && d.Model is { } model) parts.Add(model);
         if (s?.Os is { } os) parts.Add(os);
         if (s?.AppVersion is { } v) parts.Add("Homebase v" + v);

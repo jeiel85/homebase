@@ -270,7 +270,8 @@ fun PcListScreen(
         AliasDialog(
             pc,
             onSave = { input ->
-                store.setAlias(pc.pcId, input)
+                // Shared with the device group at once (DECISIONS M-51); a PC that is off gets it later.
+                if (store.setAlias(pc.pcId, input)) PushRegistrar.scope.launch { GroupSync.shareAlias(api, store, pc.pcId) }
                 store.get(pc.pcId)?.let { PushNotifier.renamePc(context, it.pcId, it.displayName) }
                 pcs = store.all()
                 renaming = null
@@ -468,7 +469,7 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRename: 
     }
 }
 
-/** Names [pc] on this phone; an empty field (or "원래 이름") goes back to the PC's own name. */
+/** Names [pc] for the device group (DECISIONS M-51); an empty field (or "원래 이름") goes back to the PC's own name. */
 @Composable
 private fun AliasDialog(pc: PcEntry, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
     var text by remember(pc.pcId) { mutableStateOf(pc.alias ?: "") }
@@ -478,7 +479,7 @@ private fun AliasDialog(pc: PcEntry, onSave: (String?) -> Unit, onDismiss: () ->
         text = {
             Column {
                 Text(
-                    "이 휴대폰에서만 ${pc.name} 대신 보일 이름입니다. 비워 두면 원래 이름으로 보입니다.",
+                    "그룹의 모든 휴대폰·PC에서 ${pc.name} 대신 보일 이름입니다. 비워 두면 원래 이름으로 보입니다.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(12.dp))

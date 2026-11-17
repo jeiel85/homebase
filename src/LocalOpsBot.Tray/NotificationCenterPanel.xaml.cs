@@ -16,6 +16,8 @@ namespace LocalOpsBot.Tray;
 /// notifications other devices relayed here and this PC's alerts, newest first, grouped by day.
 /// Sources are down the left; a row expands to its full text. Coming into view marks everything
 /// shown as read; new arrivals while it is in view are added at the top.
+/// Senders show under the group's alias for them (M-51); the history keeps the name they sent, so
+/// renaming a device renames its past notifications too.
 /// </summary>
 public partial class NotificationCenterPanel : UserControl
 {
@@ -28,7 +30,8 @@ public partial class NotificationCenterPanel : UserControl
     private bool _loading;
     private bool _inView;
     private bool _newWhileLoading;
-    private string? _filter; // null = all, AlertFilter, or a device name
+    private string? _filter; // null = all, AlertFilter, or a device name (as sent, not its alias)
+    private readonly Action _onAliases;
 
     /// <summary>
     /// The tab is in front of a shown window: this page adds new notifications and marks them read
@@ -40,6 +43,9 @@ public partial class NotificationCenterPanel : UserControl
     {
         InitializeComponent();
         MobileHost.ToastRequested += OnToastRequested;
+        // A device renamed here, on a phone or on another PC (M-51) shows under its new name at once.
+        _onAliases = () => Dispatcher.BeginInvoke(() => { if (_entries.Count > 0) Render(); });
+        DeviceNames.Aliases.Changed += _onAliases;
     }
 
     /// <summary>
@@ -57,7 +63,11 @@ public partial class NotificationCenterPanel : UserControl
     }
 
     /// <summary>The tray is shutting down.</summary>
-    internal void Stop() => MobileHost.ToastRequested -= OnToastRequested;
+    internal void Stop()
+    {
+        MobileHost.ToastRequested -= OnToastRequested;
+        DeviceNames.Aliases.Changed -= _onAliases;
+    }
 
     private void OnToastRequested(TrayToast _) =>
         // The Agent writes the history before it sends the balloon, so the new entry is already there.
@@ -217,14 +227,16 @@ public partial class NotificationCenterPanel : UserControl
 
         var sources = _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
             .GroupBy(e => e.Source!, StringComparer.Ordinal)
-            .OrderBy(g => g.Key, StringComparer.CurrentCulture)
+            .Select(g => (Group: g, Label: DeviceNames.Show(g.First().SourceKind, g.Key)))
+            .OrderBy(x => x.Label, StringComparer.CurrentCulture)
             .ToList();
         if (sources.Count == 0) return;
         var head = Hb.Label(L.CenterFrom, Hb.InkSoft, 11);
         head.Margin = new Thickness(6, 12, 0, 6);
         FilterPanel.Children.Add(head);
-        foreach (var g in sources)
-            FilterPanel.Children.Add(FilterTile(g.Key, g.Key, g.Count(), pc: g.First().SourceKind == DeviceKind.Pc));
+        // The group's alias on the tile; the filter keeps the name the device sent (M-51).
+        foreach (var (g, label) in sources)
+            FilterPanel.Children.Add(FilterTile(label, g.Key, g.Count(), pc: g.First().SourceKind == DeviceKind.Pc));
     }
 
     private Border FilterTile(string label, string? key, int count, bool? pc)
@@ -330,7 +342,8 @@ public partial class NotificationCenterPanel : UserControl
         meta.Children.Add(KindChip(e));
         meta.Children.Add(new TextBlock
         {
-            Text = e.Kind == HistoryKind.Alert ? $"{L.CenterThisPc} · {L.CenterAlertKind(e.App)}" : $"{e.Source} · {e.App}",
+            Text = e.Kind == HistoryKind.Alert ? $"{L.CenterThisPc} · {L.CenterAlertKind(e.App)}"
+                : $"{(e.Source is { } source ? DeviceNames.Show(e.SourceKind, source) : "")} · {e.App}",
             Style = Res<Style>("Type.Micro"),
             Margin = new Thickness(6, 1, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,

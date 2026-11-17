@@ -17,7 +17,11 @@ internal enum DeviceRole
     ViaHub,
 }
 
-/// <summary>One entry of the dashboard's device list (DECISIONS M-46).</summary>
+/// <summary>
+/// One entry of the dashboard's device list (DECISIONS M-46). <c>Name</c> is what the device reports;
+/// <c>Alias</c> the group's name for it (M-51), shown in its place (<see cref="Shown"/>). <c>AliasKey</c>
+/// is its group key, to set that alias — null while a PC linked here has not said its id yet.
+/// </summary>
 internal sealed record DeviceItem(
     string Key,
     DeviceRole Role,
@@ -31,9 +35,15 @@ internal sealed record DeviceItem(
     string? Via = null,
     LocalDeviceInfo? Local = null,
     string? Error = null,
-    int Phones = 0)
+    int Phones = 0,
+    string? Alias = null,
+    string? AliasKey = null,
+    string? ViaKey = null)
 {
     public bool IsPc => Kind == DeviceKind.Pc;
+
+    /// <summary>The name to show: the alias when set, else the device's own name.</summary>
+    public string Shown => Alias ?? Name;
 }
 
 /// <summary>Turns the Agent's <c>devices.overview</c> into the list the dashboard shows.</summary>
@@ -42,15 +52,39 @@ internal static class DeviceList
     public const string SelfKey = "self";
 
     /// <summary>
-    /// This PC first, then PCs (linked either way), then phones; online before offline, then by name.
-    /// A device paired here and also listed by a linked PC appears once (the copy that can show more).
+    /// This PC first, then PCs (linked either way), then phones; online before offline, then by the name
+    /// shown. A device paired here and also listed by a linked PC appears once (the copy that can show
+    /// more). With <paramref name="aliases"/>, each device and the PC it is seen through carry the group's
+    /// alias for them (M-51).
     /// </summary>
-    public static IReadOnlyList<DeviceItem> Build(DeviceOverview? overview, string selfName)
+    public static IReadOnlyList<DeviceItem> Build(DeviceOverview? overview, string selfName, DeviceAliasTable? aliases = null)
+    {
+        var items = Collect(overview, selfName);
+        if (aliases is null) return Sorted(items);
+        return Sorted(items.Select(i => i with
+        {
+            Alias = aliases.Resolve(i.AliasKey, i.Kind, i.Name),
+            Via = i.Via is { } via ? aliases.Show(i.ViaKey, DeviceKind.Pc, via) : null,
+        }));
+    }
+
+    /// <summary>The group key of a device on a PC's device list (M-47, M-51): its pcId for a PC, name and model for a phone.</summary>
+    public static string? KeyOf(DeviceEntry d) => d.Kind == DeviceKind.Pc
+        ? d.PcId is { Length: > 0 } pcId ? GroupKeys.Pc(pcId) : null
+        : GroupKeys.PhoneByName(d.Name, d.Model);
+
+    private static List<DeviceItem> Sorted(IEnumerable<DeviceItem> items) => items
+        .OrderBy(i => i.Role == DeviceRole.Self ? 0 : i.IsPc ? 1 : 2)
+        .ThenBy(i => i.Online ? 0 : 1)
+        .ThenBy(i => i.Shown, StringComparer.CurrentCultureIgnoreCase)
+        .ToList();
+
+    private static List<DeviceItem> Collect(DeviceOverview? overview, string selfName)
     {
         var items = new List<DeviceItem>
         {
             new(SelfKey, DeviceRole.Self, DeviceKind.Pc, selfName, null, true, null, overview?.Here.Hub.Status,
-                Core.Mobile.LiveTarget.Self),
+                Core.Mobile.LiveTarget.Self, AliasKey: overview?.Here.Hub.PcId is { Length: > 0 } self ? GroupKeys.Pc(self) : null),
         };
         if (overview is null) return items;
 
@@ -63,7 +97,8 @@ internal static class DeviceList
             if (!seen.Add(Seen(DeviceKind.Pc, h.PcName))) continue;
             items.Add(new DeviceItem("hub:" + h.PcId, DeviceRole.Hub, DeviceKind.Pc, h.PcName, null, h.Online, h.LastContactAt,
                 h.Status, Core.Mobile.LiveTarget.Hub(h.PcId), Error: h.Error,
-                Phones: h.Devices.Count(d => d.Kind == DeviceKind.Phone && d.DeviceId != h.SelfDeviceId)));
+                Phones: h.Devices.Count(d => d.Kind == DeviceKind.Phone && d.DeviceId != h.SelfDeviceId),
+                AliasKey: GroupKeys.Pc(h.PcId)));
         }
         foreach (var d in overview.Here.Devices)
         {
@@ -71,7 +106,7 @@ internal static class DeviceList
             local.TryGetValue(d.DeviceId, out var info);
             var pc = d.Kind == DeviceKind.Pc;
             items.Add(new DeviceItem("device:" + d.DeviceId, pc ? DeviceRole.LinkedHere : DeviceRole.Phone, d.Kind, d.Name, d.Model,
-                d.Online, d.LastSeenAt, d.Status, pc ? Core.Mobile.LiveTarget.Device(d.DeviceId) : null, Local: info));
+                d.Online, d.LastSeenAt, d.Status, pc ? Core.Mobile.LiveTarget.Device(d.DeviceId) : null, Local: info, AliasKey: KeyOf(d)));
         }
         foreach (var h in overview.Hubs)
         {
@@ -79,14 +114,10 @@ internal static class DeviceList
             {
                 if (d.DeviceId == h.SelfDeviceId || !seen.Add(Seen(d.Kind, d.Name))) continue;
                 items.Add(new DeviceItem($"via:{h.PcId}:{d.DeviceId}", DeviceRole.ViaHub, d.Kind, d.Name, d.Model,
-                    d.Online && h.Online, d.LastSeenAt, d.Status, null, Via: h.PcName));
+                    d.Online && h.Online, d.LastSeenAt, d.Status, null, Via: h.PcName, AliasKey: KeyOf(d), ViaKey: GroupKeys.Pc(h.PcId)));
             }
         }
-        return items
-            .OrderBy(i => i.Role == DeviceRole.Self ? 0 : i.IsPc ? 1 : 2)
-            .ThenBy(i => i.Online ? 0 : 1)
-            .ThenBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        return items;
     }
 
     private static string Seen(string kind, string name) => kind + "|" + name.Trim();

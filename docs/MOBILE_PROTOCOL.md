@@ -76,13 +76,14 @@ PC는 페어링한 기기(휴대폰·다른 PC)의 허브다.
 - **PC 연결 코드 (M-30)**: 트레이의 "코드 복사"는 지금 오퍼를 24단어(BIP39 영어, 256비트 + 8비트 체크섬)로 준다. 32바이트 = 버전 1 · SHA-256(`pcId`) 앞 4바이트 · LAN 인증서 SHA-256 앞 8바이트(LAN 없으면 0) · 포트(빅엔디언 2바이트) · 페어링 `code`의 16바이트 · 예약 0. 받는 PC는 온라인 tailnet 피어와 자기 LAN /24 호스트에 `GET /api/v1/info`를 묻고(LAN은 지문 앞부분이 맞는 TLS만), `pcId` 앞 4바이트가 맞는 PC에 `POST /api/v1/pair {kind: pc}`를 보낸 뒤 `GET /api/v1/endpoints`로 전체 경로를 받는다. 프로토콜 추가는 없다.
 - **실시간 공유 (M-46)**: 허브의 트레이가 자기에게 연결한 PC(`kind: pc`)를 보고 있으면, 허브는 그 PC의 inbox 응답에 `live: true`를 싣는다(기다리던 롱 폴은 바로 깨우고, 폴 사이에 온 요청은 다음 폴에 바로 답한다. 요청이 이어지는 동안은 다시 깨우지 않는다). 받은 PC는 자기 `LiveSnapshot`을 2초마다 `POST /api/v1/live-snapshot`(인증, 본문 최대 1MiB, 토큰 확인 뒤에 본문을 읽음)으로 보내고, 응답 `{schema, live}`가 `false`이거나 세 번 연속 실패하면 멈춘다. 허브는 요청을 15초 동안 유지하고(트레이가 1초마다 갱신) 최신 스냅숏 하나만 메모리에 둔다. 휴대폰이 보내면 403, 형식이 틀리면 400 `invalid_snapshot`. 반대 방향(이 PC가 연결한 허브)은 그 허브의 `GET /api/v1/live` WebSocket을 이 PC가 가진 토큰으로 연다. 공유하는 동안 보내는 PC의 트레이에는 "다른 기기가 이 PC를 보는 중"이 켜진다. v0.33.0 이하 PC는 `live`를 모르므로 요약만 보인다.
 - **기기 그룹 (M-47)**: 연결은 그룹 가입이다. 모든 경로는 인증(그 PC에 페어링된 기기의 Bearer 토큰)이 필요하다.
-  - `GET /api/v1/group` → [`group.v1.json`](mobile-protocol/group.v1.json): `{schema, pcId, pcName, pcs: [{pcId, pcName, token}], removed?: [{key, at}]}`. `pcs`는 이 PC와 어느 방향으로든 연결된 PC, `token`은 이 PC가 그 PC의 토큰을 가져 소개할 수 있는지.
+  - `GET /api/v1/group` → [`group.v1.json`](mobile-protocol/group.v1.json): `{schema, pcId, pcName, pcs: [{pcId, pcName, token}], removed?: [{key, at}], aliases?: [{key, name, alias?, at}]}`. `pcs`는 이 PC와 어느 방향으로든 연결된 PC, `token`은 이 PC가 그 PC의 토큰을 가져 소개할 수 있는지. `aliases`(v0.38.0, M-51)는 그룹의 별칭 표 전체: `key`는 `pc:<pcId>` 또는 `phone-name:<이름>|<모델>`(소문자), `name`은 정할 때 그 기기가 보고한 이름, `alias`가 없으면 지운 것(90일 보관), `at`은 정하거나 지운 시각(밀리초까지).
   - `POST /api/v1/group/offer` → 이 PC의 새 `PairingOffer`(소개용 일회용 코드: QR 코드와 따로 최대 8개, 5분, 1회용).
   - `POST /api/v1/group/join {schema, offer}` → `{schema, linked, already, pcName?, error?}`: 이 PC가 오퍼의 PC에 연결한다. `error`: `self`·`removed`·`unreachable`·`rejected`.
   - `POST /api/v1/group/introduce {schema, pcId}` → 그 PC의 새 `PairingOffer`(이 PC가 토큰을 가진 PC만, 아니면 404 `not_linked`).
   - `POST /api/v1/group/remove {schema, key}` → `{schema, removed}`: PC만(휴대폰은 403). `key`는 `pc:<pcId>`·`phone:<푸시 해시>`·`phone-name:<이름>|<모델>`. 받은 PC는 해제만 하고 다시 전하지 않는다.
-  - PC는 연결 직후 상대에게 자기 오퍼로 `join`을 보내 되연결을 받고, 2분마다 연결한 PC의 그룹을 읽어 모자란 PC를 `introduce`로 연결하며 `removed`를 합쳐 적용한다(7일 보관). presence에는 `pcId`(PC만), `POST /api/v1/pair`에는 `pcId`(PC만, 손으로 다시 연결하면 제거 기록을 지움)가 더해졌다.
-  - 휴대폰은 최대 10분에 한 번(당겨서 새로고침은 즉시)과 30분 잡에서 각 PC의 그룹을 읽어, 서로 모르는 두 PC는 `offer`→`join`으로 잇고 모르는 PC는 `introduce`로 받은 오퍼로 페어링한다.
+  - `POST /api/v1/group/alias {schema, aliases: [{key, name, alias?, at}]}` → `{schema, changed}` (v0.38.0, M-51): 휴대폰·PC 모두 보낼 수 있다(한 번에 64개까지). 키마다 `at`이 늦은 쪽이 이기고 같으면 별칭 글자가 큰 쪽(서수 비교)이 이긴다. 별칭은 앞뒤 공백 제거·안쪽 공백 한 칸·40 코드 포인트로 맞추고 기기 이름과 같으면 지운 것으로 본다. 하루 넘게 미래인 `at`, 잘못된 키, 빈 이름은 버린다. 받은 PC는 합치기만 하고 다시 전하지 않는다(다른 PC는 2분 동기화 때 받는다). 형식이 틀리면 400.
+  - PC는 연결 직후 상대에게 자기 오퍼로 `join`을 보내 되연결을 받고, 2분마다 연결한 PC의 그룹을 읽어 모자란 PC를 `introduce`로 연결하며 `removed`와 `aliases`를 합쳐 적용한다(제거 7일 보관). 트레이에서 정한 별칭은 바로 토큰을 가진 모든 PC에 `group/alias`로 보낸다. presence에는 `pcId`(PC만), `POST /api/v1/pair`에는 `pcId`(PC만, 손으로 다시 연결하면 제거 기록을 지움)가 더해졌다. `GET /api/v1/devices`의 PC 항목에는 v0.38.0부터 그 PC가 보고한 `pcId`가 실린다(별칭을 찾는 키).
+  - 휴대폰은 최대 10분에 한 번(당겨서 새로고침은 즉시)과 30분 잡에서 각 PC의 그룹을 읽어, 서로 모르는 두 PC는 `offer`→`join`으로 잇고 모르는 PC는 `introduce`로 받은 오퍼로 페어링한다. 같은 때 자기 PC들의 별칭(`pc:` 키)을 맞춘다: 더 늦은 그룹 항목은 받아들이고, 자기가 더 늦게 정한 것은 `aliases`가 있는(v0.38.0 이상) PC 가운데 그것을 모르는 PC에 보낸다. 사용자가 휴대폰에서 별칭을 정하면 페어링된 모든 PC에 바로 보낸다. 별칭이 공유되기 전에 정한 별칭은 `at`이 0(가장 오래됨)으로 한 번 올라간다.
 - **inbox**: 연결된 PC가 롱 폴링한다. `{schema, next, items: [{seq, id, originId, originName, app, title, body?, ts}], live?}` — 허브의 Windows 알림(`originId: "self"`)과 기기에서 받은 알림의 최근 200건·30분, 요청한 기기가 보낸 것은 뺀다. `after`가 허브의 `next`보다 크면(허브 재시작) 처음부터 준다. 받은 PC는 이 항목을 다시 중계하지 않는다(한 단계). `id`는 모든 경로에서 같아서, 두 PC가 서로 연결돼 같은 알림이 두 길로 와도 한 번만 띄운다.
 
 ## 푸시 알림 (UnifiedPush, M-19 · M-21)
@@ -182,13 +183,14 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 ## Tray ↔ Agent (`\\.\pipe\Homebase.MobileBridge`)
 
 프레임은 4바이트 LE 길이 + UTF-8 JSON `{op, id?, payload?}`이고 최대 1MiB다.
-- Agent → Tray: `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?}`(다른 기기 알림을 이 PC에 띄움, M-28), `response {id, ok, payload?, error?}`.
+- Agent → Tray: `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?, source?, sourceKind?, app?}`(다른 기기 알림을 이 PC에 띄움, M-28. `title`은 "보낸 기기 · 앱", v0.38.0부터 보낸 기기·종류·앱을 따로 실어 트레이가 그룹 별칭으로 바꿔 보인다, M-51), `aliases {aliases}`(그룹 별칭 표 전체, 연결 직후와 바뀔 때마다, M-51), `response {id, ok, payload?, error?}`.
 - Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`,
   `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`),
   `devices.overview`(→ `{here: DevicesResponse, hubs: [{pcId, pcName, online, lastContactAt?, status?, devices[], error?, selfDeviceId?}]}`),
   `hubs.link {link}`(다른 PC의 페어링 링크로 연결 → `{linked, pcName?, error?, message?}`), `hubs.unlink {pcId}`(M-29).
   `live.get {target}`(M-46): `target`은 `self` · `hub:<pcId>` · `device:<deviceId>` → `{state, snapshot?, via?, detail?, at?}`, `state`는 `live`·`connecting`·`unreachable`·`unsupported`·`unknown`. 부를 때마다 그 보기를 10초 동안 열어 두고, 아무도 묻지 않으면 닫는다(수집도 멈춤). `devices.overview`에는 `local: [{deviceId, pairedAt, push, muted?}]`가 더해졌다.
   `session.report`에는 `agents[]`(Codex 세션 등 Claude 밖의 작업, M-26)가 더해졌다.
+  `aliases.set {key, name, alias?}`(M-51): 트레이에서 정한 별칭 → `true`. Agent가 바로 저장하고 그룹의 PC에 백그라운드로 보내며, 바뀐 표는 `aliases` 푸시로 돌아온다.
   `approval.ask` ApprovalRequest `{id, app, session, project?, toolTitle, detail, expiresAt}` → `{decision}`(M-48, 최대 10분 대기, `null`이면 PC에서 묻기): Tray의 훅 수신기가 보낸다. Agent는 연결의 읽기 루프와 따로 처리해 그동안 다른 메시지가 막히지 않는다. `approval.cancel {id}`(응답 없음): 사용자가 PC로 돌아와 Tray가 기다리기를 그만둠.
   `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.

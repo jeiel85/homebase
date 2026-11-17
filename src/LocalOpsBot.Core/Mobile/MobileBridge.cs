@@ -36,17 +36,19 @@ public static class MobileBridge
     public const string OpLiveGet = "live.get";               // request {target} → LiveView, keeps that view open ~10 s (M-46)
     public const string OpApprovalAsk = "approval.ask";       // request ApprovalRequest → ApprovalAskResult (M-48, waits up to 10 min)
     public const string OpApprovalCancel = "approval.cancel"; // push {id} — the user is back at the PC (M-48)
+    public const string OpAliasesSet = "aliases.set";         // request AliasSetRequest → bool, shared with the group (M-51)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
     public const string OpToast = "toast.show";               // push {title, body} — a relayed notification to show (M-28)
+    public const string OpAliases = "aliases";                // push AliasListPayload — the group's aliases, on connect and on change (M-51)
     public const string OpResponse = "response";
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
         OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
-        OpApprovalAsk, OpApprovalCancel,
+        OpApprovalAsk, OpApprovalCancel, OpAliasesSet,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
@@ -150,8 +152,12 @@ public sealed record MobileOptionsSummary(bool Tailscale, bool Lan, bool Cloudfl
 /// <summary>Cloudflare Tunnel connector state: <c>not_installed</c>, <c>starting</c>, <c>running</c>, <c>error</c>.</summary>
 public sealed record CloudflareStatus(string State, string Mode, string? Hostname, string? Detail);
 
-/// <summary><c>toast.show</c> payload: a notification relayed from another device (DECISIONS M-28).</summary>
-public sealed record TrayToast(string Title, string? Body);
+/// <summary>
+/// <c>toast.show</c> payload: a notification relayed from another device (DECISIONS M-28). <c>Title</c> is
+/// "sender · app"; <c>Source</c>/<c>SourceKind</c>/<c>App</c> (v0.38.0) name the sender apart, so the Tray can
+/// show the alias the user gave it there instead (M-50). An older Agent leaves them out.
+/// </summary>
+public sealed record TrayToast(string Title, string? Body, string? Source = null, string? SourceKind = null, string? App = null);
 
 /// <summary>
 /// A hub PC this PC is linked to, as the Tray shows it (DECISIONS M-29). <c>Devices</c> is the hub's

@@ -132,8 +132,12 @@ public sealed class TrayIconManager : IDisposable
         Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             if (_disposed) return;
+            // The sender under the group's alias for it (M-51); an older Agent sends only the title.
+            var heading = toast is { Source: { } source, App: { } app } && DeviceNames.AliasOf(null, toast.SourceKind, source) is { } alias
+                ? $"{alias} · {app}"
+                : toast.Title;
             // NotifyIcon limits: title 63, text 255 characters; an empty text shows no balloon at all.
-            var title = Clip(toast.Title, 63);
+            var title = Clip(heading, 63);
             var text = Clip(string.IsNullOrWhiteSpace(toast.Body) ? " " : toast.Body!, 255);
             OwnToasts.Remember(title);
             try { _trayIcon.ShowBalloonTip(6000, title, text, ToolTipIcon.None); }

@@ -351,7 +351,8 @@ public class HubLinkEndToEndTests : IDisposable
                 DateTimeOffset.UtcNow, "raw", NotificationSensitivity.Normal));
             var atB = await Until(() => routerB.Snapshot().FirstOrDefault(n => n.Title.StartsWith("HUB-A · Outlook")), cts.Token);
             Assert.Equal(NotificationForwardingService.DeviceCategory, atB.Category);
-            Assert.Contains(toastsB.Snapshot(), t => t.Title == "HUB-A · Outlook");
+            // The balloon names its sender apart, so B's tray can show the alias given to A there (M-50).
+            Assert.Contains(toastsB.Snapshot(), t => t is { Title: "HUB-A · Outlook", Source: "HUB-A", SourceKind: DeviceKind.Pc, App: "Outlook" });
             var keptAtB = Assert.Single((await historyB.History.ListAsync(null, 10, cts.Token)).Entries);
             Assert.Equal(("HUB-A", DeviceKind.Pc, "Outlook"), (keptAtB.Source, keptAtB.SourceKind, keptAtB.App));
 
@@ -433,7 +434,7 @@ public class HubLinkEndToEndTests : IDisposable
 
         public List<TrayToast> Snapshot() { lock (_shown) return _shown.ToList(); }
 
-        public void Show(string title, string? body) { lock (_shown) _shown.Add(new TrayToast(title, body)); }
+        public void Show(TrayToast toast) { lock (_shown) _shown.Add(toast); }
     }
 
     private sealed class NullBridge : INotificationBridgeServer

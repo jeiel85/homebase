@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using LocalOpsBot.Agent.Services.Mobile;
 using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Infrastructure.Mobile;
@@ -91,6 +92,41 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         Assert.Null(await a.Group.IntroduceAsync("pc-c", _cts.Token));
         Assert.Equal("removed", (await a.Group.JoinAsync(c.Api.CreateOffer(introduction: true)!, _cts.Token)).Error);
     }
+
+    [Fact]
+    public async Task An_alias_set_on_a_tray_or_a_phone_reaches_every_member()
+    {
+        var a = await Node.StartAsync("pc-a", _cts.Token);
+        var b = await Node.StartAsync("pc-b", _cts.Token);
+        _nodes.AddRange(new[] { a, b });
+        Assert.True((await b.Links.LinkAsync(PairingLink.Build(a.Api.CreateOffer()!), _cts.Token)).Linked);
+        await Until(() => a.Links.Hub("pc-b"), _cts.Token);
+
+        // Named on A's tray (M-51): A answers at once and hands it to B in the background.
+        Assert.True(a.Group.SetAlias("pc:pc-b", "PC-B", "작업실"));
+        Assert.False(a.Group.SetAlias("pc:pc-b", "PC-B", "작업실"));
+        Assert.Equal("작업실", await Until(() => b.Group.Aliases.Get("pc:pc-b"), _cts.Token));
+
+        // Named on a phone paired with B only: A takes it from B's group answer on its next sync.
+        var pairing = new PairingService(b.Store, TimeProvider.System);
+        var phone = pairing.TryPair(pairing.Begin().Code, "Galaxy S24", "SM-S921N");
+        var body = JsonSerializer.SerializeToUtf8Bytes(new GroupAliasRequest(MobileProtocol.Schema,
+            new[] { new DeviceAlias("pc:pc-a", "PC-A", "거실", DateTimeOffset.UtcNow) }), MobileProtocol.Json);
+        var (status, json) = await b.Api.HandleRestAsync(Post(GroupPaths.Alias, phone.Token), body, _cts.Token);
+        Assert.Equal(200, status);
+        Assert.Equal(1, JsonSerializer.Deserialize<GroupAliasResponse>(json, MobileProtocol.Json)!.Changed);
+        Assert.Null(a.Group.Aliases.Get("pc:pc-a"));
+        await a.Group.SyncAsync(_cts.Token);
+        Assert.Equal("거실", a.Group.Aliases.Get("pc:pc-a"));
+        Assert.Contains(a.Group.Describe().Aliases!, e => e is { Key: "pc:pc-b", Alias: "작업실" });
+
+        // Only paired devices may name things, with a well-formed body.
+        Assert.Equal(401, (await b.Api.HandleRestAsync(Post(GroupPaths.Alias, "not-a-token"), body, _cts.Token)).Item1);
+        Assert.Equal(400, (await b.Api.HandleRestAsync(Post(GroupPaths.Alias, phone.Token), "{}"u8.ToArray(), _cts.Token)).Item1);
+    }
+
+    private static HttpRequestHead Post(string path, string? token) =>
+        new("POST", path, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Authorization"] = "Bearer " + token });
 
     private static async Task<T> Until<T>(Func<T?> probe, CancellationToken ct) where T : class
     {

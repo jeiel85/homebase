@@ -122,7 +122,8 @@ public sealed record DeviceStatus(
 
 /// <summary>
 /// One device paired with a hub PC. <c>Online</c>: it reported within <see cref="DeviceStatusBoard.OnlineWindow"/>.
-/// <c>Status</c> is null until its first report since the hub started.
+/// <c>Status</c> is null until its first report since the hub started. <c>PcId</c> (v0.38.0): a linked PC's
+/// own id from its last report, so the group's alias for it can be found (M-51).
 /// </summary>
 public sealed record DeviceEntry(
     string DeviceId,
@@ -131,7 +132,8 @@ public sealed record DeviceEntry(
     string? Model,
     DateTimeOffset? LastSeenAt,
     bool Online,
-    DeviceStatus? Status);
+    DeviceStatus? Status,
+    string? PcId = null);
 
 /// <summary>The hub PC itself in <see cref="DevicesResponse"/>.</summary>
 public sealed record HubEntry(string PcId, string PcName, string AgentVersion, DeviceStatus Status);
@@ -267,7 +269,8 @@ public sealed class DeviceStatusBoard
                     var has = _reports.TryGetValue(d.DeviceId, out var r);
                     var seen = has ? r.At : d.LastSeenAt;
                     return new DeviceEntry(d.DeviceId, d.Name, d.Kind, d.Model, seen,
-                        has && now - r.At <= OnlineWindow, has ? r.Report.ToStatus() : null);
+                        has && now - r.At <= OnlineWindow, has ? r.Report.ToStatus() : null,
+                        has && d.Kind == DeviceKind.Pc ? r.Report.PcId : null);
                 })
                 .OrderBy(e => e.Kind == DeviceKind.Pc ? 0 : 1)
                 .ThenBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -342,5 +345,5 @@ public sealed class NotificationInbox
 /// <summary>Shows a Windows notification in the user's session through the Tray (DECISIONS M-28).</summary>
 public interface ITrayToaster
 {
-    void Show(string title, string? body);
+    void Show(TrayToast toast);
 }

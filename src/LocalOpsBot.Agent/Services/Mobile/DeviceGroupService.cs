@@ -17,7 +17,9 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// PCs it is missing through an introduction (<c>POST /api/v1/group/introduce</c>: the member that holds
 /// that PC's token fetches a one-time offer for it);</item>
 /// <item>a device taken out of the group on any member is taken out here too (removals travel with the
-/// group answers and are kept for a week, so a member that was offline catches up).</item>
+/// group answers and are kept for a week, so a member that was offline catches up);</item>
+/// <item>the group's aliases (M-51) travel the same way: each answer carries this PC's table, each sync
+/// merges the other's, and an alias set on this PC's tray goes to every linked PC at once.</item>
 /// </list>
 /// Phones join the same way from their side: they read the group from any PC and pair with the rest.
 /// </summary>
@@ -33,6 +35,7 @@ public sealed class DeviceGroupService : BackgroundService
     private readonly IMobileDeviceStore _devices;
     private readonly DeviceStatusBoard _board;
     private readonly GroupTombstones _removed;
+    private readonly DeviceAliasTable _aliases;
     private readonly Func<PairingOffer?> _ownOffer;
     private readonly string _pcName;
     private readonly TimeProvider _time;
@@ -49,8 +52,10 @@ public sealed class DeviceGroupService : BackgroundService
         Func<PairingOffer?> ownOffer,
         string pcName,
         TimeProvider time,
-        ILogger<DeviceGroupService> logger)
+        ILogger<DeviceGroupService> logger,
+        DeviceAliasTable? aliases = null)
     {
+        _aliases = aliases ?? new DeviceAliasTable(time);
         _links = links;
         _devices = devices;
         _board = board;
@@ -72,7 +77,46 @@ public sealed class DeviceGroupService : BackgroundService
             if (_board.PcIdOf(d.DeviceId) is { } pcId && pcId != _devices.PcId && !pcs.ContainsKey(pcId))
                 pcs[pcId] = new GroupMember(pcId, d.Name, Token: false);
         }
-        return new GroupResponse(MobileProtocol.Schema, _devices.PcId, _pcName, pcs.Values.OrderBy(p => p.PcName).ToList(), _removed.List());
+        return new GroupResponse(MobileProtocol.Schema, _devices.PcId, _pcName, pcs.Values.OrderBy(p => p.PcName).ToList(),
+            _removed.List(), _aliases.List());
+    }
+
+    /// <summary>The group's aliases (M-51), cleared ones included.</summary>
+    public DeviceAliasTable Aliases => _aliases;
+
+    /// <summary>
+    /// The user named a device on this PC's tray (M-51): kept here at once and sent in the background to
+    /// every PC this one holds a token for; a PC that is off gets it from the next sync. False when nothing
+    /// changed (the same alias, or not a group key).
+    /// </summary>
+    public bool SetAlias(string key, string name, string? alias)
+    {
+        if (_aliases.Set(key, name, alias) is not { } entry) return false;
+        _logger.LogInformation("Group: alias for {Key} {Action} on this PC.", key, entry.Alias is null ? "cleared" : "set");
+        _ = Task.Run(() => ShareAliasAsync(entry, _stopping));
+        return true;
+    }
+
+    /// <summary>Hands one entry to every PC this one holds a token for (each call is bounded by its own timeout).</summary>
+    public async Task ShareAliasAsync(DeviceAlias entry, CancellationToken ct)
+    {
+        var body = new GroupAliasRequest(MobileProtocol.Schema, new[] { entry });
+        try
+        {
+            await Task.WhenAll(_links.Hubs().Select(h => _links.CallAsync(h.PcId, HttpMethod.Post, GroupPaths.Alias, body, CallTimeout, ct)));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogDebug(ex, "Group: sharing the alias for {Key} failed; the next sync carries it.", entry.Key);
+        }
+    }
+
+    /// <summary><c>POST /api/v1/group/alias</c>: what a phone or PC of the group set; merged, not passed on (one hop).</summary>
+    public int AcceptAliases(IReadOnlyList<DeviceAlias> aliases)
+    {
+        var n = _aliases.Merge(aliases.Take(DeviceAliasTable.MaxPerRequest));
+        if (n > 0) _logger.LogInformation("Group: {Count} alias(es) from a member.", n);
+        return n;
     }
 
     /// <summary><c>POST /api/v1/group/join</c>: link to the PC behind <paramref name="offer"/> unless already linked.</summary>
@@ -204,6 +248,8 @@ public sealed class DeviceGroupService : BackgroundService
                     var n = await ApplyAsync(key);
                     _logger.LogInformation("Group: {Name} reported {Key} removed ({Count} here).", hub.PcName, key, n);
                 }
+                if (group.Aliases is { Count: > 0 } aliases && _aliases.Merge(aliases) is > 0 and var renamed)
+                    _logger.LogInformation("Group: {Count} alias(es) from {Name}.", renamed, hub.PcName);
                 if (_links.Hub(hub.PcId) is null) continue;
 
                 // The hub should hold this PC's token too (a link made before v0.35.0, or a link back that failed).
@@ -250,6 +296,51 @@ public sealed class DeviceGroupService : BackgroundService
         _links.Linked -= OnLinked;
         base.Dispose();
     }
+}
+
+/// <summary>The group's aliases persisted in <c>aliases.json</c> next to <c>group.json</c> (same ACL; M-51).</summary>
+public static class DeviceAliasFile
+{
+    public static DeviceAliasTable Open(string directory, TimeProvider time, ILogger logger)
+    {
+        var path = Path.Combine(directory, "aliases.json");
+        IReadOnlyList<DeviceAlias>? initial = null;
+        try
+        {
+            if (File.Exists(path)) initial = JsonSerializer.Deserialize<List<DeviceAlias>>(File.ReadAllText(path), MobileProtocol.Json);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            logger.LogWarning("aliases.json unreadable ({Message}); starting with no aliases.", ex.Message);
+        }
+        var table = new DeviceAliasTable(time, initial);
+        var write = new object();
+        table.Changed += () =>
+        {
+            lock (write)
+            {
+                try
+                {
+                    Directory.CreateDirectory(directory);
+                    var tmp = path + ".tmp";
+                    File.WriteAllText(tmp, JsonSerializer.Serialize(table.List(), FileJson));
+                    File.Move(tmp, path, overwrite: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    logger.LogWarning("aliases.json not saved: {Message}", ex.Message);
+                }
+            }
+        };
+        return table;
+    }
+
+    // Korean and emoji stay readable in the file.
+    private static readonly JsonSerializerOptions FileJson = new(MobileProtocol.Json)
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All),
+    };
 }
 
 /// <summary>Removals persisted in <c>group.json</c> next to <c>state.json</c> (same ACL: SYSTEM and Administrators).</summary>

@@ -15,7 +15,8 @@
   <!-- The Homebase window: three pages picked in the masthead (DECISIONS M-49) — Devices, the notification
        center and Settings, which used to open windows of their own. Each page has a list down the left.
        Devices is the device hub (M-46): every device on the left, the selected one on the right — this
-       PC, linked PCs (live, like the phone app's PC page) and phones (their last report). Read-only;
+       PC, linked PCs (live, like the phone app's PC page) and phones (their last report). Read-only
+       but for aliases (M-50, M-51: the pencil, F2, or a tile's right-click menu);
        configuration is the Settings page. -->
   <local:ThemedWindow.Resources>
     <!-- A slim, quiet scrollbar on the light page (the theme's periwinkle rail is for the chrome windows). -->
@@ -122,8 +123,30 @@
             <Border x:Name="HeaderGlyphBox" Grid.Column="0" Width="44" Height="44" CornerRadius="10"
                     Background="#21242E" VerticalAlignment="Top" Margin="0,2,14,0"/>
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-              <TextBlock x:Name="HeaderName" FontSize="22" FontWeight="Bold" Foreground="#21242E"
-                         TextTrimming="CharacterEllipsis"/>
+              <!-- Left-aligned so the pencil sits right after the name; a long name trims before it. -->
+              <DockPanel HorizontalAlignment="Left">
+                <Button x:Name="RenameButton" DockPanel.Dock="Right" Click="Rename_Click"
+                        ToolTip="{x:Static local:L.AliasTip}" Cursor="Hand" Focusable="False"
+                        VerticalAlignment="Center" Margin="6,3,0,0">
+                  <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                      <Border x:Name="bd" Background="Transparent" CornerRadius="6" Width="28" Height="28">
+                        <TextBlock x:Name="ic" Text="&#xE70F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="14" Foreground="#4A5180"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                          <Setter TargetName="bd" Property="Background" Value="#D3D9EC"/>
+                          <Setter TargetName="ic" Property="Foreground" Value="#21242E"/>
+                        </Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Button.Template>
+                </Button>
+                <TextBlock x:Name="HeaderName" FontSize="22" FontWeight="Bold" Foreground="#21242E"
+                           TextTrimming="CharacterEllipsis"/>
+              </DockPanel>
               <TextBlock x:Name="HeaderSub" FontSize="12" Foreground="#4A5180" Margin="0,2,0,0"
                          TextTrimming="CharacterEllipsis"/>
               <WrapPanel x:Name="HeaderChips" Margin="0,8,0,0"/>

@@ -43,6 +43,8 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly ILogger<MobileBridgeServer> _logger;
     private readonly object _gate = new();
     private readonly AgentAlertGate _agentAlerts = new();
+    private readonly SemaphoreSlim _aliasSends = new(1, 1);
+    private static readonly TimeSpan AliasSendTimeout = TimeSpan.FromSeconds(5);
     private readonly ApprovalBroker? _approvals;
     private readonly List<Connection> _connections = new();
 
@@ -68,6 +70,7 @@ public sealed class MobileBridgeServer : BackgroundService
         ApprovalBroker? approvals = null)
     {
         _group = group;
+        if (_group is not null) _group.Aliases.Changed += OnAliasesChanged;
         _approvals = approvals;
         _history = history;
         _trayLive = trayLive;
@@ -150,6 +153,8 @@ public sealed class MobileBridgeServer : BackgroundService
         try
         {
             await SendAsync(conn, MobileBridge.Message(MobileBridge.OpWatch, WatchPayload()), ct);
+            // In turn with the change broadcasts, so a change racing this connect can't leave the tray an older table.
+            if (_group is not null) await SendAliasesAsync(new[] { conn }, ct);
             while (!ct.IsCancellationRequested)
             {
                 var msg = await MobileBridge.ReadFrameAsync(pipe, ct);
@@ -237,6 +242,19 @@ public sealed class MobileBridgeServer : BackgroundService
             if (_group is not null && pcId.Length > 0) await _group.RemoveAsync(GroupKeys.Pc(pcId), fanOut: true, ct);
             var ok = _hubLinks is not null && (await _hubLinks.UnlinkAsync(pcId) || _group is not null);
             await SendAsync(conn, MobileBridge.Response(id, ok), ct);
+            return;
+        }
+        if (op == MobileBridge.OpAliasesSet)
+        {
+            // The user named a device in the tray (M-51): shared with the whole group.
+            var req = payload?.Deserialize<AliasSetRequest>(MobileProtocol.Json);
+            if (_group is null || req is not { Key.Length: > 0, Name.Length: > 0 } || !GroupKeys.IsValid(req.Key))
+            {
+                await SendAsync(conn, MobileBridge.Response(id, false, error: _group is null ? "unsupported" : "bad_request"), ct);
+                return;
+            }
+            _group.SetAlias(req.Key, req.Name, req.Alias);
+            await SendAsync(conn, MobileBridge.Response(id, true), ct);
             return;
         }
         if (op == MobileBridge.OpDevicesRevoke && _group is not null)
@@ -363,6 +381,48 @@ public sealed class MobileBridgeServer : BackgroundService
             _ = SendAsync(c, MobileBridge.Message(MobileBridge.OpToast, toast), CancellationToken.None)
                 .ContinueWith(t => _logger.LogDebug("Toast to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
                     TaskContinuationOptions.OnlyOnFaulted);
+        }
+    }
+
+    /// <summary>Every tray gets the group's aliases again when they change (set here, by a phone, or by a sync).</summary>
+    private void OnAliasesChanged()
+    {
+        List<Connection> conns;
+        lock (_gate) conns = _connections.ToList();
+        _ = SendAliasesAsync(conns, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Sends the group's alias table to <paramref name="conns"/>. The tray replaces its whole table with each
+    /// one, so sends run one at a time and each takes its snapshot only once it is its turn: a later send
+    /// always carries a table at least as new as an earlier one, whatever thread raised the change (Codex
+    /// review on #65). A send that can't finish within 5 s (a tray not reading) is dropped for that tray.
+    /// </summary>
+    private async Task SendAliasesAsync(IReadOnlyList<Connection> conns, CancellationToken ct)
+    {
+        try
+        {
+            await _aliasSends.WaitAsync(ct);
+        }
+        catch (OperationCanceledException) { return; }
+        try
+        {
+            var message = MobileBridge.Message(MobileBridge.OpAliases,
+                new AliasListPayload(_group?.Aliases.List() ?? Array.Empty<DeviceAlias>()));
+            foreach (var c in conns)
+            {
+                using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                limit.CancelAfter(AliasSendTimeout);
+                try { await SendAsync(c, message, limit.Token); }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+                {
+                    _logger.LogDebug("Aliases to Tray failed: {Message}", ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            _aliasSends.Release();
         }
     }
 
