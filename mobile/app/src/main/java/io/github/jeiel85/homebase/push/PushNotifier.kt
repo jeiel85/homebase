@@ -16,6 +16,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
+import android.os.Bundle
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -32,8 +33,9 @@ import java.time.OffsetDateTime
  * one app on one PC from Android's notification settings without losing the rest (DECISIONS M-19).
  *
  * How each one appears — popup, sound, vibration, bundling, or not at all — follows the user's
- * [AlertProfile] for it (DECISIONS M-37). Bundled notifications share a group with a summary, so a
- * burst from one app folds into one entry in the shade instead of a long list.
+ * [AlertProfile] for it (DECISIONS M-37). Bundled notifications all share one Android group with a
+ * summary — one "Homebase" stack in the shade whatever PC or app sent them (M-52) — and each source
+ * keeps at most [MAX_IN_BUNDLE] of them there.
  *
  * Each one carries its sender's badge and colour, with the sender first in the header line, so
  * notifications from two PCs are told apart without reading them (see [NotificationLook], M-38).
@@ -47,8 +49,21 @@ object PushNotifier {
      */
     const val ACTION_OPEN_CENTER = "io.github.jeiel85.homebase.action.OPEN_NOTIFICATIONS"
 
-    /** Newest notifications a bundle keeps in the shade; older ones stay in the notification center. */
+    /** Newest notifications one source keeps in the shade; older ones stay in the notification center. */
     internal const val MAX_IN_BUNDLE = 8
+
+    /**
+     * Newest notifications the Homebase stack keeps in the shade, all sources together: well under
+     * Android's limit of about 50 active notifications per app, past which new ones are dropped.
+     */
+    internal const val MAX_IN_STACK = 24
+
+    /** The one Android group every bundled Homebase notification joins (M-52). */
+    private const val STACK_GROUP = "hb.stack"
+
+    /** Extras a stacked notification carries for the summary and the per-source limit. */
+    private const val EXTRA_BUNDLE_KEY = "io.github.jeiel85.homebase.BUNDLE_KEY"
+    private const val EXTRA_SENDER = "io.github.jeiel85.homebase.SENDER"
 
     /** Lines a bundle's summary lists (lock screen, watches, Android versions that show the summary). */
     private const val SUMMARY_LINES = 5
@@ -81,7 +96,7 @@ object PushNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // A permission prompt stands on its own so its Allow / Deny buttons are always in reach (M-48).
-        val group = if (profile.bundle && message.approval == null) groupKey(message) else null
+        val stacked = profile.bundle && message.approval == null
         // Who sent it leads the header and the badge; the title keeps only what the notification says (M-38).
         val badge = badge(context, mark)
         val builder = NotificationCompat.Builder(context, channelId)
@@ -99,8 +114,14 @@ object PushNotifier {
             .setPriority(priority(profile))
             .setContentIntent(open)
             .setAutoCancel(true)
-        if (group != null) {
-            builder.setGroup(group)
+        if (stacked) {
+            builder.setGroup(STACK_GROUP)
+                .addExtras(
+                    Bundle().apply {
+                        putString(EXTRA_BUNDLE_KEY, bundleKey(message))
+                        putString(EXTRA_SENDER, NotificationLook.sender(message))
+                    },
+                )
                 // Only the notifications themselves ring; the summary updates silently.
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
                 // Swiping the last one away must take the summary with it.
@@ -109,7 +130,7 @@ object PushNotifier {
         val id = message.id.hashCode()
         message.approval?.let { addApprovalActions(context, builder, message, it, id) }
         if (!post(context, null, id, builder.build())) return false
-        if (group != null) updateBundle(context, group, channelId, message, id, mark, badge)
+        if (stacked) updateStack(context, channelId, message, id, mark, badge)
         return true
     }
 
@@ -201,9 +222,9 @@ object PushNotifier {
 
     private fun groupId(pcId: String) = "hb.pc.$pcId"
 
-    /** The notification group of a bundle (see [NotificationPriority.bundleKey]). */
-    private fun groupKey(message: PushMessage): String =
-        "hb.b.${hash(NotificationPriority.bundleKey(message.category, message.pcId, message.source))}"
+    /** What [MAX_IN_BUNDLE] counts by (see [NotificationPriority.bundleKey]). */
+    private fun bundleKey(message: PushMessage): String =
+        NotificationPriority.bundleKey(message.category, message.pcId, message.source)
 
     /**
      * The channel to post [message] in, created when missing. Null when the user turned this source off
@@ -238,13 +259,13 @@ object PushNotifier {
     }
 
     /**
-     * Adds a summary over the bundle once it holds two or more, and keeps it at [MAX_IN_BUNDLE]
-     * (dropping the oldest from the shade). The notification just posted may not be listed as
-     * active yet — `notify` is queued — so it is counted by hand.
+     * Keeps the Homebase stack in order after a notification joined it: drops the oldest past
+     * [MAX_IN_BUNDLE] of its source and past [MAX_IN_STACK] in all, then adds or updates the summary
+     * once the stack holds two or more. The notification just posted may not be listed as active yet —
+     * `notify` is queued — so it is counted by hand.
      */
-    private fun updateBundle(
+    private fun updateStack(
         context: Context,
-        group: String,
         channelId: String,
         message: PushMessage,
         postedId: Int,
@@ -258,23 +279,32 @@ object PushNotifier {
             return
         }
         val others = active
-            .filter { it.notification.group == group && !it.isSummary() && !(it.tag == null && it.id == postedId) }
+            .filter { it.notification.group == STACK_GROUP && !it.isSummary() && !(it.tag == null && it.id == postedId) }
             .sortedByDescending { it.postTime }
-        others.drop(MAX_IN_BUNDLE - 1).forEach { nm.cancel(it.tag, it.id) }
-        val kept = others.take(MAX_IN_BUNDLE - 1)
+        val dropped = NotificationStack.overflow(
+            others.map { it.notification.extras.getString(EXTRA_BUNDLE_KEY).orEmpty() },
+            bundleKey(message),
+            MAX_IN_BUNDLE,
+            MAX_IN_STACK,
+        )
+        others.filterIndexed { i, _ -> i in dropped }.forEach { nm.cancel(it.tag, it.id) }
+        val kept = others.filterIndexed { i, _ -> i !in dropped }
         if (kept.isEmpty()) return // one notification needs no summary
         val count = kept.size + 1
-        val title = bundleTitle(message)
-        val lines = listOf(NotificationPriority.shortLine(message.title, message.body, message.source)) +
+        val senders = listOf(NotificationLook.sender(message)) +
+            kept.map { it.notification.extras.getString(EXTRA_SENDER).orEmpty() }
+        val lines = listOf(NotificationStack.line(NotificationLook.header(message), NotificationLook.title(message), message.body)) +
             kept.map {
                 val extras = it.notification.extras
-                NotificationPriority.shortLine(
+                NotificationStack.line(
+                    extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
                     extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
                     extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
-                    message.source,
                 )
             }
-        val style = NotificationCompat.InboxStyle().setBigContentTitle(title).setSummaryText("${count}건")
+        val from = NotificationStack.senders(senders)
+        val title = "새 알림 ${count}건"
+        val style = NotificationCompat.InboxStyle().setBigContentTitle(title).setSummaryText(from)
         lines.take(SUMMARY_LINES).forEach { style.addLine(it) }
         val center = PendingIntent.getActivity(
             context,
@@ -284,34 +314,29 @@ object PushNotifier {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val summary = NotificationCompat.Builder(context, channelId)
+        // Android files a stack under its summary — alerting or silent — so the summary goes in the
+        // channel of the stack's most important notification, not of the newest.
+        val summaryChannel = (listOf(channelId) + kept.map { it.notification.channelId }).distinct()
+            .maxByOrNull { nm.getNotificationChannel(it)?.importance ?: NotificationManager.IMPORTANCE_NONE } ?: channelId
+        // One sender's stack wears its badge; a mixed one keeps the app's own look.
+        val oneSender = senders.distinct().size == 1
+        val summary = NotificationCompat.Builder(context, summaryChannel)
             .setSmallIcon(R.drawable.ic_notification)
-            .setColor(mark.argb)
-            .setLargeIcon(badge)
+            .apply { if (oneSender) setColor(mark.argb).setLargeIcon(badge) }
             .setContentTitle(title)
-            .setContentText("새 알림 ${count}건")
+            .setContentText(from)
             .setStyle(style)
-            .setSubText(NotificationLook.sender(message))
+            .setSubText(from)
             .setNumber(count)
             .setCategory(category(message))
-            .setGroup(group)
+            .setGroup(STACK_GROUP)
             .setGroupSummary(true)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setOnlyAlertOnce(true)
             .setContentIntent(center)
             .setAutoCancel(true)
             .build()
-        post(context, SUMMARY_TAG, group.hashCode(), summary)
-    }
-
-    /**
-     * What a bundle is called: the app for app notifications, the alert kind otherwise. Who sent them
-     * is the summary's header, as on the notifications themselves.
-     */
-    private fun bundleTitle(message: PushMessage): String = when {
-        message.category == NotificationGroups.DEVICE -> NotificationLook.appOf(message.source).ifEmpty { message.source }
-        NotificationPriority.hasApps(message.category) -> message.source
-        else -> channelName(message)
+        post(context, SUMMARY_TAG, STACK_GROUP.hashCode(), summary)
     }
 
     /**
