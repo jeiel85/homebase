@@ -341,6 +341,9 @@ object PushNotifier {
         others.filterIndexed { i, _ -> i in dropped }.forEach { nm.cancel(it.tag, it.id) }
         val kept = others.filterIndexed { i, _ -> i !in dropped }
         val previous = active.firstOrNull { it.isStackSummary() }
+        // Nothing else in the shade: a new stack. The count of an earlier one can outlive it (the phone
+        // restarted, which clears notifications without telling the app), so it starts over here too.
+        if (others.isEmpty() && previous == null) StackDrops.reset(context)
         if (kept.isEmpty() && previous == null) return // one notification needs no summary
         val posted = StackChild(
             NotificationLook.sender(message),
