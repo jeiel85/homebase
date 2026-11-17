@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Installs a new version without asking while the app is out of sight (Android 12+, DECISIONS M-56). -->
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- Asks to become the update owner (API 34+), so another installer can't replace the app silently. -->
+    <uses-permission android:name="android.permission.ENFORCE_UPDATE_OWNERSHIP" />
 
     <application>
         <!-- Background update check → "new version" notification (DECISIONS M-22). -->

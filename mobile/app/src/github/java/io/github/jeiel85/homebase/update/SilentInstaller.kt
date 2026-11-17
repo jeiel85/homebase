@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import androidx.annotation.RequiresApi
 import io.github.jeiel85.homebase.BuildConfig
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -75,7 +76,9 @@ internal object SilentInstaller {
                 preferences.addSilentFailure(manifest.versionCode)
                 return false
             }
-            if (isStopped() || AppVisibility.visible) return false
+            // 받는 사이 앱이 화면에 올라왔거나 잡이 멈췄거나, 사용자가 설정에서 "새 버전 자동 설치"를
+            // 껐을 수 있다. 끈 경우엔 그 선택대로 알림만 남긴다(false → 호출부가 알린다).
+            if (isStopped() || AppVisibility.visible || !preferences.isAutoInstallEnabled()) return false
             return commit(context, file, manifest.versionCode, preferences)
         } catch (e: Exception) {
             Log.w(TAG, "silent install failed to start", e)
@@ -89,6 +92,7 @@ internal object SilentInstaller {
     }
 
     /** 받은 파일이 이 앱의 바로 그 versionCode인가. 서명은 세션에서 OS가 본다. */
+    @RequiresApi(31)
     private fun isExpectedArchive(context: Context, apk: File, versionCode: Int): Boolean {
         val pm = context.packageManager
         val info = if (Build.VERSION.SDK_INT >= 33) {
@@ -100,6 +104,7 @@ internal object SilentInstaller {
         return info.packageName == context.packageName && info.longVersionCode == versionCode.toLong()
     }
 
+    @RequiresApi(31)
     private fun commit(context: Context, apk: File, versionCode: Int, preferences: UpdatePreferences): Boolean {
         val installer = context.packageManager.packageInstaller
         // 지난 시도가 남긴 세션(확인을 기다리다 버려지지 않은 것 등)을 치운다.
