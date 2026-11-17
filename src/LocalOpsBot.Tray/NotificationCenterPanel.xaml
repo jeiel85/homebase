@@ -1,0 +1,55 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LocalOpsBot.Tray"
+        x:Class="LocalOpsBot.Tray.NotificationCenterPanel"
+        FontFamily="{StaticResource Font.Sans}"
+        TextOptions.TextFormattingMode="Display">
+  <!-- The dashboard's Notifications tab (DECISIONS M-32, M-49; a window of its own before): what other
+       devices relayed here and this PC's alerts. Sources down the left like the device list, the list
+       on the right. Rows and source tiles are built in code. -->
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="268"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- ═ Sources: everything, this PC's alerts, each device that sent something ═ -->
+    <Border Grid.Column="0" Background="#F4F6FB" BorderBrush="#C9CFE3" BorderThickness="0,0,1,0">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="10,12,10,8">
+          <StackPanel x:Name="FilterPanel"/>
+        </ScrollViewer>
+        <Border Grid.Row="1" BorderBrush="#C9CFE3" BorderThickness="0,1,0,0" Padding="10">
+          <Button x:Name="ClearButton" Style="{StaticResource Dash.AddButton}" IsEnabled="False"
+                  Content="{x:Static local:L.CenterClear}" Click="Clear_Click"/>
+        </Border>
+      </Grid>
+    </Border>
+
+    <!-- ═ The list: newest first, grouped by day (stops at 760 wide, like Settings) ═ -->
+    <Grid Grid.Column="1" Margin="24,18,16,16">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" MaxWidth="760"/>
+      </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <ScrollViewer x:Name="ListScroll" VerticalScrollBarVisibility="Auto">
+        <StackPanel x:Name="ListPanel" Margin="0,0,8,0">
+          <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.CenterLoading}"/>
+        </StackPanel>
+      </ScrollViewer>
+      <DockPanel Grid.Row="1" Margin="0,10,8,0" LastChildFill="True">
+        <Button x:Name="MoreButton" DockPanel.Dock="Right" Style="{StaticResource Button.Amber}"
+                Content="{x:Static local:L.CenterMore}" Click="More_Click" Visibility="Collapsed"/>
+        <TextBlock x:Name="CountText" VerticalAlignment="Center" FontFamily="Segoe UI, Malgun Gothic"
+                   FontSize="11.5" Foreground="#4A5180" TextTrimming="CharacterEllipsis"/>
+      </DockPanel>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -16,12 +16,21 @@ using static LocalOpsBot.Tray.Dashboard.Hb;
 
 namespace LocalOpsBot.Tray;
 
+/// <summary>The Homebase window's pages, picked in its masthead (DECISIONS M-49).</summary>
+public enum DashTab { Devices, Notifications, Settings }
+
 /// <summary>
-/// The tray popup, a device hub (DECISIONS M-46): every device on the left — this PC, the PCs linked
-/// either way, the phones — and the selected one on the right at the level the phone app shows a PC.
-/// PCs are live (this PC from the Agent's own sampler, a linked PC over its live view); phones show
-/// their last report. Read-only by design — configuration lives in <see cref="SettingsWindow"/>.
-/// Nothing is collected while the window is hidden: the Agent closes a view nobody asked about for 10 s.
+/// The Homebase window, opened from the tray. Three pages picked in the masthead (DECISIONS M-49):
+/// <list type="bullet">
+/// <item>Devices, a device hub (M-46): every device on the left — this PC, the PCs linked either way,
+/// the phones — and the selected one on the right at the level the phone app shows a PC. PCs are live
+/// (this PC from the Agent's own sampler, a linked PC over its live view); phones show their last
+/// report. Read-only by design.</item>
+/// <item>The notification center (<see cref="NotificationCenterPanel"/>, M-32).</item>
+/// <item>Settings (<see cref="SettingsPanel"/>).</item>
+/// </list>
+/// Nothing is collected while a page is out of view: the Agent closes a live view nobody asked about
+/// for 10 s, and the other pages read only when they come into view.
 /// </summary>
 public partial class DashboardWindow : ThemedWindow
 {
@@ -43,41 +52,93 @@ public partial class DashboardWindow : ThemedWindow
     private bool _refreshing;
     private int _ticks;
     private Connections? _connections;
+    private DashTab _tab = DashTab.Devices;
 
-    /// <summary>Raised by the "Settings" button and "connect a device"; the tray opens the settings window.</summary>
-    public event Action? OpenSettingsRequested;
+    internal DashboardWindow(UpdateCoordinator updates) : this(new BridgeDashboardSource(), preview: false, updates) { }
 
-    /// <summary>Raised by the notification center button (DECISIONS M-32).</summary>
-    public event Action? OpenNotificationsRequested;
-
-    public DashboardWindow() : this(new BridgeDashboardSource(), preview: false) { }
-
-    internal DashboardWindow(IDashboardSource source, bool preview)
+    internal DashboardWindow(IDashboardSource source, bool preview, UpdateCoordinator updates)
     {
         _source = source;
         _preview = preview;
         InitializeComponent();
+        SettingsView.Attach(updates);
         if (!preview)
         {
             DashboardPrefs.Load(this, out var selected);
             if (selected is not null) _selected = selected;
         }
 
-        NotificationsButton.Content = L.DashNotifications(NotificationCenter.Unread);
-        Action<int> onUnread = n => NotificationsButton.Content = L.DashNotifications(n);
+        NavNotifications.Content = L.NavNotifications(NotificationCenter.Unread);
+        Action<int> onUnread = n => NavNotifications.Content = L.NavNotifications(n);
         NotificationCenter.UnreadChanged += onUnread;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Refresh();
 
-        // Refresh at once whenever the window is shown again — the user may just have changed something
-        // in Settings — and stop asking for live views while it is hidden.
+        // Refresh at once whenever the window is shown again and stop asking for live views while it
+        // is hidden. Hiding is what closing the old Settings window was: unsaved input there is dropped.
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) { _ticks = 0; Refresh(); _timer.Start(); }
             else { _timer.Stop(); if (!_preview) DashboardPrefs.Save(this, _selected); }
+            SyncPages();
+            if (!IsVisible) SettingsView.Discard();
         };
-        Closed += (_, _) => { _timer.Stop(); NotificationCenter.UnreadChanged -= onUnread; };
+        // Minimized is out of view too: the Settings page stops polling the Agent (M-13).
+        StateChanged += (_, _) => SyncPages();
+        Closed += (_, _) =>
+        {
+            _timer.Stop();
+            NotificationCenter.UnreadChanged -= onUnread;
+            CenterView.Stop();
+            SettingsView.Stop();
+        };
+    }
+
+    // ── Pages ──
+
+    /// <summary>The page in front, as the tray needs to know whether a new notification is being looked at.</summary>
+    internal bool ShowsNotifications => _tab == DashTab.Notifications && IsVisible && WindowState != WindowState.Minimized;
+
+    /// <summary>Brings a page to the front (and, for Settings, one of its areas). The window is not shown here.</summary>
+    public void ShowTab(DashTab tab, SettingsTab? area = null)
+    {
+        if (area is { } a) SettingsView.ShowTab(a);
+        // Checking the tab raises Nav_Checked, which switches the page.
+        (tab switch
+        {
+            DashTab.Notifications => NavNotifications,
+            DashTab.Settings => NavSettings,
+            _ => NavDevices,
+        }).IsChecked = true;
+    }
+
+    private void Nav_Checked(object sender, RoutedEventArgs e)
+    {
+        if (CenterView is null) return; // raised while the XAML is still loading
+        var tab = ReferenceEquals(sender, NavNotifications) ? DashTab.Notifications
+            : ReferenceEquals(sender, NavSettings) ? DashTab.Settings
+            : DashTab.Devices;
+        if (tab == _tab) return;
+        _tab = tab;
+        DevicesView.Visibility = tab == DashTab.Devices ? Visibility.Visible : Visibility.Collapsed;
+        CenterView.Visibility = tab == DashTab.Notifications ? Visibility.Visible : Visibility.Collapsed;
+        SettingsView.Visibility = tab == DashTab.Settings ? Visibility.Visible : Visibility.Collapsed;
+        SyncPages();
+        // Back on Devices: look again at once (a setting may just have changed), chips included.
+        if (tab == DashTab.Devices && IsVisible)
+        {
+            _ticks = 0;
+            Refresh();
+        }
+    }
+
+    /// <summary>Tells the Notifications and Settings pages whether they are in view now.</summary>
+    private void SyncPages()
+    {
+        var shown = IsVisible && WindowState != WindowState.Minimized;
+        CenterView.SetInView(shown && _tab == DashTab.Notifications);
+        SettingsView.SetInView(shown && _tab == DashTab.Settings);
     }
 
     private async void Refresh()
@@ -87,6 +148,13 @@ public partial class DashboardWindow : ThemedWindow
         _refreshing = true;
         try
         {
+            if (_tab != DashTab.Devices)
+            {
+                // Another page is in front: keep the service badge current, ask for no device data.
+                if (_ticks % 4 == 0)
+                    ApplyServiceStatus(_preview ? new ServiceStatusInfo("Running", true, true) : await Task.Run(ReadServiceStatus));
+                return;
+            }
             if (_ticks % 4 == 0)
             {
                 ApplyServiceStatus(_preview ? new ServiceStatusInfo("Running", true, true) : await Task.Run(ReadServiceStatus));
@@ -378,9 +446,9 @@ public partial class DashboardWindow : ThemedWindow
         WarningBox.Visibility = Visibility.Collapsed;
         if (d.Role == DeviceRole.Self && _connections is { } c)
         {
-            Chip(L.DashForwarding, c.Forwarding ? (c.AutostartOff ? ChipTone.Warn : ChipTone.On) : ChipTone.Off);
-            Chip(L.ChipPhoneLink, c.Phone ? ChipTone.On : ChipTone.Off);
-            Chip(L.DashTelegram, c.Readiness is { TokenConfigured: true, ChatConfigured: true } ? ChipTone.On : ChipTone.Off);
+            Chip(L.DashForwarding, c.Forwarding ? (c.AutostartOff ? ChipTone.Warn : ChipTone.On) : ChipTone.Off, SettingsTab.Forwarding);
+            Chip(L.ChipPhoneLink, c.Phone ? ChipTone.On : ChipTone.Off, SettingsTab.Phone);
+            Chip(L.DashTelegram, c.Readiness is { TokenConfigured: true, ChatConfigured: true } ? ChipTone.On : ChipTone.Off, SettingsTab.Telegram);
             if (c.Forwarding && c.AutostartOff)
             {
                 WarningText.Text = L.ForwardingOnAutostartOff;
@@ -389,13 +457,14 @@ public partial class DashboardWindow : ThemedWindow
         }
         else if (d.Role == DeviceRole.Hub && d.Phones > 0)
         {
-            Chip(L.DevHubPhones(d.Phones), ChipTone.Off);
+            Chip(L.DevHubPhones(d.Phones), ChipTone.Off, SettingsTab.Phone);
         }
     }
 
     private enum ChipTone { On, Off, Warn }
 
-    private void Chip(string text, ChipTone tone)
+    /// <summary>A status chip; clicking it opens the Settings area that changes it.</summary>
+    private void Chip(string text, ChipTone tone, SettingsTab area)
     {
         var (bg, fg, mark) = tone switch
         {
@@ -407,7 +476,7 @@ public partial class DashboardWindow : ThemedWindow
         pill.Margin = new Thickness(0, 0, 6, 4);
         pill.Cursor = Cursors.Hand;
         pill.ToolTip = L.ChipOpensSettings;
-        pill.MouseLeftButtonUp += (_, _) => OpenSettingsRequested?.Invoke();
+        pill.MouseLeftButtonUp += (_, _) => ShowTab(DashTab.Settings, area);
         HeaderChips.Children.Add(pill);
     }
 
@@ -458,11 +527,24 @@ public partial class DashboardWindow : ThemedWindow
         }
     }
 
-    private void OpenSettings_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke();
+    private void AddDevice_Click(object sender, RoutedEventArgs e) => ShowTab(DashTab.Settings, SettingsTab.Phone);
 
-    private void AddDevice_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke();
-
-    private void OpenNotifications_Click(object sender, RoutedEventArgs e) => OpenNotificationsRequested?.Invoke();
+    /// <summary>
+    /// Shows the window if it is hidden (near the tray, as a tray click does), otherwise restores and
+    /// raises it where it is — for the tray menu, a notification balloon and the setup checklist.
+    /// </summary>
+    public void BringForward()
+    {
+        if (!IsVisible)
+        {
+            ShowNearTray();
+            return;
+        }
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        Topmost = true;
+        Topmost = false;
+    }
 
     // Tray-popup behaviour: anchor bottom-right above the taskbar and bring it to the foreground.
     // Closing (X) hides rather than destroys, so the same instance reopens on the next tray click.

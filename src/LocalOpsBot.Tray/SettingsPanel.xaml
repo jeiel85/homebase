@@ -1,46 +1,25 @@
-<local:ThemedWindow xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:LocalOpsBot.Tray"
-        x:Class="LocalOpsBot.Tray.SettingsWindow"
-        Style="{StaticResource Window.Chrome}"
-        Title="{x:Static local:L.SettingsTitle}"
-        Icon="pack://application:,,,/Resources/homebase.ico"
-        Width="520" Height="660"
-        ResizeMode="CanMinimize"
-        WindowStartupLocation="CenterScreen"
-        Background="{StaticResource Brush.Canvas}"
+        x:Class="LocalOpsBot.Tray.SettingsPanel"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
-  <!-- Every tab reads top-down the same way: what this does → current state → change it →
-       how it is applied (an amber admin note sits right above any button that asks for UAC). -->
-  <Grid Margin="14">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
-    </Grid.RowDefinitions>
-
-    <Border Grid.Row="0" Style="{StaticResource SectionHeaderBar}" Margin="0,0,0,12" Padding="10,6">
-      <StackPanel Orientation="Horizontal">
-        <TextBlock VerticalAlignment="Center" FontFamily="{StaticResource Font.Display}" FontWeight="Black"
-                   FontSize="16" Foreground="{StaticResource Brush.OnDark}" Text="HOMEBASE"/>
-        <TextBlock VerticalAlignment="Center" Margin="8,3,0,0" Style="{StaticResource Type.Micro}"
-                   Foreground="{StaticResource Brush.Amber}" Text="{x:Static local:L.SettingsEyebrow}"/>
-      </StackPanel>
-    </Border>
-
-    <TabControl x:Name="Tabs" Grid.Row="1" Style="{StaticResource Tabs.Console}"
+  <!-- The dashboard's Settings tab (DECISIONS M-49; a window of its own before): the areas down the
+       left like the device list, the picked one on the right. Every area reads top-down the same way:
+       what this does → current state → change it → how it is applied (an amber admin note sits right
+       above any button that asks for UAC). -->
+    <TabControl x:Name="Tabs" Style="{StaticResource Dash.RailTabs}"
                 SelectionChanged="Tabs_SelectionChanged">
 
       <!-- ═══ Phone (the primary channel: live view + push notifications) ═══ -->
-      <TabItem x:Name="PhoneTab" Header="{x:Static local:L.TabPhone}">
+      <TabItem x:Name="PhoneTab" Header="{x:Static local:L.TabPhone}" Tag="{x:Static local:L.TabPhoneSub}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <local:PhoneConnectPanel x:Name="PhonePanel"/>
         </ScrollViewer>
       </TabItem>
 
       <!-- ═══ Telegram ═══ -->
-      <TabItem x:Name="TelegramTab" Header="{x:Static local:L.TabTelegram}">
+      <TabItem x:Name="TelegramTab" Header="{x:Static local:L.TabTelegram}" Tag="{x:Static local:L.TabTelegramSub}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel>
             <Border Style="{StaticResource SectionHeaderBar}">
@@ -104,7 +83,7 @@
       </TabItem>
 
       <!-- ═══ Notification forwarding ═══ -->
-      <TabItem x:Name="ForwardingTab" Header="{x:Static local:L.TabForwarding}">
+      <TabItem x:Name="ForwardingTab" Header="{x:Static local:L.TabForwarding}" Tag="{x:Static local:L.TabForwardingSub}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel>
             <Border Style="{StaticResource SectionHeaderBar}">
@@ -172,7 +151,7 @@
       </TabItem>
 
       <!-- ═══ Watch list ═══ -->
-      <TabItem x:Name="MonitorsTab" Header="{x:Static local:L.TabMonitors}">
+      <TabItem x:Name="MonitorsTab" Header="{x:Static local:L.TabMonitors}" Tag="{x:Static local:L.TabMonitorsSub}">
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -237,7 +216,7 @@
       </TabItem>
 
       <!-- ═══ Updates & about ═══ -->
-      <TabItem x:Name="UpdatesTab" Header="{x:Static local:L.TabUpdates}">
+      <TabItem x:Name="UpdatesTab" Header="{x:Static local:L.TabUpdates}" Tag="{x:Static local:L.TabUpdatesSub}">
         <StackPanel>
           <Border Style="{StaticResource SectionHeaderBar}">
             <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.UpdHeader}"/>
@@ -266,8 +245,4 @@
         </StackPanel>
       </TabItem>
     </TabControl>
-
-    <Button Grid.Row="2" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.Close}"
-            HorizontalAlignment="Right" Margin="0,12,0,0" Click="Close_Click"/>
-  </Grid>
-</local:ThemedWindow>
+</UserControl>

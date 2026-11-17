@@ -372,61 +372,6 @@
     </Setter>
   </Style>
 
-  <!-- ── Tabs — console buttons across the top of the settings window. The selected tab is a
-       carbon slab with an amber underline (the same signal as the phone app's selector); the
-       others are raised periwinkle plates with the chrome-indigo bevel. -->
-  <Style x:Key="Tabs.Console" TargetType="TabControl">
-    <Setter Property="Background" Value="Transparent"/>
-    <Setter Property="BorderThickness" Value="0"/>
-    <Setter Property="Padding" Value="0"/>
-    <Setter Property="Template">
-      <Setter.Value>
-        <ControlTemplate TargetType="TabControl">
-          <Grid>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-            <UniformGrid Grid.Row="0" Rows="1" IsItemsHost="True" Margin="0,0,0,12"/>
-            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
-          </Grid>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
-  </Style>
-  <Style TargetType="TabItem">
-    <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
-    <Setter Property="FontSize" Value="12"/>
-    <Setter Property="FontWeight" Value="Bold"/>
-    <Setter Property="Foreground" Value="{StaticResource Brush.Ink}"/>
-    <Setter Property="Cursor" Value="Hand"/>
-    <Setter Property="Template">
-      <Setter.Value>
-        <ControlTemplate TargetType="TabItem">
-          <Border x:Name="bd" Background="{StaticResource Brush.Periwinkle}" Margin="0,0,4,0"
-                  BorderBrush="{StaticResource Brush.ChromeIndigo}" BorderThickness="0,0,0,3" Padding="6,9">
-            <ContentPresenter x:Name="cp" ContentSource="Header" HorizontalAlignment="Center"
-                              TextElement.Foreground="{StaticResource Brush.Ink}"/>
-          </Border>
-          <ControlTemplate.Triggers>
-            <Trigger Property="IsSelected" Value="True">
-              <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.Carbon}"/>
-              <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource Brush.Amber}"/>
-              <Setter TargetName="cp" Property="TextElement.Foreground" Value="{StaticResource Brush.OnDark}"/>
-            </Trigger>
-            <MultiTrigger>
-              <MultiTrigger.Conditions>
-                <Condition Property="IsMouseOver" Value="True"/>
-                <Condition Property="IsSelected" Value="False"/>
-              </MultiTrigger.Conditions>
-              <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.Lavender}"/>
-            </MultiTrigger>
-          </ControlTemplate.Triggers>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
-  </Style>
-
   <!-- ── Admin note — an amber-edged strip that says, before the click, that the button next to
        it asks for administrator approval and what restarts afterwards. -->
   <Style x:Key="AdminNote" TargetType="Border">
@@ -498,7 +443,103 @@
               <Setter TargetName="bd" Property="Background" Value="#EEF1F9"/>
               <Setter TargetName="bd" Property="BorderBrush" Value="#8BA1D4"/>
             </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="bd" Property="Opacity" Value="0.5"/>
+            </Trigger>
           </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Masthead page tab (Devices / Notifications / Settings, DECISIONS M-49): soft text on carbon, the
+       picked one raised with an amber underline — the same signal as the console tabs. -->
+  <Style x:Key="Dash.NavTab" TargetType="RadioButton">
+    <Setter Property="Foreground" Value="#B4BEE2"/>
+    <Setter Property="FontFamily" Value="Segoe UI, Malgun Gothic"/>
+    <Setter Property="FontSize" Value="12.5"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Padding" Value="13,6,13,5"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+            <StackPanel>
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <Border x:Name="bar" Height="2" CornerRadius="1" Margin="0,4,0,0" Background="Transparent"/>
+            </StackPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter Property="Foreground" Value="White"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="#2E3240"/>
+              <Setter TargetName="bar" Property="Background" Value="#ECAB37"/>
+              <Setter Property="Foreground" Value="White"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- A page with a list down the left, like the device list (Settings' areas): the picked item is the
+       carbon slab, the others plain until hovered. Header = name, Tag = one line under it. -->
+  <Style x:Key="Dash.RailItem" TargetType="TabItem">
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabItem">
+          <Border x:Name="bd" Background="Transparent" CornerRadius="8" Padding="12,9" Margin="0,0,0,4">
+            <StackPanel>
+              <TextBlock x:Name="name" Text="{Binding Header, RelativeSource={RelativeSource TemplatedParent}}"
+                         FontFamily="Segoe UI, Malgun Gothic" FontSize="13" FontWeight="SemiBold" Foreground="#21242E"/>
+              <TextBlock x:Name="sub" Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                         FontFamily="Segoe UI, Malgun Gothic" FontSize="11.5" Foreground="#4A5180"
+                         TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="White"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="#21242E"/>
+              <Setter TargetName="name" Property="Foreground" Value="White"/>
+              <Setter TargetName="sub" Property="Foreground" Value="#B4BEE2"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="Dash.RailTabs" TargetType="TabControl">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="ItemContainerStyle" Value="{StaticResource Dash.RailItem}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabControl">
+          <Grid KeyboardNavigation.TabNavigation="Local">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="268"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#F4F6FB" BorderBrush="#C9CFE3" BorderThickness="0,0,1,0">
+              <StackPanel IsItemsHost="True" Margin="10,12,10,8"/>
+            </Border>
+            <!-- Long lines are hard to read on a maximized window: the page stops at 760. -->
+            <Grid Grid.Column="1" Margin="24,18,16,16">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MaxWidth="760"/>
+              </Grid.ColumnDefinitions>
+              <ContentPresenter ContentSource="SelectedContent"/>
+            </Grid>
+          </Grid>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

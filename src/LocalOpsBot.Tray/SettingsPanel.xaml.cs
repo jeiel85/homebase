@@ -10,31 +10,33 @@ namespace LocalOpsBot.Tray;
 public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Updates }
 
 /// <summary>
-/// Everything that changes how Homebase behaves, one tab per area. Each tab states what it does,
-/// shows the current state, and says before the click when a change needs administrator approval
-/// and what restarts — nothing elevates on a checkbox click any more.
+/// Everything that changes how Homebase behaves, one area per item down the left — the dashboard's
+/// Settings tab (DECISIONS M-49). Each area states what it does, shows the current state, and says
+/// before the click when a change needs administrator approval and what restarts — nothing elevates
+/// on a checkbox click any more.
 /// </summary>
-public partial class SettingsWindow : ThemedWindow
+public partial class SettingsPanel : UserControl
 {
-    private readonly UpdateCoordinator _updates;
     private readonly ConnectionReadiness _readiness = new();
+    private UpdateCoordinator? _updates;
     private bool _forwardingPersisted;
     private string _monitorsLoaded = "";
     private bool _loadingMonitors;
+    private bool _inView;
+    private bool _loaded;
 
-    internal SettingsWindow(UpdateCoordinator updates)
+    public SettingsPanel()
     {
         InitializeComponent();
-        _updates = updates;
-
-        var ver = typeof(SettingsWindow).Assembly.GetName().Version;
+        var ver = typeof(SettingsPanel).Assembly.GetName().Version;
         AboutVersionText.Text = $"Homebase v{ver?.ToString(3) ?? "?"}";
-        UpdateVersionText.Text = L.UpdCurrent(_updates.CurrentVersion);
+    }
 
-        Loaded += (_, _) => { RefreshTelegram(); LoadForwardingState(); LoadMonitors(); };
-        // Minimized is out of view too: stop polling the Agent while nobody can see the tab (M-13).
-        StateChanged += (_, _) => SyncPhonePanel();
-        Closed += (_, _) => PhonePanel.Stop();
+    /// <summary>The tray's update flow, shared with its menu item (set once by the dashboard).</summary>
+    internal void Attach(UpdateCoordinator updates)
+    {
+        _updates = updates;
+        UpdateVersionText.Text = L.UpdCurrent(updates.CurrentVersion);
     }
 
     public void ShowTab(SettingsTab tab) => Tabs.SelectedItem = tab switch
@@ -46,7 +48,43 @@ public partial class SettingsWindow : ThemedWindow
         _ => PhoneTab,
     };
 
-    // The phone tab talks to the Agent (status poll, pairing code) only while it is in view.
+    /// <summary>
+    /// The dashboard calls this when the tab comes into view (picked, or the window shown or restored)
+    /// and when it leaves (another tab, hidden, minimized). Nothing is read until it is first shown;
+    /// after that, switching tabs keeps what was typed — only the Telegram status is looked at again.
+    /// </summary>
+    internal void SetInView(bool inView)
+    {
+        if (inView == _inView) return;
+        _inView = inView;
+        if (inView)
+        {
+            RefreshTelegram();
+            if (!_loaded)
+            {
+                _loaded = true;
+                LoadForwardingState();
+                LoadMonitors();
+            }
+        }
+        SyncPhonePanel();
+    }
+
+    /// <summary>
+    /// The window was hidden — what closing the Settings window used to be: forget unsaved input
+    /// (the bot token above all) and read everything afresh next time.
+    /// </summary>
+    internal void Discard()
+    {
+        TokenInput.Clear();
+        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = string.Empty;
+        _loaded = false;
+    }
+
+    /// <summary>The tray is shutting down.</summary>
+    internal void Stop() => PhonePanel.Stop();
+
+    // The phone area talks to the Agent (status poll, pairing code) only while it is in view.
     // SelectionChanged bubbles up from lists inside the tabs too, so only the TabControl's own counts.
     private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -56,11 +94,9 @@ public partial class SettingsWindow : ThemedWindow
 
     private void SyncPhonePanel()
     {
-        if (Tabs.SelectedItem == PhoneTab && WindowState != WindowState.Minimized) PhonePanel.Show();
+        if (_inView && Tabs.SelectedItem == PhoneTab) PhonePanel.Show();
         else PhonePanel.Hide();
     }
-
-    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void SetChip(Border chip, TextBlock text, string brushKey, string label)
     {
@@ -377,6 +413,7 @@ public partial class SettingsWindow : ThemedWindow
     // ── Updates ────────────────────────────────────────────────────────────────────────────────
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
     {
+        if (_updates is null) return;
         CheckUpdateButton.IsEnabled = false;
         try
         {

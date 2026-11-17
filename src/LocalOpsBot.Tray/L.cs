@@ -45,7 +45,9 @@ public static class L
     public static string ChipCheck => T("CHECK", "확인 필요");
 
     // ── Dashboard ────────────────────────────────────────────────────────────
-    public static string DashEyebrow => T("MY DEVICES", "내 기기");
+    // Page tabs in the masthead (DECISIONS M-49); the notifications one is NavNotifications(n).
+    public static string NavDevices => T("Devices", "기기");
+    public static string NavSettings => T("Settings", "설정");
     public static string DashThisPc => T("THIS PC", "지금 이 PC");
     public static string DashDisks => T("DISKS", "디스크");
     public static string DashConnections => T("CONNECTIONS", "연결");
@@ -55,7 +57,6 @@ public static class L
     public static string DashTelegram => T("Telegram", "텔레그램");
     public static string DashForwarding => T("Notification forwarding", "알림 전달");
     public static string DashPhone => T("Phone", "휴대폰");
-    public static string DashOpenSettings => T("Settings", "설정");
     public static string BadgeChecking => T("checking…", "확인 중…");
     public static string BadgeRunning => T("● Monitoring", "● 감시 중");
     public static string BadgeNotInstalled => T("● Service not installed", "● 감시 서비스 없음");
@@ -78,14 +79,18 @@ public static class L
     public static string PhoneOn => T("On — pair in Settings › Phone", "켜짐 — 설정 › 휴대폰에서 기기 추가");
     public static string PhoneOff => T("Off — turn on in Settings › Phone", "꺼짐 — 설정 › 휴대폰에서 켜기");
 
-    // ── Settings window ──────────────────────────────────────────────────────
-    public static string SettingsTitle => T("Homebase — Settings", "Homebase — 설정");
-    public static string SettingsEyebrow => T("SETTINGS", "설정");
+    // ── Settings (the dashboard's Settings tab) ─────────────────────────────
+    // Each area: its name, and one line under it in the list.
     public static string TabPhone => T("Phone", "휴대폰");
+    public static string TabPhoneSub => T("Pair phones and PCs · paths", "휴대폰·PC 연결 · 연결 경로");
     public static string TabTelegram => T("Telegram", "텔레그램");
-    public static string TabForwarding => T("Notifications", "알림 전달");
+    public static string TabTelegramSub => T("Bot token · chat ID", "봇 토큰 · 채팅 ID");
+    public static string TabForwarding => T("Notification forwarding", "알림 전달");
+    public static string TabForwardingSub => T("This PC's notifications to your phone", "이 PC의 알림을 휴대폰으로");
     public static string TabMonitors => T("Watch list", "감시 대상");
+    public static string TabMonitorsSub => T("Processes · services · HTTP · TCP", "프로세스 · 서비스 · HTTP · TCP");
     public static string TabUpdates => T("Updates", "업데이트");
+    public static string TabUpdatesSub => T("Check for updates · about", "업데이트 확인 · 정보");
 
     public static string TgHeader => T("TELEGRAM CONNECTION", "텔레그램 연결");
     public static string TgWhat => T(
@@ -262,7 +267,6 @@ public static class L
         "이 휴대폰을 그룹에서 뺄까요? 그룹의 모든 PC에서 연결이 해제됩니다. 다시 쓰려면 아무 PC에서나 QR로 다시 연결하세요.");
 
     // ── Devices (dashboard and Phone tab; DECISIONS M-27, M-29) ──────────────
-    public static string DashDevices => T("DEVICES", "기기");
     public static string DevNone => T(
         "No other devices yet. Pair a phone or link another PC in Settings › Phone.",
         "아직 다른 기기가 없습니다. 설정 → 휴대폰에서 휴대폰을 연결하거나 다른 PC를 연결하세요.");
@@ -462,14 +466,13 @@ public static class L
     public static string MenuNotifications(int unread) => unread > 0
         ? T($"Notification center ({Count(unread)})", $"알림 센터 ({Count(unread)})")
         : T("Notification center", "알림 센터");
-    public static string DashNotifications(int unread) => unread > 0
+    public static string NavNotifications(int unread) => unread > 0
         ? T($"Notifications · {Count(unread)}", $"알림 센터 · {Count(unread)}")
         : T("Notifications", "알림 센터");
     private static string Count(int n) => n > 99 ? "99+" : n.ToString(CultureInfo.InvariantCulture);
-    public static string CenterTitle => T("Homebase notifications", "Homebase 알림 센터");
-    public static string CenterEyebrow => T("NOTIFICATIONS", "알림 센터");
-    public static string CenterAll => T("ALL", "전체");
-    public static string CenterAlerts => T("THIS PC'S ALERTS", "이 PC 경보");
+    public static string CenterAll => T("Everything", "전체");
+    public static string CenterAlerts => T("This PC's alerts", "이 PC 경보");
+    public static string CenterFrom => T("SENT FROM", "보낸 기기");
     public static string CenterMore => T("OLDER", "더 보기");
     public static string CenterClear => T("CLEAR ALL", "모두 지우기");
     public static string CenterLoading => T("Loading…", "불러오는 중…");

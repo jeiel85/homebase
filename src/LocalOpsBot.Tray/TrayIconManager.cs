@@ -27,10 +27,9 @@ public sealed class TrayIconManager : IDisposable
     private readonly Icon _baseIcon;
     private Icon? _watchingIcon;
     private bool _disposed;
+    // The one Homebase window; the notification center and Settings are its pages (DECISIONS M-49).
     private DashboardWindow? _popup;
-    private SettingsWindow? _settings;
     private OnboardingWindow? _onboarding;
-    private NotificationCenterWindow? _center;
     private readonly ToolStripMenuItem _centerItem;
     private readonly System.Windows.Threading.DispatcherTimer _unreadTimer;
     private readonly System.Windows.Threading.DispatcherTimer _updateTimer;
@@ -139,8 +138,8 @@ public sealed class TrayIconManager : IDisposable
             OwnToasts.Remember(title);
             try { _trayIcon.ShowBalloonTip(6000, title, text, ToolTipIcon.None); }
             catch (Exception) { /* the shell refused (focus assist etc.): the phones still get it */ }
-            // An open center adds it itself and marks it read; otherwise count it.
-            if (_center is not { IsVisible: true }) _ = NotificationCenter.RefreshUnreadAsync();
+            // A center in view adds it itself and marks it read; otherwise count it.
+            if (_popup is not { ShowsNotifications: true }) _ = NotificationCenter.RefreshUnreadAsync();
         }));
 
     private static string Clip(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
@@ -167,59 +166,33 @@ public sealed class TrayIconManager : IDisposable
         if (e.Button == MouseButtons.Left) TogglePopup();
     }
 
-    private DashboardWindow Dashboard()
-    {
-        if (_popup is null)
-        {
-            _popup = new DashboardWindow();
-            _popup.OpenSettingsRequested += () => ShowSettings(SettingsTab.Phone);
-            _popup.OpenNotificationsRequested += ShowNotificationCenter;
-        }
-        return _popup;
-    }
+    private DashboardWindow Dashboard() => _popup ??= new DashboardWindow(_updates);
 
     private void TogglePopup()
     {
         var popup = Dashboard();
         // Toggle only when it is already the foreground window; if it is hidden OR just behind
         // another window, bring it to the front instead of hiding it, so a tray click always
-        // surfaces the dashboard rather than dismissing an out-of-sight one.
+        // surfaces the dashboard rather than dismissing an out-of-sight one. It opens on the page
+        // it was left on.
         if (popup is { IsVisible: true, IsActive: true }) popup.Hide();
         else popup.ShowNearTray();
     }
 
-    private void ShowPopup()
+    private void ShowPopup() => Dashboard().BringForward();
+
+    private void ShowSettings(SettingsTab area)
     {
         var popup = Dashboard();
-        if (popup.IsVisible) popup.Activate();
-        else popup.ShowNearTray();
-    }
-
-    private void ShowSettings(SettingsTab tab)
-    {
-        if (_settings is not { IsVisible: true })
-        {
-            _settings = new SettingsWindow(_updates);
-            _settings.Closed += (_, _) => _settings = null;
-            _settings.Show();
-        }
-        _settings.ShowTab(tab);
-        if (_settings.WindowState == System.Windows.WindowState.Minimized)
-            _settings.WindowState = System.Windows.WindowState.Normal;
-        _settings.Activate();
+        popup.ShowTab(DashTab.Settings, area);
+        popup.BringForward();
     }
 
     private void ShowNotificationCenter()
     {
-        if (_center is not { IsVisible: true })
-        {
-            _center = new NotificationCenterWindow();
-            _center.Closed += (_, _) => _center = null;
-            _center.Show();
-        }
-        if (_center.WindowState == System.Windows.WindowState.Minimized)
-            _center.WindowState = System.Windows.WindowState.Normal;
-        _center.Activate();
+        var popup = Dashboard();
+        popup.ShowTab(DashTab.Notifications);
+        popup.BringForward();
     }
 
     private void ShowOnboarding()

@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.37.0 — Notifications and Settings are tabs of the Homebase window
+
+### Changed
+- **One window instead of three.** The tray window now has three tabs in its header — **기기 (Devices)**,
+  **알림 센터 (Notifications)** and **설정 (Settings)** — instead of opening the notification center and Settings
+  as windows of their own (DECISIONS M-49). The tray menu's "알림 센터" and "설정…", a notification balloon and the
+  setup checklist's Telegram button open the same window on that tab. The unread count sits on the Notifications tab.
+  - Every tab has a list down the left like the device list. Settings lists its areas — Phone, Telegram, Notification
+    forwarding, Watch list, Updates — each with a line on what it holds. The notification center lists its sources —
+    everything, this PC's alerts and each device that sent something, with how many — and "모두 지우기" sits under them.
+  - The chips on this PC's page (notification forwarding, phone connection, Telegram) open the Settings area they
+    belong to instead of always the Phone area.
+  - Switching tabs keeps what you typed in Settings; hiding the window drops unsaved input, the bot token included,
+    as closing the Settings window did. A pairing QR that ran out while you were elsewhere is replaced when the Phone
+    area comes back into view.
+  - Nothing is read for a tab until it is in view, and the device page stops asking for live views while another tab
+    is in front.
+- English UI: the Settings area for notification forwarding is now called "Notification forwarding" (it was
+  "Notifications", which is now the notification center's tab).
+
 ## v0.36.0 — Answer Claude Code's permission prompts from your phone
 
 ### Added

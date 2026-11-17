@@ -5,39 +5,57 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Core.Notifications;
+using LocalOpsBot.Tray.Dashboard;
 using LocalOpsBot.Tray.Services;
 using LocalOpsBot.Tray.Services.Mobile;
 
 namespace LocalOpsBot.Tray;
 
 /// <summary>
-/// The PC's notification center (DECISIONS M-32): notifications other devices relayed here and this
-/// PC's alerts, newest first, grouped by day. Filters are by source; a row expands to its full text.
-/// Opening it marks everything shown as read; new arrivals while it is open are added at the top.
+/// The PC's notification center (DECISIONS M-32), the dashboard's Notifications tab (M-49):
+/// notifications other devices relayed here and this PC's alerts, newest first, grouped by day.
+/// Sources are down the left; a row expands to its full text. Coming into view marks everything
+/// shown as read; new arrivals while it is in view are added at the top.
 /// </summary>
-public partial class NotificationCenterWindow : ThemedWindow
+public partial class NotificationCenterPanel : UserControl
 {
     private const int PageSize = 50;
     private const string AlertFilter = "\u0001alert";
 
     private readonly List<HistoryEntry> _entries = new();
-    private readonly DateTimeOffset _seenAtOpen;
+    private DateTimeOffset _seenAtOpen;
     private bool _more;
     private bool _loading;
+    private bool _inView;
     private string? _filter; // null = all, AlertFilter, or a device name
 
-    public NotificationCenterWindow()
+    public NotificationCenterPanel()
     {
         InitializeComponent();
-        _seenAtOpen = NotificationCenter.LastSeen();
-        Loaded += async (_, _) => await ReloadAsync();
         MobileHost.ToastRequested += OnToastRequested;
-        Closed += (_, _) => MobileHost.ToastRequested -= OnToastRequested;
     }
+
+    /// <summary>
+    /// The dashboard calls this when the tab comes into view (picked, or the window shown or restored)
+    /// and when it leaves. Each time it comes into view it reads the list again, and what was new
+    /// since the last look gets the unread dot — as opening the window used to.
+    /// </summary>
+    internal async void SetInView(bool inView)
+    {
+        if (inView == _inView) return;
+        _inView = inView;
+        if (!inView) return;
+        _seenAtOpen = NotificationCenter.LastSeen();
+        await ReloadAsync();
+    }
+
+    /// <summary>The tray is shutting down.</summary>
+    internal void Stop() => MobileHost.ToastRequested -= OnToastRequested;
 
     private void OnToastRequested(TrayToast _) =>
         // The Agent writes the history before it sends the balloon, so the new entry is already there.
-        Dispatcher.BeginInvoke(new Action(async () => await AddNewestAsync()));
+        // Out of view the tray counts it as unread instead.
+        Dispatcher.BeginInvoke(new Action(async () => { if (_inView) await AddNewestAsync(); }));
 
     private async Task ReloadAsync()
     {
@@ -59,6 +77,8 @@ public partial class NotificationCenterWindow : ThemedWindow
             _entries.Clear();
             _entries.AddRange(page.Entries);
             _more = page.More;
+            // A source picked last time that is no longer in the list would leave nothing picked.
+            if (_filter is not null && !_entries.Any(Matches)) _filter = null;
             MarkShownAsSeen();
             Render();
         }
@@ -67,7 +87,7 @@ public partial class NotificationCenterWindow : ThemedWindow
 
     private async Task AddNewestAsync()
     {
-        if (_loading || !IsLoaded) return;
+        if (_loading || !_inView) return;
         var (page, _) = await NotificationCenter.ListAsync(null, PageSize);
         if (page is null) return;
         var newest = _entries.Count > 0 ? _entries[0].At : DateTimeOffset.MinValue;
@@ -110,8 +130,6 @@ public partial class NotificationCenterWindow : ThemedWindow
         if (_filter is not null && _filter != AlertFilter) _filter = null;
         await ReloadAsync();
     }
-
-    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void MarkShownAsSeen() =>
         NotificationCenter.MarkSeen(_entries.Count > 0 ? _entries[0].At : DateTimeOffset.UtcNow);
@@ -159,28 +177,62 @@ public partial class NotificationCenterWindow : ThemedWindow
         }
     }
 
+    // Source tiles, drawn like the device list's: everything, this PC's alerts, then each device that
+    // sent something (with its PC or phone outline). Counts are of what is loaded ("+" while older remain).
     private void RenderFilters()
     {
         FilterPanel.Children.Clear();
-        FilterPanel.Children.Add(FilterChip(L.CenterAll, null));
-        if (_entries.Any(e => e.Kind == HistoryKind.Alert)) FilterPanel.Children.Add(FilterChip(L.CenterAlerts, AlertFilter));
-        foreach (var source in _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
-                     .Select(e => e.Source!).Distinct(StringComparer.Ordinal).Order(StringComparer.CurrentCulture))
-            FilterPanel.Children.Add(FilterChip(source, source));
+        FilterPanel.Children.Add(FilterTile(L.CenterAll, null, _entries.Count, pc: null));
+        var alerts = _entries.Count(e => e.Kind == HistoryKind.Alert);
+        if (alerts > 0) FilterPanel.Children.Add(FilterTile(L.CenterAlerts, AlertFilter, alerts, pc: null));
+
+        var sources = _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
+            .GroupBy(e => e.Source!, StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.CurrentCulture)
+            .ToList();
+        if (sources.Count == 0) return;
+        var head = Hb.Label(L.CenterFrom, Hb.InkSoft, 11);
+        head.Margin = new Thickness(6, 12, 0, 6);
+        FilterPanel.Children.Add(head);
+        foreach (var g in sources)
+            FilterPanel.Children.Add(FilterTile(g.Key, g.Key, g.Count(), pc: g.First().SourceKind == DeviceKind.Pc));
     }
 
-    private Button FilterChip(string label, string? key)
+    private Border FilterTile(string label, string? key, int count, bool? pc)
     {
-        var selected = _filter == key;
-        var chip = new Button
+        var on = _filter == key;
+        var g = Hb.Columns(Hb.Px(pc is null ? 0 : 30), Hb.Star(), Hb.Auto);
+        if (pc is { } isPc) g.Children.Add(Hb.At(Hb.Glyph(isPc, on ? Hb.OnSlab : Hb.Ink, 18), 0));
+        var name = Hb.Text(label, 13, on ? Hb.OnSlab : Hb.Ink, FontWeights.SemiBold);
+        name.VerticalAlignment = VerticalAlignment.Center;
+        g.Children.Add(Hb.At(name, 1));
+        var n = Hb.Text(count.ToString(CultureInfo.CurrentCulture) + (_more ? "+" : ""), 11.5, on ? Hb.OnSlabSoft : Hb.InkSoft);
+        n.VerticalAlignment = VerticalAlignment.Center;
+        n.Margin = new Thickness(8, 0, 0, 0);
+        g.Children.Add(Hb.At(n, 2));
+
+        var tile = new Border
         {
-            Content = label,
-            Style = Res<Style>(selected ? "Button.Amber" : "Button.Carbon"),
-            Padding = new Thickness(10, 4, 10, 4),
-            Margin = new Thickness(0, 0, 6, 6),
+            Background = on ? Hb.Slab : Brushes.Transparent,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 9, 12, 9),
+            Margin = new Thickness(0, 0, 0, 4),
+            Cursor = Cursors.Hand,
+            Child = g,
         };
-        chip.Click += (_, _) => { _filter = key; Render(); };
-        return chip;
+        if (!on)
+        {
+            tile.MouseEnter += (_, _) => tile.Background = Hb.Plate;
+            tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
+        }
+        tile.MouseLeftButtonUp += (_, _) =>
+        {
+            if (_filter == key) return;
+            _filter = key;
+            Render();
+            ListScroll.ScrollToTop();
+        };
+        return tile;
     }
 
     private bool Matches(HistoryEntry e) => _filter switch
