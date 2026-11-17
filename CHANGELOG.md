@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.38.1 — The Notifications tab keeps its width
+
+### Fixed
+- The unread count on the Homebase window's **알림 센터 (Notifications)** tab is now a small amber badge on the
+  tab's top-right corner, like the phone app's bell, instead of part of the label ("알림 센터 · 3"). Opening the
+  tab (which marks everything read) no longer shortens it and moves the **설정 (Settings)** tab sideways. Screen
+  readers still hear the count ("알림 센터, 새 알림 3건").
+
 ## v0.38.0 — Device aliases for the whole group
 
 ### Added
