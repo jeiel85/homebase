@@ -26,6 +26,7 @@ public partial class App : Application
     {
         // Design preview of the device page with made-up devices (no tray icon, no Agent, no mutex):
         //   Homebase.Tray.exe --preview-dashboard [--select <device key>] [--lang en]
+        //                     [--alias "<group key>=<alias>"] [--rename]   (pc:pc-work, phone-name:galaxy s24|samsung sm-s921n)
         if (e.Args.Contains("--preview-dashboard"))
         {
             base.OnStartup(e);
@@ -33,7 +34,12 @@ public partial class App : Application
             if (lang is not null) CultureInfo.CurrentUICulture = CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo(lang);
             else ApplyLanguage();
             ShutdownMode = ShutdownMode.OnMainWindowClose;
+            // Aliases stay in memory: the preview never reaches the Agent or the group (M-50).
+            Services.Mobile.DeviceNames.UseMemoryOnly();
+            if (ArgAfter(e.Args, "--alias")?.Split('=', 2) is [var aliasKey, var alias])
+                Services.Mobile.DeviceNames.Aliases.Set(aliasKey, aliasKey, alias);
             var preview = new DashboardWindow(new Dashboard.PreviewDashboardSource(), preview: true);
+            if (e.Args.Contains("--rename")) preview.ContentRendered += (_, _) => preview.PreviewRename();
             if (ArgAfter(e.Args, "--select") is { } key) preview.PreviewSelect(key);
             if (int.TryParse(ArgAfter(e.Args, "--tab"), out var tab)) Dashboard.PcLiveView.PreviewTab = tab;
             if (ArgAfter(e.Args, "--size")?.Split('x') is [var w, var h] && double.TryParse(w, out var pw) && double.TryParse(h, out var ph))

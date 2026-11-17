@@ -288,9 +288,11 @@ public partial class PhoneConnectPanel : UserControl
             if ((bool?)r["ok"] == true)
             {
                 var devices = r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new();
+                // The group's alias for a device (M-50) in place of its name, which then leads the detail line.
                 DeviceList.ItemsSource = devices.Select(d => new DeviceRow(
                     d.DeviceId,
-                    d.Name,
+                    DeviceNames.Show(d.Kind, d.Name, PhoneKey(d)),
+                    AliasedFrom(d.Kind, d.Name, PhoneKey(d)) +
                     (d.Kind == DeviceKind.Pc ? "PC" : d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
                     (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""))).ToList();
                 NoDevicesText.Visibility = devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -312,12 +314,19 @@ public partial class PhoneConnectPanel : UserControl
             if (overview is null) return;
             HubList.ItemsSource = overview.Hubs.Select(h => new HubRow(
                 h.PcId,
-                h.PcName,
-                DeviceText.Hub(h),
+                DeviceNames.Show(DeviceKind.Pc, h.PcName, GroupKeys.Pc(h.PcId)),
+                AliasedFrom(DeviceKind.Pc, h.PcName, GroupKeys.Pc(h.PcId)) + DeviceText.Hub(h),
                 (Brush)FindResource(h.Online ? "Brush.StatusOk" : "Brush.StatusWarn"))).ToList();
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { }
     }
+
+    /// <summary>"DESKTOP-ABC · " when the device shows under an alias, else nothing.</summary>
+    private static string AliasedFrom(string kind, string name, string? key) =>
+        DeviceNames.AliasOf(key, kind, name) is null ? "" : name + " · ";
+
+    /// <summary>A phone's group key (a PC paired here is found by its name).</summary>
+    private static string? PhoneKey(MobileDeviceInfo d) => d.Kind == DeviceKind.Pc ? null : GroupKeys.PhoneByName(d.Name, d.Model);
 
     private void CopyLink_Click(object sender, RoutedEventArgs e)
     {

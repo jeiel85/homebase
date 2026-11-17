@@ -298,6 +298,24 @@ public static class L
     public static string HeadPhone => T("paired with this PC", "이 PC에 연결된 휴대폰");
     public static string ChipPhoneLink => T("Phone connection", "휴대폰 연결");
     public static string ChipOpensSettings => T("Change it in Settings", "설정에서 바꿀 수 있습니다");
+
+    // ── Device aliases (DECISIONS M-49, M-50) ────────────────────────────────
+    public static string AliasTitle => T("Alias", "별칭");
+    public static string AliasExplain(string name) => T(
+        $"A name shown instead of {name} on every phone and PC of the group. Leave it empty to show the original name.",
+        $"그룹의 모든 휴대폰·PC에서 {name} 대신 보일 이름입니다. 비워 두면 원래 이름으로 보입니다.");
+    public static string AliasGroupNote => T(
+        "The name set last applies to the whole group. Other PCs get it at once (or within 2 minutes of coming back on); phones when the PC list refreshes.",
+        "마지막으로 정한 이름이 그룹 전체에 적용됩니다. 다른 PC에는 바로(꺼져 있었다면 켜진 뒤 2분 안에), 휴대폰에는 PC 목록을 새로고침할 때 반영됩니다.");
+    public static string AliasNotSaved => T(
+        "The alias was not saved. Check that the Homebase Agent is running and the phone connection is on in Settings › Phone.",
+        "별칭을 저장하지 못했습니다. Homebase Agent가 실행 중이고 설정 › 휴대폰 연결이 켜져 있는지 확인하세요.");
+    public static string AliasSave => T("Save", "저장");
+    public static string AliasReset => T("Original name", "원래 이름");
+    public static string AliasSet => T("Set alias…", "별칭 지정…");
+    public static string AliasChange => T("Change alias…", "별칭 바꾸기…");
+    public static string AliasClear => T("Show the original name", "원래 이름으로 보기");
+    public static string AliasTip => T("Set an alias for this device (F2)", "이 기기의 별칭 지정 (F2)");
     public static string PillThisPc => T("this PC", "이 PC");
     public static string PillLive(string via) => T($"live · {via}", $"실시간 · {via}");
     public static string PillConnecting => T("connecting…", "연결하는 중…");

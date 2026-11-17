@@ -30,7 +30,7 @@ internal sealed class PreviewDashboardSource : IDashboardSource
             {
                 new DeviceEntry("dev-laptop", "LAPTOP-JEIEL", DeviceKind.Pc, "Windows", now.AddSeconds(-12), true,
                     new DeviceStatus("0.33.0", CpuPct: 9, MemUsedBytes: 9_100_000_000, MemTotalBytes: 16_000_000_000, UptimeSec: 7_400,
-                        Os: "Windows 11 Home 24H2")),
+                        Os: "Windows 11 Home 24H2"), PcId: "pc-laptop"),
                 new DeviceEntry("dev-s24", "Galaxy S24", DeviceKind.Phone, "samsung SM-S921N", now.AddSeconds(-40), true, phone),
                 new DeviceEntry("dev-tab", "Galaxy Tab S9", DeviceKind.Phone, "samsung SM-X710", now.AddHours(-5), false,
                     new DeviceStatus("0.31.0", Battery: 41, Charging: false, Network: "wifi")),

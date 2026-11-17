@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.37.0 — Device aliases for the whole group
+
+### Added
+- **Name your devices on the PC.** On the tray dashboard, click the pencil next to a device's name (or
+  press F2, or right-click its tile in the list) and type an alias — "작업실 PC", "내 폰". The alias
+  replaces the name the device reports (such as `DESKTOP-5BP128L` or the phone's Android name) everywhere
+  the tray shows it: the device list and header, "via …" lines, the notification center (senders and
+  filters, past notifications included), the balloons of relayed notifications, and Settings › Phone.
+  The reported name stays visible in small print. Leave the field empty, or choose "원래 이름"
+  (Original name), to go back (DECISIONS M-49).
+- **Aliases are shared across the device group.** An alias set on any phone or PC of the group shows on
+  every member: a PC named on the phone shows under that name on the other phones and in every PC's tray,
+  and a phone or PC named in one tray shows under it in the others and (for PCs) on the phones. The name
+  set last wins. Other PCs get it at once (a PC that was off, within 2 minutes of coming back); phones when
+  their PC list refreshes (pull to refresh, or within 10 minutes while the app is open). Aliases already
+  set on a phone are shared the first time it syncs, and any alias set since wins over them
+  (DECISIONS M-50).
+
+### Changed
+- The phone app's alias dialog now says the name is shown on every phone and PC of the group.
+
+### Known limits
+- Phones and PCs on v0.36.0 or older neither send nor receive aliases.
+- A phone that renames itself (its Android device name) loses its alias until it is named again; a PC
+  renamed in Windows keeps its alias.
+- The phone app shows aliases of PCs only; phone aliases show in PC trays.
+- Balloons show the alias only when the Agent is v0.37.0 or later.
+
 ## v0.36.0 — Answer Claude Code's permission prompts from your phone
 
 ### Added

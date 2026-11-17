@@ -10,7 +10,11 @@ import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.GroupInfo
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.PairingOffer
+import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -21,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
  *  - pairs itself with the group's PCs it is missing, through a PC that holds their token
  *    (`POST /api/v1/group/introduce`).
  * A PC the user deleted on this phone is not joined again automatically (pairing it by hand undoes that).
+ * The same pass reconciles the PCs' aliases with the group's (DECISIONS M-50, [AliasSync]).
  */
 object GroupSync {
     private const val TAG = "HomebaseGroup"
@@ -82,7 +87,7 @@ object GroupSync {
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** Runs [sync] when [INTERVAL_MS] has passed (or [force]); true when this phone joined a new PC. */
+    /** Runs [sync] when [INTERVAL_MS] has passed (or [force]); true when this phone joined a new PC or a PC was renamed. */
     suspend fun syncIfDue(context: Context, api: HomebaseApi, store: PcStore, force: Boolean = false): Boolean {
         val now = SystemClock.elapsedRealtime()
         if (!force && lastRunElapsed != 0L && now - lastRunElapsed in 0 until INTERVAL_MS) return false
@@ -106,6 +111,7 @@ object GroupSync {
             }
         }.toMap()
         if (groups.isEmpty()) return false
+        val renamed = syncAliases(context, api, store, groups)
         val plan = plan(pcs.map { it.pcId }, groups, declined(context))
 
         for ((joiner, target) in plan.links) {
@@ -137,7 +143,46 @@ object GroupSync {
             }
         }
         if (joined) PresenceScheduler.sync(context)
-        return joined
+        return joined || renamed
+    }
+
+    /**
+     * Takes the group's newer aliases for this phone's PCs and hands the PCs what this phone decided
+     * later than they know (DECISIONS M-50). True when a PC's shown name changed.
+     */
+    private suspend fun syncAliases(context: Context, api: HomebaseApi, store: PcStore, groups: Map<String, GroupInfo>): Boolean {
+        val plan = AliasSync.plan(store.all(), groups)
+        val renamed = store.applyGroupAliases(plan.apply.mapValues { (_, e) -> e.alias to e.atMillis })
+        for (id in renamed) store.get(id)?.let { PushNotifier.renamePc(context, it.pcId, it.displayName) }
+        for ((pcId, entries) in plan.upload) {
+            val pc = store.get(pcId) ?: continue
+            try {
+                api.groupAlias(pc, entries)
+            } catch (e: Exception) {
+                Log.i(TAG, "sharing aliases with ${pc.name} failed: ${e.message}")
+            }
+        }
+        if (renamed.isNotEmpty()) Log.i(TAG, "took ${renamed.size} alias(es) from the group")
+        return renamed.isNotEmpty()
+    }
+
+    /**
+     * The user named [pcId] on this phone: hand it to every paired PC now (each PC passes it on to the
+     * PCs it syncs with). One that can't be reached gets it from the next [sync].
+     */
+    suspend fun shareAlias(api: HomebaseApi, store: PcStore, pcId: String) {
+        val entry = store.get(pcId)?.let(AliasSync::local) ?: return
+        coroutineScope {
+            store.all().map { pc ->
+                async {
+                    try {
+                        api.groupAlias(pc, listOf(entry))
+                    } catch (e: Exception) {
+                        Log.i(TAG, "sharing the alias with ${pc.name} failed: ${e.message}")
+                    }
+                }
+            }.awaitAll()
+        }
     }
 
     /** The same name the pairing screen sends. */

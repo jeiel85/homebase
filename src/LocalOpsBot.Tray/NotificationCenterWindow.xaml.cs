@@ -14,6 +14,8 @@ namespace LocalOpsBot.Tray;
 /// The PC's notification center (DECISIONS M-32): notifications other devices relayed here and this
 /// PC's alerts, newest first, grouped by day. Filters are by source; a row expands to its full text.
 /// Opening it marks everything shown as read; new arrivals while it is open are added at the top.
+/// Senders show under the group's alias for them (M-50); the history keeps the name they sent, so
+/// renaming a device renames its past notifications too.
 /// </summary>
 public partial class NotificationCenterWindow : ThemedWindow
 {
@@ -24,7 +26,7 @@ public partial class NotificationCenterWindow : ThemedWindow
     private readonly DateTimeOffset _seenAtOpen;
     private bool _more;
     private bool _loading;
-    private string? _filter; // null = all, AlertFilter, or a device name
+    private string? _filter; // null = all, AlertFilter, or a device name (as sent, not its alias)
 
     public NotificationCenterWindow()
     {
@@ -32,7 +34,13 @@ public partial class NotificationCenterWindow : ThemedWindow
         _seenAtOpen = NotificationCenter.LastSeen();
         Loaded += async (_, _) => await ReloadAsync();
         MobileHost.ToastRequested += OnToastRequested;
-        Closed += (_, _) => MobileHost.ToastRequested -= OnToastRequested;
+        Action onAliases = () => Dispatcher.BeginInvoke(() => { if (_entries.Count > 0) Render(); });
+        DeviceNames.Aliases.Changed += onAliases;
+        Closed += (_, _) =>
+        {
+            MobileHost.ToastRequested -= OnToastRequested;
+            DeviceNames.Aliases.Changed -= onAliases;
+        };
     }
 
     private void OnToastRequested(TrayToast _) =>
@@ -164,9 +172,11 @@ public partial class NotificationCenterWindow : ThemedWindow
         FilterPanel.Children.Clear();
         FilterPanel.Children.Add(FilterChip(L.CenterAll, null));
         if (_entries.Any(e => e.Kind == HistoryKind.Alert)) FilterPanel.Children.Add(FilterChip(L.CenterAlerts, AlertFilter));
-        foreach (var source in _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
-                     .Select(e => e.Source!).Distinct(StringComparer.Ordinal).Order(StringComparer.CurrentCulture))
-            FilterPanel.Children.Add(FilterChip(source, source));
+        foreach (var (name, label) in _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
+                     .GroupBy(e => e.Source!, StringComparer.Ordinal)
+                     .Select(g => (g.Key, DeviceNames.Show(g.First().SourceKind, g.Key)))
+                     .OrderBy(x => x.Item2, StringComparer.CurrentCulture))
+            FilterPanel.Children.Add(FilterChip(label, name));
     }
 
     private Button FilterChip(string label, string? key)
@@ -226,7 +236,8 @@ public partial class NotificationCenterWindow : ThemedWindow
         meta.Children.Add(KindChip(e));
         meta.Children.Add(new TextBlock
         {
-            Text = e.Kind == HistoryKind.Alert ? $"{L.CenterThisPc} · {L.CenterAlertKind(e.App)}" : $"{e.Source} · {e.App}",
+            Text = e.Kind == HistoryKind.Alert ? $"{L.CenterThisPc} · {L.CenterAlertKind(e.App)}"
+                : $"{(e.Source is { } source ? DeviceNames.Show(e.SourceKind, source) : "")} · {e.App}",
             Style = Res<Style>("Type.Micro"),
             Margin = new Thickness(6, 1, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,

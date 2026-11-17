@@ -68,6 +68,7 @@ public sealed class MobileBridgeServer : BackgroundService
         ApprovalBroker? approvals = null)
     {
         _group = group;
+        if (_group is not null) _group.Aliases.Changed += OnAliasesChanged;
         _approvals = approvals;
         _history = history;
         _trayLive = trayLive;
@@ -150,6 +151,7 @@ public sealed class MobileBridgeServer : BackgroundService
         try
         {
             await SendAsync(conn, MobileBridge.Message(MobileBridge.OpWatch, WatchPayload()), ct);
+            if (_group is not null) await SendAsync(conn, MobileBridge.Message(MobileBridge.OpAliases, AliasesPayload()), ct);
             while (!ct.IsCancellationRequested)
             {
                 var msg = await MobileBridge.ReadFrameAsync(pipe, ct);
@@ -237,6 +239,19 @@ public sealed class MobileBridgeServer : BackgroundService
             if (_group is not null && pcId.Length > 0) await _group.RemoveAsync(GroupKeys.Pc(pcId), fanOut: true, ct);
             var ok = _hubLinks is not null && (await _hubLinks.UnlinkAsync(pcId) || _group is not null);
             await SendAsync(conn, MobileBridge.Response(id, ok), ct);
+            return;
+        }
+        if (op == MobileBridge.OpAliasesSet)
+        {
+            // The user named a device in the tray (M-50): shared with the whole group.
+            var req = payload?.Deserialize<AliasSetRequest>(MobileProtocol.Json);
+            if (_group is null || req is not { Key.Length: > 0, Name.Length: > 0 } || !GroupKeys.IsValid(req.Key))
+            {
+                await SendAsync(conn, MobileBridge.Response(id, false, error: _group is null ? "unsupported" : "bad_request"), ct);
+                return;
+            }
+            _group.SetAlias(req.Key, req.Name, req.Alias);
+            await SendAsync(conn, MobileBridge.Response(id, true), ct);
             return;
         }
         if (op == MobileBridge.OpDevicesRevoke && _group is not null)
@@ -362,6 +377,22 @@ public sealed class MobileBridgeServer : BackgroundService
         {
             _ = SendAsync(c, MobileBridge.Message(MobileBridge.OpToast, toast), CancellationToken.None)
                 .ContinueWith(t => _logger.LogDebug("Toast to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
+                    TaskContinuationOptions.OnlyOnFaulted);
+        }
+    }
+
+    private AliasListPayload AliasesPayload() => new(_group?.Aliases.List() ?? Array.Empty<DeviceAlias>());
+
+    /// <summary>Every tray gets the group's aliases again when they change (set here, by a phone, or by a sync).</summary>
+    private void OnAliasesChanged()
+    {
+        List<Connection> conns;
+        lock (_gate) conns = _connections.ToList();
+        var message = MobileBridge.Message(MobileBridge.OpAliases, AliasesPayload());
+        foreach (var c in conns)
+        {
+            _ = SendAsync(c, message, CancellationToken.None)
+                .ContinueWith(t => _logger.LogDebug("Aliases to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
                     TaskContinuationOptions.OnlyOnFaulted);
         }
     }

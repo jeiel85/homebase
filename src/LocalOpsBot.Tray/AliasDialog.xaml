@@ -1,0 +1,64 @@
+<local:ThemedWindow xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LocalOpsBot.Tray"
+        x:Class="LocalOpsBot.Tray.AliasDialog"
+        Style="{StaticResource Window.Chrome}"
+        Title="Homebase"
+        Icon="pack://application:,,,/Resources/homebase.ico"
+        Width="440" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="#E3E7F3"
+        FontFamily="Segoe UI, Malgun Gothic"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+  <!-- Names a device for the group (DECISIONS M-49, M-50): the dashboard's light console look, the phone
+       app's alias dialog (M-36) — field with the original name as a hint, a 40-character counter, and
+       "Original name" while an alias is set. -->
+  <StackPanel Margin="18,16,18,16">
+    <TextBlock x:Name="HeadingText" FontSize="16" FontWeight="Bold" Foreground="#21242E"/>
+    <TextBlock x:Name="ExplainText" FontSize="12.5" Foreground="#4A5180" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+    <!-- Tag = the original name, shown as a placeholder while the field is empty. It sits in the same
+         cell as the text, so the two line up; the focus ring is drawn over the border so nothing shifts. -->
+    <TextBox x:Name="AliasBox" Margin="0,14,0,0" FontFamily="Segoe UI, Malgun Gothic" FontSize="14" Padding="9,7"
+             Foreground="#21242E" CaretBrush="#21242E" TextChanged="AliasBox_TextChanged">
+      <TextBox.Template>
+        <ControlTemplate TargetType="TextBox">
+          <Grid>
+            <Border Background="White" BorderBrush="#C9CFE3" BorderThickness="1" CornerRadius="6">
+              <Grid Margin="{TemplateBinding Padding}">
+                <TextBlock x:Name="hint" Text="{TemplateBinding Tag}" Foreground="#8A90A8" Margin="2,0,2,0"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           IsHitTestVisible="False" Visibility="Collapsed"/>
+                <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
+            <Border x:Name="ring" BorderBrush="#F68D1F" BorderThickness="2" CornerRadius="6"
+                    IsHitTestVisible="False" Visibility="Collapsed"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Text" Value="">
+              <Setter TargetName="hint" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="ring" Property="Visibility" Value="Visible"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </TextBox.Template>
+    </TextBox>
+    <TextBlock x:Name="CounterText" FontSize="11" Foreground="#4A5180" HorizontalAlignment="Right" Margin="0,4,2,0"/>
+
+    <TextBlock x:Name="NoteText" FontSize="11.5" Foreground="#4A5180" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+    <DockPanel Margin="0,16,0,0" LastChildFill="False">
+      <Button x:Name="ResetButton" DockPanel.Dock="Left" Style="{StaticResource Dash.AddButton}"
+              HorizontalAlignment="Left" Padding="14,7" Click="Reset_Click" Visibility="Collapsed"/>
+      <Button x:Name="SaveButton" DockPanel.Dock="Right" Style="{StaticResource Dash.HeadButton}"
+              Padding="18,7" Margin="8,0,0,0" IsDefault="True" Click="Save_Click"/>
+      <Button x:Name="CancelButton" DockPanel.Dock="Right" Style="{StaticResource Dash.AddButton}"
+              HorizontalAlignment="Right" Padding="14,7" IsCancel="True"/>
+    </DockPanel>
+  </StackPanel>
+</local:ThemedWindow>

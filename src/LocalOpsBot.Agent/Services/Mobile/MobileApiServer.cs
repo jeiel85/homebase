@@ -557,7 +557,7 @@ public sealed class MobileApiServer : BackgroundService
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return (200, Json(_deviceHub.Inbox.Read(after, device.DeviceId))); }
             }
 
-            case (_, GroupPaths.Group or GroupPaths.Offer or GroupPaths.Join or GroupPaths.Introduce or GroupPaths.Remove):
+            case (_, GroupPaths.Group or GroupPaths.Offer or GroupPaths.Join or GroupPaths.Introduce or GroupPaths.Remove or GroupPaths.Alias):
                 return await GroupAsync(head, body, ct);
 
             case ("POST", LiveSharePath):
@@ -722,6 +722,13 @@ public sealed class MobileApiServer : BackgroundService
                 var req = Read<GroupRemoveRequest>(body);
                 if (!GroupKeys.IsValid(req?.Key)) return (400, Error("bad_request", "Invalid key."));
                 return (200, Json(new { schema = MobileProtocol.Schema, removed = await _group.RemoveAsync(req!.Key, fanOut: false, ct) }));
+            }
+            case ("POST", GroupPaths.Alias):
+            {
+                // From any member: a phone where the user named a PC, or another PC's tray (M-50).
+                var req = Read<GroupAliasRequest>(body);
+                if (req is not { Aliases: not null } || req.Schema != MobileProtocol.Schema) return (400, Error("bad_request", "Invalid aliases."));
+                return (200, Json(new GroupAliasResponse(MobileProtocol.Schema, _group.AcceptAliases(req.Aliases))));
             }
             default:
                 return (405, Error("method_not_allowed", "Method not allowed."));

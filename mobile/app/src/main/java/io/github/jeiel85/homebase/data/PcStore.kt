@@ -18,12 +18,17 @@ data class PcEntry(
     val lastGood: String? = null,
     /** PC time (epoch ms) of the last path list received by push; older or replayed pushes are ignored. */
     val pushedEndpointsAt: Long? = null,
-    /** The user's own name for this PC, kept on this phone only (DECISIONS M-36); null = the PC's name. */
+    /** The user's own name for this PC, shared with the device group (DECISIONS M-36, M-50); null = the PC's name. */
     val alias: String? = null,
     /** This phone's time (epoch ms) when that path list was applied; lets a PC whose clock went back be heard. */
     val pushedEndpointsReceivedAt: Long? = null,
     /** Index into [PcMarks.PALETTE] of this PC's badge colour, fixed once given (DECISIONS M-38). */
     val color: Int? = null,
+    /**
+     * When [alias] was set or cleared (epoch ms, by the clock of the device where it was done), for the
+     * group's latest-wins rule (DECISIONS M-50); null for an alias set before aliases were shared.
+     */
+    val aliasAt: Long? = null,
 ) {
     /** What the app shows for this PC: the alias when set, else the name the PC reported. */
     val displayName: String get() = alias ?: name
@@ -72,14 +77,39 @@ class PcStore(context: Context) {
     @Synchronized
     fun upsert(pc: PcEntry) = save(upserted(all(), pc))
 
-    /** Sets or clears (blank, or the PC's own name) the alias; false when the PC isn't paired. */
+    /**
+     * Sets or clears (blank, or the PC's own name) the alias the user typed, stamped now for the group
+     * (DECISIONS M-50). True when it changed — then it is to be shared ([io.github.jeiel85.homebase.mesh.GroupSync.shareAlias]).
+     */
     @Synchronized
-    fun setAlias(pcId: String, input: String?): Boolean {
+    fun setAlias(pcId: String, input: String?, nowMillis: Long = System.currentTimeMillis()): Boolean {
         val list = all()
         val pc = list.firstOrNull { it.pcId == pcId } ?: return false
         val alias = normalizeAlias(input, pc.name)
-        if (alias != pc.alias) save(list.map { if (it.pcId == pcId) it.copy(alias = alias) else it })
+        if (alias == pc.alias) return false
+        // Strictly after the entry it replaces, even if this clock is behind the device that set that one.
+        val at = maxOf(nowMillis, (pc.aliasAt ?: -1L) + 1)
+        save(list.map { if (it.pcId == pcId) it.copy(alias = alias, aliasAt = at) else it })
         return true
+    }
+
+    /**
+     * Takes the group's newer aliases (pcId → alias or null, and when it was decided). Returns the PCs
+     * whose shown name changed, for their notification groups.
+     */
+    @Synchronized
+    fun applyGroupAliases(updates: Map<String, Pair<String?, Long>>): List<String> {
+        if (updates.isEmpty()) return emptyList()
+        val list = all()
+        val renamed = mutableListOf<String>()
+        val next = list.map { pc ->
+            val (input, at) = updates[pc.pcId] ?: return@map pc
+            val alias = normalizeAlias(input, pc.name)
+            if (alias != pc.alias) renamed += pc.pcId
+            pc.copy(alias = alias, aliasAt = at)
+        }
+        if (next != list) save(next)
+        return renamed
     }
 
     /**
@@ -157,6 +187,7 @@ class PcStore(context: Context) {
         .apply { pc.pushedEndpointsReceivedAt?.let { put("pushedEndpointsReceivedAt", it) } }
         .apply { pc.alias?.let { put("alias", it) } }
         .apply { pc.color?.let { put("color", it) } }
+        .apply { pc.aliasAt?.let { put("aliasAt", it) } }
 
     private fun fromJson(o: JSONObject): PcEntry? {
         val token = decrypt(o.optString("token")) ?: return null
@@ -172,6 +203,7 @@ class PcStore(context: Context) {
             alias = normalizeAlias(o.optString("alias"), o.optString("name")),
             pushedEndpointsReceivedAt = if (o.has("pushedEndpointsReceivedAt")) o.optLong("pushedEndpointsReceivedAt") else null,
             color = PcMarks.validColor(if (o.has("color")) o.optInt("color", -1) else null),
+            aliasAt = if (o.has("aliasAt")) o.optLong("aliasAt") else null,
         )
     }
 
@@ -206,7 +238,11 @@ class PcStore(context: Context) {
          */
         fun upserted(list: List<PcEntry>, pc: PcEntry): List<PcEntry> {
             val old = list.firstOrNull { it.pcId == pc.pcId }
-            val kept = pc.copy(alias = pc.alias ?: old?.alias, color = pc.color ?: old?.color)
+            val kept = if (pc.alias == null && pc.aliasAt == null) {
+                pc.copy(alias = old?.alias, aliasAt = old?.aliasAt, color = pc.color ?: old?.color)
+            } else {
+                pc.copy(color = pc.color ?: old?.color)
+            }
             return PcMarks.withColors(list.filterNot { it.pcId == pc.pcId } + kept)
         }
 

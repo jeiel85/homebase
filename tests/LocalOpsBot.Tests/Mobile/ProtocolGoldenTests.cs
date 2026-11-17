@@ -84,7 +84,7 @@ public class ProtocolGoldenTests
         {
             new DeviceEntry("a1b2c3d4e5f6", "WORK-PC", DeviceKind.Pc, "Windows", new DateTimeOffset(2026, 11, 14, 9, 30, 0, TimeSpan.Zero), true,
                 new DeviceStatus("0.22.0", CpuPct: 8, MemUsedBytes: 8_589_934_592, MemTotalBytes: 17_179_869_184, UptimeSec: 7200,
-                    Os: "Windows 11 Home 24H2")),
+                    Os: "Windows 11 Home 24H2"), PcId: "a1b2c3d4e5f60718"),
             new DeviceEntry("0f9e8d7c6b5a", "Galaxy S24", DeviceKind.Phone, "SM-S921N", new DateTimeOffset(2026, 11, 14, 9, 29, 0, TimeSpan.Zero), true,
                 SamplePresence().ToStatus()),
             new DeviceEntry("1234567890ab", "Galaxy Tab", DeviceKind.Phone, "SM-X710", new DateTimeOffset(2026, 11, 13, 22, 0, 0, TimeSpan.Zero), false, null),
@@ -92,9 +92,16 @@ public class ProtocolGoldenTests
         new[] { "3f6c1b1e8f0d4a7b9c2e5d8a1b4c7e0f3a6d9c2b5e8f1a4d7c0b3e6f9a2d5c8b" });
 
     // The device group (M-47): HOME-PC holds WORK-PC's token, LAPTOP linked to it only one way so far.
+    // The group's aliases (M-50): WORK-PC and a phone named, LAPTOP's alias cleared.
     public static GroupResponse SampleGroup() => new(MobileProtocol.Schema, "6f1c0d2e9b8a4c7d", "HOME-PC",
         new[] { new GroupMember("3b9e1f5a7c2d4e60", "LAPTOP", false), new GroupMember("a1b2c3d4e5f60718", "WORK-PC", true) },
-        new[] { new GroupRemoval("pc:0fedcba987654321", new DateTimeOffset(2026, 11, 16, 12, 0, 0, TimeSpan.Zero)) });
+        new[] { new GroupRemoval("pc:0fedcba987654321", new DateTimeOffset(2026, 11, 16, 12, 0, 0, TimeSpan.Zero)) },
+        new[]
+        {
+            new DeviceAlias("pc:a1b2c3d4e5f60718", "WORK-PC", "회사", new DateTimeOffset(2026, 11, 17, 8, 30, 0, 125, TimeSpan.Zero)),
+            new DeviceAlias("phone-name:galaxy s24|sm-s921n", "Galaxy S24", "내 폰", new DateTimeOffset(2026, 11, 17, 8, 31, 0, TimeSpan.Zero)),
+            new DeviceAlias("pc:3b9e1f5a7c2d4e60", "LAPTOP", null, new DateTimeOffset(2026, 11, 17, 8, 32, 0, TimeSpan.Zero)),
+        });
 
     public static DeviceNotification SampleDeviceNotification() => new(MobileProtocol.Schema,
         "9c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5", "카카오톡", "엄마", "저녁 먹었니?", new DateTimeOffset(2026, 11, 14, 9, 31, 0, TimeSpan.Zero));

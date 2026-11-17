@@ -185,7 +185,7 @@ public sealed class NotificationForwardingService : BackgroundService
             var item = new ToastItem(app, _masker.Mask(title), body is null ? null : _masker.Mask(body), at, origin, id);
             // Before the balloon, so the Tray's unread count already includes it when the balloon arrives.
             await RecordAsync(item, origin);
-            _toaster?.Show($"{origin.Name} · {app}", ToastText(item));
+            _toaster?.Show(new TrayToast($"{origin.Name} · {app}", ToastText(item), origin.Name, origin.Kind, app));
             if (!origin.FromHub) _inbox?.Add(origin.DeviceId, origin.Name, app, item.Title, item.Body, at, id);
             await BundleAsync(item);
         }

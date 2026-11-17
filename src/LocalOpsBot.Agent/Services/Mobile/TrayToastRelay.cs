@@ -10,5 +10,5 @@ public sealed class TrayToastRelay : ITrayToaster
 {
     public event Action<TrayToast>? Requested;
 
-    public void Show(string title, string? body) => Requested?.Invoke(new TrayToast(title, body));
+    public void Show(TrayToast toast) => Requested?.Invoke(toast);
 }

@@ -62,6 +62,9 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>A notification from another device to show here (DECISIONS M-28). Background thread.</summary>
     public event Action<TrayToast>? ToastRequested;
 
+    /// <summary>The group's aliases (M-50): sent on connect and whenever they change. Background thread.</summary>
+    public event Action<IReadOnlyList<DeviceAlias>>? AliasesReceived;
+
     /// <summary>Raised on a background thread whenever <see cref="IsWatching"/> changes.</summary>
     public event Action<bool>? WatchingChanged;
 
@@ -206,6 +209,14 @@ internal sealed class MobileBridgeClient : IDisposable
                 break;
             case MobileBridge.OpToast:
                 if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);
+                break;
+            case MobileBridge.OpAliases:
+                try
+                {
+                    if (msg["payload"]?.Deserialize<AliasListPayload>(MobileProtocol.Json) is { Aliases: { } aliases })
+                        AliasesReceived?.Invoke(aliases);
+                }
+                catch (JsonException) { /* a malformed table keeps the one shown */ }
                 break;
             case MobileBridge.OpResponse when msg["id"] is JsonValue idNode && _pending.TryRemove((string)idNode!, out var tcs):
                 tcs.TrySetResult(msg);
