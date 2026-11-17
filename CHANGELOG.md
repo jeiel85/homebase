@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.39.0 — Phone notifications stack under one Homebase entry
+
+### Changed
+- **One Homebase stack in the phone's notification shade.** Bundled notifications from every PC, app and
+  relayed device now join a single Android group, so the shade shows one "Homebase" entry instead of one
+  per PC and app (plus the loose ones Android folded on its own). Its header names who sent them
+  ("작업실, 거실 외 1"), expanding it shows each notification with its PC badge and "PC · app" line, and
+  tapping the summary opens the notification center. Each source still keeps its newest 8 in the shade,
+  and the stack its newest 24 in all; everything stays in the notification center (DECISIONS M-52).
+- The stack sits in the alerting section while it holds an alerting notification and moves to the silent
+  section once those are dismissed, whatever order quiet and urgent notifications arrived in.
+
+### Unchanged
+- Claude Code permission prompts (허용/거부), kinds or apps set to "하나씩" (bundling off), and the tray's
+  test notification still appear on their own. Android notification channels per PC and app, and the
+  notification center's per-source stacks, are as before.
+
+### Known limits
+- Bundles left in the shade from the previous version stay until they are opened or cleared.
+- When several stand-alone notifications pile up, Android may fold them into a second Homebase entry.
+
 ## v0.38.1 — The Notifications tab keeps its width
 
 ### Fixed
