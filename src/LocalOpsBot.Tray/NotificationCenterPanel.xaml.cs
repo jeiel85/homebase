@@ -86,7 +86,9 @@ public partial class NotificationCenterPanel : UserControl
             _more = page.More;
             // A source picked last time that is no longer in the list would leave nothing picked.
             if (_filter is not null && !_entries.Any(Matches)) _filter = null;
-            MarkShownAsSeen();
+            // Left the tab while the list was read: nothing was looked at, so nothing becomes read
+            // (the list is read again when the tab comes back).
+            if (_inView) MarkShownAsSeen();
             Render();
         }
         finally { _loading = false; }
@@ -96,14 +98,25 @@ public partial class NotificationCenterPanel : UserControl
 
     private async Task AddNewestAsync()
     {
-        if (!_inView) return;
         if (_loading)
         {
             _newWhileLoading = true;
             return;
         }
         _newWhileLoading = false;
+        // The tray did not count it because this tab was in view when it arrived; if the tab has been
+        // left since (before or during the read), count it as unread instead of showing it.
+        if (!_inView)
+        {
+            await NotificationCenter.RefreshUnreadAsync();
+            return;
+        }
         var (page, _) = await NotificationCenter.ListAsync(null, PageSize);
+        if (!_inView)
+        {
+            await NotificationCenter.RefreshUnreadAsync();
+            return;
+        }
         if (page is null) return;
         var newest = _entries.Count > 0 ? _entries[0].At : DateTimeOffset.MinValue;
         var fresh = page.Entries.Where(e => e.At > newest).ToList();

@@ -93,12 +93,16 @@ public partial class PhoneConnectPanel : UserControl
 
     /// <summary>
     /// The window was hidden (what closing the Settings window used to be): put away a shown 24-word
-    /// code, which stays valid until the offer expires, so it is not on screen when the window reopens.
+    /// code, which stays valid until the offer expires, drop unsaved edits (paths, tunnel token and
+    /// hostname) and load everything afresh — settings and a new QR — the next time the area is shown.
+    /// While an APPLY or INSTALL runs it reloads by itself when it finishes.
     /// </summary>
     public void Forget()
     {
         CodeBox.Visibility = Visibility.Collapsed;
         CodeBox.Text = "";
+        TunnelTokenBox.Clear();
+        if (!_busy) _started = false;
     }
 
     /// <summary>The tray is shutting down.</summary>
