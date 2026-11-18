@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.41.1 — The tray closes cleanly, and a click while it closes no longer shows a ".NET" error
+
+### Fixed
+- **Clicking the tray icon right after starting an update no longer shows a ".NET" error dialog.** With
+  notification forwarding on, the tray never finished closing: it waited for the notification poller on the
+  very thread that poller needed to stop, so it hung with its icon still showing until the update installer
+  killed it. A click on that icon meanwhile tried to reopen the Homebase window the shutdown had already
+  closed, and WinForms answered with its own error dialog (Continue / Quit). The tray now takes its icon down
+  first, no longer waits for the poller, and ignores clicks once it is closing.
+- The same hang affected **종료 (Exit)** in the tray menu and **"지금 다시 시작" (Restart now)** after turning
+  notification forwarding off: the old tray stayed, frozen, and the restarted one quit at once because the old
+  one was still there. Both now close the tray as they should.
+
+### Diagnostics
+- An error that nothing handled is now written to tray.log. One from a tray icon or menu click is logged and
+  the tray keeps running, instead of showing WinForms' error dialog.
+
 ## v0.41.0 — The phone app updates itself while you're not using it
 
 ### Added

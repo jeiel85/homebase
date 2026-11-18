@@ -84,6 +84,7 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+        LogUnhandledErrors();
         ApplyLanguage();
         _trayIcon = new TrayIconManager();
 
@@ -116,6 +117,22 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// Errors nothing caught go to tray.log. One thrown by a tray icon or menu click (WinForms) used to
+    /// show WinForms' own ".NET" error dialog (Continue / Quit) and leave no trace; it is now logged and
+    /// the tray carries on, as Continue did. A WPF or background error still ends the tray, as before,
+    /// but says why first.
+    /// </summary>
+    private void LogUnhandledErrors()
+    {
+        System.Windows.Forms.Application.ThreadException += (_, args) =>
+            TrayLog.Warn("App", "Unhandled error in a tray icon or menu action (the tray keeps running)", args.Exception);
+        DispatcherUnhandledException += (_, args) =>
+            TrayLog.Warn("App", "Unhandled error on the UI thread; the tray closes", args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            TrayLog.Warn("App", "Unhandled error; the tray closes", args.ExceptionObject as Exception);
+    }
+
     private static string? ArgAfter(string[] args, string name)
     {
         var i = Array.IndexOf(args, name);
@@ -124,9 +141,11 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // The tray icon goes first: Windows delivers clicks on a visible icon even while the services
+        // below stop, and such a click reached a Homebase window already closed by the shutdown.
+        _trayIcon?.Dispose();
         Services.Mobile.MobileHost.Stop();
         _forwardingHost?.Dispose();
-        _trayIcon?.Dispose();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }
