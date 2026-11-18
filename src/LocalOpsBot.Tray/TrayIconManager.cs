@@ -82,7 +82,11 @@ public sealed class TrayIconManager : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
         var exitItem = new ToolStripMenuItem(L.MenuExit);
-        exitItem.Click += (_, _) => Application.Current.Shutdown();
+        exitItem.Click += (_, _) =>
+        {
+            App.IsShuttingDown = true;
+            Application.Current.Shutdown();
+        };
         menu.Items.Add(exitItem);
 
         _trayIcon.ContextMenuStrip = menu;
@@ -172,8 +176,15 @@ public sealed class TrayIconManager : IDisposable
 
     private DashboardWindow Dashboard() => _popup ??= new DashboardWindow(_updates);
 
+    /// <summary>
+    /// The tray is closing (update, restart, Exit): a click must not open windows, which the shutdown
+    /// has closed or will close — showing the closed Homebase window threw, as WinForms' ".NET" dialog.
+    /// </summary>
+    private bool Closing => _disposed || App.IsShuttingDown;
+
     private void TogglePopup()
     {
+        if (Closing) return;
         var popup = Dashboard();
         // Toggle only when it is already the foreground window; if it is hidden OR just behind
         // another window, bring it to the front instead of hiding it, so a tray click always
@@ -183,10 +194,14 @@ public sealed class TrayIconManager : IDisposable
         else popup.ShowNearTray();
     }
 
-    private void ShowPopup() => Dashboard().BringForward();
+    private void ShowPopup()
+    {
+        if (!Closing) Dashboard().BringForward();
+    }
 
     private void ShowSettings(SettingsTab area)
     {
+        if (Closing) return;
         var popup = Dashboard();
         popup.ShowTab(DashTab.Settings, area);
         popup.BringForward();
@@ -194,6 +209,7 @@ public sealed class TrayIconManager : IDisposable
 
     private void ShowNotificationCenter()
     {
+        if (Closing) return;
         var popup = Dashboard();
         popup.ShowTab(DashTab.Notifications);
         popup.BringForward();
@@ -201,6 +217,7 @@ public sealed class TrayIconManager : IDisposable
 
     private void ShowOnboarding()
     {
+        if (Closing) return;
         if (_onboarding is { IsVisible: true })
         {
             _onboarding.Activate();
