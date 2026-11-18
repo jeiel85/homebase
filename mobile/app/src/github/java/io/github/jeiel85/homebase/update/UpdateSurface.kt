@@ -1,6 +1,5 @@
 package io.github.jeiel85.homebase.update
 
-import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -32,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,16 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.jeiel85.homebase.BuildConfig
-import io.github.jeiel85.homebase.push.PushHistoryRules
-import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.ui.SettingsSwitchRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
 
 /**
  * GitHub(사이드로드) 빌드가 얻는 이음매. `src/play/java`의 같은 이름 파일과 **배타적으로**
@@ -60,8 +52,8 @@ import java.util.concurrent.TimeUnit
  */
 internal object UpdateSurface {
 
-    /** 이 빌드가 앱 안에서 업데이트를 확인·설치하는가. 설정 화면이 "업데이트" 섹션을 그릴지 정한다. */
-    const val IN_APP = true
+    /** 업데이트를 어디에 묻는가. 설정 → 정보의 "외부로 나가는 것" 문구가 쓴다. */
+    const val CHECK_SOURCE = "GitHub"
 
     /**
      * 백그라운드 업데이트 확인(DECISIONS M-22) 예약을 설정에 맞추고, 확인 없는 설치(M-56)가 화면에 떠 있는
@@ -93,15 +85,6 @@ internal object UpdateSurface {
         val preferences = remember(context) { UpdatePreferences(context) }
         var enabled by remember { mutableStateOf(preferences.isEnabled()) }
         var autoInstall by remember { mutableStateOf(preferences.isAutoInstallEnabled()) }
-        var canNotify by remember { mutableStateOf(PushNotifier.canNotify(context)) }
-        var askedPermission by rememberSaveable { mutableStateOf(false) }
-        val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-            canNotify = PushNotifier.canNotify(context)
-        }
-        // 알림 설정 화면에서 돌아오면 다시 읽는다.
-        val notificationSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            canNotify = PushNotifier.canNotify(context)
-        }
 
         Spacer(Modifier.height(12.dp))
         SettingsSwitchRow(
@@ -119,31 +102,12 @@ internal object UpdateSurface {
         if (enabled) {
             val lastChecked = remember { preferences.lastCheckedAt() }
             Text(
-                text = lastCheckLine(lastChecked, System.currentTimeMillis()),
+                text = lastUpdateCheckLine(lastChecked, System.currentTimeMillis()),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
-        }
-        // 알림 권한이 없으면 확인은 돌아도 알림이 뜨지 않는다(목록 위 배너만 남는다). 그 사실을
-        // 이 자리에서 말하고 고칠 길을 준다. 처음엔 권한을 묻고, 이미 거부돼 다시 물을 수 없으면
-        // (두 번째 누름) 앱 알림 설정을 연다.
-        if (enabled && !canNotify) {
-            TextButton(
-                onClick = {
-                    if (Build.VERSION.SDK_INT >= 33 && !askedPermission) {
-                        askedPermission = true
-                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else {
-                        notificationSettings.launch(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-                        )
-                    }
-                },
-            ) {
-                Text("알림이 꺼져 있어 새 버전을 알림으로 받지 못합니다 — 허용하기")
-            }
+            UpdateNotificationPermissionRow()
         }
         // 확인 없는 설치(DECISIONS M-56). 확인을 끄면 받을 새 버전도 모르므로 함께 숨긴다.
         if (enabled) {
@@ -164,25 +128,6 @@ internal object UpdateSurface {
             )
         }
     }
-
-    /**
-     * "마지막 확인: 오늘 14:05". 성공한 확인만 기록된다([UpdatePreferences.lastCheckedAt]). 하루 1회
-     * 확인이 며칠째 없으면 그 이유일 수 있는 것을 덧붙인다.
-     */
-    private fun lastCheckLine(at: Long, now: Long): String {
-        if (at <= 0L) return "마지막 확인: 아직 없음"
-        val zone = ZoneId.systemDefault()
-        val time = DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(at).atZone(zone))
-        val line = "마지막 확인: ${PushHistoryRules.dayLabel(at, now, zone)} $time"
-        return if (now - at > STALE_CHECK_MILLIS) {
-            "$line · 며칠째 확인하지 못했습니다. 배터리 최적화가 백그라운드 확인을 막고 있을 수 있습니다."
-        } else {
-            line
-        }
-    }
-
-    /** 하루 1회 확인이 이만큼 없으면 "막혀 있을 수 있다"고 덧붙인다(잡 주기 12시간, 최악 36시간의 두 배). */
-    private val STALE_CHECK_MILLIS = TimeUnit.DAYS.toMillis(3)
 
     /**
      * 노트 목록 위의 한 줄짜리 알림. 새 버전이 없으면 **아무것도 그리지 않는다.**
