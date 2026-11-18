@@ -5,7 +5,7 @@ Homebase 앱은 배포 채널마다 따로 빌드합니다(DECISIONS M-33).
 | 채널 | Gradle flavor | 산출물 | 서명 | 업데이트 |
 |---|---|---|---|---|
 | GitHub Releases | `github` | `Homebase-Mobile.apk` (CI `release.yml`) | 릴리스 키 `homebase-release.jks` (M-12) | 앱 안 업데이터(하루 한 번 확인) |
-| Google Play | `play` | `app-play-release.aab` (관리자 PC) | Play 업로드 키 `homebase-play-upload.jks` → Play가 앱 서명 키로 다시 서명 | Play 스토어 |
+| Google Play | `play` | `app-play-release.aab` (관리자 PC) | Play 업로드 키 `homebase-play-upload.jks` → Play가 앱 서명 키로 다시 서명 | Play 스토어가 설치. 앱은 Play In-App Updates API로 새 버전이 있는지만 확인해 알리고 스토어 페이지를 연다(M-57) |
 
 두 채널은 패키지 이름(`io.github.jeiel85.homebase`)과 versionCode 규칙(M-4)이 같지만 서명이 달라 **서로 덮어 설치할 수 없습니다.**
 채널을 바꾸려면 앱을 지우고 다시 설치한 뒤 PC를 다시 연결해야 합니다.

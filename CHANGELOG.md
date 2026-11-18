@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.42.0 — The Play build tells you when a new version is out
+
+### Added
+- Phone (Google Play build): **a new version on Google Play is announced.** The app asks Google Play whether
+  a newer version is out for you (twice a day, when you open the app after six hours, and when you pull the
+  PC list down). When one is, a banner above the PC list and a notification (once per version) say
+  "새 버전 X이 있습니다" (Version X is available); tapping either opens Homebase's page in the Play Store,
+  which installs it. Turn it off in 설정 → 업데이트 → "새 버전 알림" (New version notifications)
+  (DECISIONS M-57). The Play build still downloads and installs nothing itself.
+
+### Known limits
+- Google Play can report a new version a few hours after it is published, and if the Play Store has already
+  updated the app on its own, the notification may arrive after the fact (it clears the next time the app
+  opens). A copy not installed from Google Play (for example a sideloaded test build) only says that it can
+  check for updates when installed from the Play Store.
+
 ## v0.41.0 — The phone app updates itself while you're not using it
 
 ### Added
