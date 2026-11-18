@@ -45,6 +45,21 @@ internal object UpdateRefresh {
         return manifest.takeIf { shouldOffer(it, preferences, installedVersionCode, deviceSdk) }
     }
 
+    /**
+     * 네트워크 없이, 마지막으로 받아 둔 `update.json`만으로 지금 알릴 버전을 고른다. 확인 없는 설치가
+     * 끝내 알림으로 돌아갈 때([UpdateInstallReceiver]) 쓴다 — 방금 확인한 결과이고, 리시버에서 GET을
+     * 기다릴 시간이 없다.
+     */
+    fun offeredFromCache(
+        preferences: UpdateStore,
+        installedVersionCode: Int = BuildConfig.VERSION_CODE,
+        deviceSdk: Int = Build.VERSION.SDK_INT,
+    ): UpdateManifest? {
+        if (!preferences.isEnabled()) return null
+        val manifest = preferences.cachedManifest()?.let(UpdateManifestParser::parse) ?: return null
+        return manifest.takeIf { shouldOffer(it, preferences, installedVersionCode, deviceSdk) }
+    }
+
     /** 사용자가 직접 요청한 확인([runNow])의 결과. 화면이 무엇을 말할지 고르는 데 쓴다. */
     sealed interface ManualResult {
         data class Offer(val manifest: UpdateManifest) : ManualResult

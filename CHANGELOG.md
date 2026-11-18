@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.41.0 — The phone app updates itself while you're not using it
+
+### Added
+- Phone (GitHub build): **new versions install themselves while the app is out of sight.** When the daily
+  check finds a new version and no Homebase screen is open, the app downloads it, checks its SHA-256, and
+  installs it without asking (Android 12+); a quiet notification then says "Homebase X(으)로
+  업데이트했습니다" (Updated to X). Turn it off in 설정 → "새 버전 자동 설치" (Install new versions
+  automatically) to keep the previous behavior: a notification, and installing when you tap (DECISIONS M-56).
+  Updates you start from the open app still go through Android's install screen, as before.
+
+### Known limits
+- **Confirm once more.** Installing this version, and — if you installed the app from a browser or file
+  manager — the first update after it, still ask for confirmation; after that, updates are silent. When
+  Android asks, the app does not pop up an install screen on its own: you get the usual "new version"
+  notification instead.
+- Android 11 and older always ask; the app keeps notifying there. The Play build is updated by Google Play
+  and has none of this.
+
 ## v0.40.0 — Hardening: updates, AI-session alerts, approvals and the phone's notification stack
 
 ### Fixed

@@ -1,6 +1,7 @@
 package io.github.jeiel85.homebase.update
 
 import android.Manifest
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -49,7 +50,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * GitHub(사이드로드) 빌드가 얻는 이음매. `src/play/java`의 같은 이름 파일과 **배타적으로**
@@ -63,8 +63,14 @@ internal object UpdateSurface {
     /** 이 빌드가 앱 안에서 업데이트를 확인·설치하는가. 설정 화면이 "업데이트" 섹션을 그릴지 정한다. */
     const val IN_APP = true
 
-    /** 백그라운드 업데이트 확인(DECISIONS M-22) 예약을 설정에 맞춘다. 앱이 열릴 때마다 부른다. */
-    fun sync(context: Context) = UpdateCheckScheduler.sync(context)
+    /**
+     * 백그라운드 업데이트 확인(DECISIONS M-22) 예약을 설정에 맞추고, 확인 없는 설치(M-56)가 화면에 떠 있는
+     * 앱을 교체하지 않도록 화면 표시를 세기 시작한다. 앱이 열릴 때마다(MainActivity.onCreate) 부른다.
+     */
+    fun sync(context: Context) {
+        (context.applicationContext as? Application)?.let(AppVisibility::register)
+        UpdateCheckScheduler.sync(context)
+    }
 
     /** 업데이트 알림을 눌러 앱이 열렸는가. */
     fun isUpdateTap(intent: Intent?): Boolean =
@@ -86,6 +92,7 @@ internal object UpdateSurface {
         val context = LocalContext.current
         val preferences = remember(context) { UpdatePreferences(context) }
         var enabled by remember { mutableStateOf(preferences.isEnabled()) }
+        var autoInstall by remember { mutableStateOf(preferences.isAutoInstallEnabled()) }
         var canNotify by remember { mutableStateOf(PushNotifier.canNotify(context)) }
         var askedPermission by rememberSaveable { mutableStateOf(false) }
         val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -100,7 +107,7 @@ internal object UpdateSurface {
         SettingsSwitchRow(
             title = "업데이트 확인",
             titleModifier = titleModifier,
-            description = "하루 한 번 GitHub Releases에서 새 버전을 확인하고, 새 버전이 나오면 알림으로 한 번 알립니다. 설치는 내가 누를 때만 진행되고, 받은 APK는 SHA-256을 대조한 뒤 Android 설치 화면으로 넘깁니다.",
+            description = "하루 한 번 GitHub Releases에서 새 버전을 확인합니다. 받은 APK는 SHA-256을 대조하고, Android가 같은 서명인지 확인한 뒤에만 설치됩니다.",
             checked = enabled,
             onCheckedChange = { checked ->
                 preferences.setEnabled(checked)
@@ -137,6 +144,24 @@ internal object UpdateSurface {
             ) {
                 Text("알림이 꺼져 있어 새 버전을 알림으로 받지 못합니다 — 허용하기")
             }
+        }
+        // 확인 없는 설치(DECISIONS M-56). 확인을 끄면 받을 새 버전도 모르므로 함께 숨긴다.
+        if (enabled) {
+            SettingsSwitchRow(
+                title = "새 버전 자동 설치",
+                description = if (Build.VERSION.SDK_INT >= UpdateDecision.SILENT_INSTALL_MIN_SDK) {
+                    "앱을 쓰지 않는 동안 새 버전을 받아 확인 없이 설치하고, 설치한 뒤 알림으로 알립니다. " +
+                        "처음 한 번은 Android가 설치 확인을 물을 수 있습니다 — 그때는 알림을 눌러 설치하세요. " +
+                        "끄면 새 버전을 알림으로만 알리고, 설치는 내가 누를 때 진행됩니다."
+                } else {
+                    "이 휴대폰의 Android(12 미만)는 확인 없는 설치를 지원하지 않아, 새 버전을 알림으로 알립니다."
+                },
+                checked = autoInstall,
+                onCheckedChange = { checked ->
+                    preferences.setAutoInstallEnabled(checked)
+                    autoInstall = checked
+                },
+            )
         }
     }
 
@@ -191,7 +216,7 @@ internal object UpdateSurface {
                 // 설치 앱은 뜨자마자 파일을 자기 쪽으로 복사하므로, 사용자가 이 화면으로 다시
                 // 돌아올 무렵에는 이미 다 읽은 뒤다. 내려받는 중이면 그 파일이므로 건드리지 않는다.
                 if (!downloadInProgress.get()) {
-                    UpdateInstaller.deleteLeftovers(File(context.cacheDir, DOWNLOAD_DIR))
+                    UpdateInstaller.deleteLeftovers(UpdateDownloads.dir(context))
                 }
                 UpdateRefresh.run(preferences)
             }
@@ -307,10 +332,9 @@ internal object UpdateSurface {
     private enum class DownloadFlowState { Offer, WrongSigner, NeedsInstallPermission, Downloading, Failed }
 
     // 프로세스 전체에서 하나만 도는 다운로드/설치를 보장하는 재진입 가드. `UpdateDialog`가
-    // 닫혔다 다시 열려도(이론상으로도) 같은 캐시 파일 경로(`DOWNLOAD_FILE_NAME`)를 두 흐름이
-    // 동시에 쓰는 경합이 생기지 않게 한다 — 아래 `canDismiss`가 애초에 그 경로를 차단하지만,
-    // 이 가드는 그 차단에 기대지 않는 두 번째 방어선이다.
-    private val downloadInProgress = AtomicBoolean(false)
+    // 닫혔다 다시 열리거나 백그라운드 설치([SilentInstaller])가 받는 중이어도 같은 캐시 파일
+    // 경로를 두 흐름이 동시에 쓰는 경합이 생기지 않게 한다.
+    private val downloadInProgress get() = UpdateDownloads.inProgress
 
     /**
      * [startNow]: 열리자마자 받기를 시작한다 — 설치 권한을 주고 돌아왔는데 앱이 다시 시작돼
@@ -375,7 +399,7 @@ internal object UpdateSurface {
             if (downloadEpoch == 0) return@LaunchedEffect
             try {
                 val destination =
-                    File(File(context.cacheDir, DOWNLOAD_DIR).apply { mkdirs() }, DOWNLOAD_FILE_NAME)
+                    File(UpdateDownloads.dir(context).apply { mkdirs() }, UpdateDownloads.FILE_NAME)
                 val downloaded = withContext(Dispatchers.IO) {
                     UpdateDownloader().download(manifest.apkUrl, destination, manifest.sha256)
                 }
@@ -516,10 +540,4 @@ internal object UpdateSurface {
     private fun Context.open(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
-
-    // 외부 저장소 권한을 피하려고 앱 캐시에 받는다(`docs/UPDATE_STRATEGY_EVALUATION.md`
-    // "C단계 구현 세부"). 하위 디렉터리로 묶어 두는 것은 정리를 위해서일 뿐, 특별 취급이
-    // 필요해서가 아니다 — Android가 캐시를 통째로 비울 때 이 폴더도 다른 캐시와 똑같이 지워진다.
-    private const val DOWNLOAD_DIR = "updates"
-    private const val DOWNLOAD_FILE_NAME = "update.apk"
 }

@@ -146,4 +146,41 @@ internal object UpdateDecision {
         updateSignerSha256.isBlank() ||
             installedSignerSha256.isEmpty() ||
             installedSignerSha256.any { it.equals(updateSignerSha256, ignoreCase = true) }
+
+    /** 확인 없는 설치(API 31 `USER_ACTION_NOT_REQUIRED`)가 생긴 Android 12. 그 아래는 늘 확인을 묻는다. */
+    const val SILENT_INSTALL_MIN_SDK = 31
+
+    /** 한 버전에 확인 없는 설치를 시도하는 최대 횟수. 그 뒤로는 알림으로만 알린다. */
+    const val MAX_SILENT_ATTEMPTS = 3
+
+    /**
+     * Input : 백그라운드 확인이 알릴 만하다고 본 versionCode와 그때의 상태 — "새 버전 자동 설치" 설정,
+     *         기기 SDK, 앱 화면이 보이는지, 이 설치본이 릴리스 키로 서명됐는지([canUpdateInPlace]),
+     *         '알 수 없는 앱 설치' 권한, 시스템이 확인을 요구했던 versionCode, 그 버전에 실패한 횟수
+     * Output: 알림 대신 받아서 확인 없이 설치를 시도할지 (DECISIONS M-56)
+     *
+     * 핵심 로직: 화면에 앱이 떠 있으면 하지 않는다 — 설치가 끝나면 이 앱 프로세스가 교체되며 쓰던
+     * 화면이 말없이 닫힌다(그때는 지금처럼 배너와 "업데이트" 버튼). 시스템이 확인을 요구한 버전
+     * (처음 자체 업데이트, 다른 설치자가 설치한 앱)과 여러 번 실패한 버전은 다시 받지 않는다 —
+     * 받을 때마다 몇 MB를 쓰고도 결국 알림으로 끝나기 때문이다. 권한이 없으면 세션이 확인을 물을
+     * 것이 뻔하므로 받지 않는다.
+     */
+    fun shouldInstallSilently(
+        autoInstall: Boolean,
+        deviceSdk: Int,
+        appVisible: Boolean,
+        canUpdateInPlace: Boolean,
+        canRequestInstalls: Boolean,
+        offeredVersionCode: Int,
+        needsConfirmVersionCode: Int,
+        failedVersionCode: Int,
+        failedAttempts: Int,
+    ): Boolean =
+        autoInstall &&
+            deviceSdk >= SILENT_INSTALL_MIN_SDK &&
+            !appVisible &&
+            canUpdateInPlace &&
+            canRequestInstalls &&
+            offeredVersionCode != needsConfirmVersionCode &&
+            !(offeredVersionCode == failedVersionCode && failedAttempts >= MAX_SILENT_ATTEMPTS)
 }

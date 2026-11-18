@@ -161,6 +161,65 @@ class UpdateDecisionTest {
         assertTrue(UpdateDecision.canUpdateInPlace(listOf("ab".repeat(32)), ""))
     }
 
+    @Test
+    fun shouldInstallSilently_installsWhileTheAppIsOutOfSight() {
+        assertTrue(silent())
+    }
+
+    @Test
+    fun shouldInstallSilently_neverReplacesAnAppOnScreen() {
+        // 설치가 끝나면 프로세스가 교체되며 쓰던 화면이 말없이 닫힌다 — 그때는 배너와 버튼이 맡는다.
+        assertFalse(silent(visible = true))
+    }
+
+    @Test
+    fun shouldInstallSilently_followsTheSettingAndWhatTheSystemAllows() {
+        assertFalse(silent(auto = false))
+        // Android 11 이하에는 확인 없는 설치가 없다.
+        assertFalse(silent(sdk = 30))
+        assertTrue(silent(sdk = UpdateDecision.SILENT_INSTALL_MIN_SDK))
+        // 디버그 키 설치본은 릴리스 APK로 덮어 설치할 수 없다.
+        assertFalse(silent(inPlace = false))
+        // '알 수 없는 앱 설치' 권한이 없으면 세션이 확인을 묻는다 — 받지 않는다.
+        assertFalse(silent(canInstall = false))
+    }
+
+    @Test
+    fun shouldInstallSilently_doesNotDownloadAgainWhatTheSystemWantsConfirmed() {
+        assertFalse(silent(needsConfirm = 1800))
+        // 확인을 요구받은 것은 지난 버전이다 — 이번 버전은 (그 확인으로 설치자가 바뀌었을 수 있으니) 다시 해 본다.
+        assertTrue(silent(needsConfirm = 1700))
+    }
+
+    @Test
+    fun shouldInstallSilently_givesUpOnAVersionAfterRepeatedFailures() {
+        assertTrue(silent(failedVersion = 1800, failures = UpdateDecision.MAX_SILENT_ATTEMPTS - 1))
+        assertFalse(silent(failedVersion = 1800, failures = UpdateDecision.MAX_SILENT_ATTEMPTS))
+        // 실패 횟수는 그 버전의 것이다 — 다음 버전은 처음부터.
+        assertTrue(silent(failedVersion = 1700, failures = UpdateDecision.MAX_SILENT_ATTEMPTS))
+    }
+
+    private fun silent(
+        auto: Boolean = true,
+        sdk: Int = 34,
+        visible: Boolean = false,
+        inPlace: Boolean = true,
+        canInstall: Boolean = true,
+        needsConfirm: Int = 0,
+        failedVersion: Int = 0,
+        failures: Int = 0,
+    ) = UpdateDecision.shouldInstallSilently(
+        autoInstall = auto,
+        deviceSdk = sdk,
+        appVisible = visible,
+        canUpdateInPlace = inPlace,
+        canRequestInstalls = canInstall,
+        offeredVersionCode = 1800,
+        needsConfirmVersionCode = needsConfirm,
+        failedVersionCode = failedVersion,
+        failedAttempts = failures,
+    )
+
     private fun post(
         stopped: Boolean = false,
         enabled: Boolean = true,
