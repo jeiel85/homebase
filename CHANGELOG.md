@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.42.1 — The tray closes cleanly, and a click while it closes no longer shows a ".NET" error
+## v0.42.2 — The tray closes cleanly, and a click while it closes no longer shows a ".NET" error
 
 ### Fixed
 - **Clicking the tray icon right after starting an update no longer shows a ".NET" error dialog.** With
@@ -16,6 +16,32 @@
 ### Diagnostics
 - An error that nothing handled is now written to tray.log. One from a tray icon or menu click is logged and
   the tray keeps running, instead of showing WinForms' error dialog.
+
+## v0.42.1 — Security fixes from an audit
+
+### Security
+- PC: **an update is installed only after it was verified, and only what was verified.** A release
+  without its published SHA-256 (`Homebase-Setup.zip.sha256`) used to install unchecked; it is now
+  refused. And the administrator step no longer runs a script from, or extracts the package in, your
+  user `%TEMP%` (which any program running as you can change between the check and the install): the
+  script is passed inline, the package is copied into a folder only SYSTEM and Administrators can open,
+  its SHA-256 is checked again there, and it is extracted there. Windows PowerShell is started by its
+  full path.
+- PC: **saving settings applies exactly what Homebase wrote.** The settings were staged in `%TEMP%` and
+  copied by an administrator script that was also kept there, so a program running as you could change
+  either in the meantime — for instance to make the service (SYSTEM) start a program of its choosing as
+  cloudflared. The administrator step now checks the staged settings' SHA-256, writes those bytes as a
+  new file, and runs from its command line. Telegram setup also starts Windows PowerShell by full path.
+- PC: **standard users can no longer create files in `C:\ProgramData\Homebase`**, where the service reads
+  its settings (only read; the tray still writes its own log in `logs\`). The service applies this when it
+  starts and removes links planted there; the installer applies it too, moves aside a settings file that
+  no administrator created, and limits an install folder chosen outside Program Files to
+  administrators (users read and run).
+- PC: **a linked PC can no longer answer Claude Code approvals or register for push notifications** on
+  another PC. Only phones did either; a PC's token doing it could have received approval prompts and
+  answered "Allow" for you.
+- PC: **linking refuses a PC that answers with another PC's id.** Before, an address handed over in a
+  group introduction could pose as an already linked PC and have its real link dropped.
 
 ## v0.42.0 — The Play build tells you when a new version is out
 

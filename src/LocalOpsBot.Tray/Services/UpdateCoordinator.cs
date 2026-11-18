@@ -190,7 +190,7 @@ internal sealed class UpdateCoordinator
         window.Activate();
         try
         {
-            string zip;
+            DownloadedUpdate zip;
             try
             {
                 status?.Report(L.UpdDownloadingShort);

@@ -49,12 +49,13 @@ public sealed class UpdateServiceTests
         handler.QueueContent(HttpStatusCode.OK, new StringContent(hash));
 
         var info = new UpdateInfo(new Version(99, 0, 0), "http://x/setup.zip", "http://x/setup.sha", "", DateTimeOffset.Now);
-        var path = await CreateService(handler).DownloadUpdateAsync(info, null, CancellationToken.None);
+        var (path, sha256) = await CreateService(handler).DownloadUpdateAsync(info, null, CancellationToken.None);
 
         try
         {
             Assert.True(File.Exists(path));
             Assert.Equal(payload, await File.ReadAllBytesAsync(path));
+            Assert.Equal(hash, sha256);
         }
         finally
         {
@@ -79,24 +80,76 @@ public sealed class UpdateServiceTests
         Assert.Equal(UpdateCheckErrorKind.Integrity, ex.Kind);
     }
 
+    // An unverifiable package is never installed. This used to skip verification and install it.
     [Fact]
-    public async Task Download_NoChecksumUrl_SkipsVerification()
+    public async Task Download_NoChecksumUrl_ThrowsIntegrity_WithoutDownloading()
     {
-        var payload = Encoding.UTF8.GetBytes("fake-zip-content");
-
         var handler = new FakeHttpMessageHandler();
-        handler.QueueContent(HttpStatusCode.OK, new ByteArrayContent(payload));
-
         var info = new UpdateInfo(new Version(99, 0, 0), "http://x/setup.zip", null, "", DateTimeOffset.Now);
-        var path = await CreateService(handler).DownloadUpdateAsync(info, null, CancellationToken.None);
 
-        try
-        {
-            Assert.True(File.Exists(path));
-        }
-        finally
-        {
-            if (File.Exists(path)) File.Delete(path);
-        }
+        var ex = await Assert.ThrowsAsync<UpdateCheckException>(() =>
+            CreateService(handler).DownloadUpdateAsync(info, null, CancellationToken.None));
+
+        Assert.Equal(UpdateCheckErrorKind.Integrity, ex.Kind);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Download_ChecksumNotADigest_ThrowsIntegrity()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.QueueContent(HttpStatusCode.OK, new ByteArrayContent(Encoding.UTF8.GetBytes("fake-zip-content")));
+        handler.QueueContent(HttpStatusCode.OK, new StringContent("<html>not found</html>"));
+        var info = new UpdateInfo(new Version(99, 0, 0), "http://x/setup.zip", "http://x/setup.sha", "", DateTimeOffset.Now);
+
+        var ex = await Assert.ThrowsAsync<UpdateCheckException>(() =>
+            CreateService(handler).DownloadUpdateAsync(info, null, CancellationToken.None));
+
+        Assert.Equal(UpdateCheckErrorKind.Integrity, ex.Kind);
+    }
+
+    private const string Digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    [Fact]
+    public void ApplyScript_RechecksTheHashOnAPrivateCopy_BeforeExtracting()
+    {
+        var script = UpdateService.BuildApplyScript(
+            new DownloadedUpdate(@"C:\Users\u\AppData\Local\Temp\a.zip", Digest.ToUpperInvariant()));
+
+        Assert.Contains($"$expectedSha256 = '{Digest}'", script);
+        var privateDir = script.IndexOf("New-PrivateDirectory $work", StringComparison.Ordinal);
+        var copy = script.IndexOf("Copy-Item -LiteralPath $zip -Destination $package", StringComparison.Ordinal);
+        var hashCheck = script.IndexOf("Get-FileHash -LiteralPath $package", StringComparison.Ordinal);
+        var extract = script.IndexOf("Expand-Archive -LiteralPath $package", StringComparison.Ordinal);
+        Assert.True(privateDir > 0 && privateDir < copy && copy < hashCheck && hashCheck < extract);
+        // Nothing is extracted into, or run from, the user-writable %TEMP%.
+        Assert.DoesNotContain("GetTempPath", script);
+    }
+
+    [Fact]
+    public void ApplyScript_QuotesThePathAsALiteral()
+    {
+        var script = UpdateService.BuildApplyScript(new DownloadedUpdate(@"C:\Users\O'Brien\x'; calc; '.zip", Digest));
+
+        Assert.Contains(@"$zip = 'C:\Users\O''Brien\x''; calc; ''.zip'", script);
+    }
+
+    [Theory]
+    [InlineData(@"C:\a.zip", "nothex")]
+    [InlineData(@"C:\a.zip", "0123")]
+    [InlineData("C:\\a\r\n.zip", Digest)]
+    public void ApplyScript_RejectsBadInput(string path, string sha256) =>
+        Assert.Throws<ArgumentException>(() => UpdateService.BuildApplyScript(new DownloadedUpdate(path, sha256)));
+
+    [Fact]
+    public void ApplyStartInfo_RunsSystemPowerShellWithTheScriptInline()
+    {
+        var psi = UpdateService.BuildApplyStartInfo(new DownloadedUpdate(@"C:\a.zip", Digest), elevate: true);
+
+        Assert.Equal(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), psi.FileName);
+        Assert.Equal("runas", psi.Verb);
+        Assert.Contains("-NoProfile", psi.Arguments);
+        Assert.Contains("-EncodedCommand ", psi.Arguments);
+        Assert.DoesNotContain("-File", psi.Arguments);
     }
 }

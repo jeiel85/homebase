@@ -343,11 +343,17 @@ public class ClaudeApprovalTests
         var paired = JsonSerializer.Deserialize<PairResponse>((await api.HandleRestAsync(Req("POST", "/api/v1/pair"),
             Body(new PairRequest(code, "S24", null)), CancellationToken.None)).Json, MobileProtocol.Json)!;
 
+        var (pcCode, _) = pairing.Begin();
+        var linkedPc = pairing.TryPair(pcCode, "OTHER-PC", "Windows", DeviceKind.Pc).Token!;
+
         var r = Request(DateTimeOffset.UtcNow);
         var ask = broker.AskAsync(r, CancellationToken.None);
         await router.Delivered.Task;
 
         Assert.Equal(401, (await api.HandleRestAsync(Req("POST", "/api/v1/approval", "nope"),
+            Body(new ApprovalAnswer(1, r.Id, "allow")), CancellationToken.None)).Status);
+        // Allow runs the tool on this PC: a linked PC's token may not give it, even with the right id.
+        Assert.Equal(403, (await api.HandleRestAsync(Req("POST", "/api/v1/approval", linkedPc),
             Body(new ApprovalAnswer(1, r.Id, "allow")), CancellationToken.None)).Status);
         Assert.Equal(400, (await api.HandleRestAsync(Req("POST", "/api/v1/approval", paired.Token),
             Encoding.UTF8.GetBytes("{bad"), CancellationToken.None)).Status);

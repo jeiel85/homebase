@@ -86,7 +86,7 @@ internal sealed class NotificationForwardingHost : IDisposable
         {
             // Ask the poll loop to stop, but never wait for it: this runs on the UI thread (App.OnExit),
             // and the loop resumes on that same thread after each await (it is started there, where
-            // RequestAccessAsync must run). Waiting for it here could never end: until v0.42.0 every exit
+            // RequestAccessAsync must run). Waiting for it here could never end: until v0.42.1 every exit
             // with forwarding on hung here with the tray icon still showing, until the update installer
             // killed the process — and a click on that icon meanwhile hit a closed Homebase window.
             _ = _poller?.StopAsync(CancellationToken.None);

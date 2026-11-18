@@ -93,6 +93,26 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         Assert.Equal("removed", (await a.Group.JoinAsync(c.Api.CreateOffer(introduction: true)!, _cts.Token)).Error);
     }
 
+    // An endpoint whose PC answers with another pcId (say, of a PC already linked) must not take that
+    // PC's place: the real link would be dropped and our pairing there deleted.
+    [Fact]
+    public async Task An_offer_answered_by_a_different_pc_is_not_linked()
+    {
+        var a = await Node.StartAsync("pc-a", _cts.Token);
+        var b = await Node.StartAsync("pc-b", _cts.Token);
+        _nodes.AddRange(new[] { a, b });
+
+        var posing = a.Api.CreateOffer()! with { PcId = "pc-x", PcName = "PC-X" };
+        var result = await b.Links.LinkWithOfferAsync(posing, _cts.Token);
+
+        Assert.False(result.Linked);
+        Assert.Equal("mismatch", result.Error);
+        Assert.Null(b.Links.Hub("pc-a"));
+        Assert.Null(b.Links.Hub("pc-x"));
+        // The pairing it got on A is handed back rather than left behind.
+        await Until(() => a.Store.List().All(d => d.Kind != DeviceKind.Pc) ? "gone" : null, _cts.Token);
+    }
+
     [Fact]
     public async Task An_alias_set_on_a_tray_or_a_phone_reaches_every_member()
     {
