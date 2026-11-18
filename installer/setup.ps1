@@ -132,6 +132,45 @@ function Set-DataDirAcl($Path) {
     }
 }
 
+function Set-ProgramDataAcl($Root, $Logs) {
+    # Same rule the Agent applies at service start (ProgramDataAcl): ProgramData lets every user create
+    # files and folders, but the service (SYSTEM) reads its config here, so standard users only read —
+    # except logs\, where each user's Tray creates its own log file (files only, no folders).
+    & icacls.exe $Root /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX" /C /Q | Out-Null
+    $rootOk = $LASTEXITCODE -eq 0
+    & icacls.exe $Logs /grant "*S-1-5-32-545:(WD,WA,WEA)" "*S-1-3-0:(OI)(IO)F" /C /Q | Out-Null
+    if ($rootOk -and $LASTEXITCODE -eq 0) {
+        Write-Ok "Homebase's ProgramData folder limited to SYSTEM and Administrators (users read)"
+    } else {
+        Write-Warn "Could not limit access to $Root (icacls exit code $LASTEXITCODE); the service retries at start."
+    }
+}
+
+function Set-InstallDirAcl($Path) {
+    # The service runs $Path\Agent\Homebase.Agent.exe as SYSTEM. Under Program Files the folder already
+    # inherits "users read"; a folder picked elsewhere (D:\Homebase) inherits the drive root's ACL,
+    # which on most drives lets every user change files — and so replace what SYSTEM runs.
+    $pf = [Environment]::GetFolderPath('ProgramFiles').TrimEnd('\') + '\'
+    if ((Join-Path $Path '').StartsWith($pf, [StringComparison]::OrdinalIgnoreCase)) { return }
+    & icacls.exe $Path /setowner "*S-1-5-32-544" /T /C /Q | Out-Null
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX" /T /C /Q | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "Install folder limited to SYSTEM and Administrators (users read and run)"
+    } else {
+        Write-Warn "Could not limit access to $Path (icacls exit code $LASTEXITCODE). Standard users may be able to change the service's files."
+    }
+}
+
+function Test-TrustedOwner($Path) {
+    # A config a standard user created before Homebase was installed stays theirs to change.
+    try { $sid = (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier]).Value }
+    catch { return $false }
+    if ($sid -in @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')) { return $true }
+    # Some PCs make the administrator's own account the owner of what it creates elevated.
+    try { return [bool](Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop | Where-Object { $_.SID.Value -eq $sid }) }
+    catch { return $true } # membership unreadable (domain-joined PCs): keep the user's config rather than lose it
+}
+
 function Test-BotToken($t) {
     return $t -match '^\d{6,10}:[A-Za-z0-9_-]{30,}$'
 }
@@ -289,7 +328,9 @@ Write-Step "Step 2/7: Creating directories"
     New-Item -ItemType Directory -Force -Path $_ | Out-Null
 }
 Write-Ok "Directories created"
+Set-ProgramDataAcl $ProgramData $LogDir
 Set-DataDirAcl $DataDir
+Set-InstallDirAcl $InstallRoot
 
 # --- Step 3: Copy binaries ---
 Write-Step "Step 3/7: Copying binaries"
@@ -309,6 +350,15 @@ if ($InstallDir) {
 
 # --- Step 4: Create config ---
 Write-Step "Step 4/7: Creating configuration"
+if ((Test-Path $ConfigFile) -and -not (Test-TrustedOwner $ConfigFile)) {
+    # Not created by an administrator or the service: whoever made it could have chosen what SYSTEM
+    # runs (cloudflared's path, say). Kept aside for reference, never used.
+    $aside = "$ConfigFile.untrusted-$(Get-Date -Format yyyyMMddHHmmss)"
+    Move-Item -LiteralPath $ConfigFile -Destination $aside -Force
+    & icacls.exe $aside /setowner "*S-1-5-32-544" /C /Q | Out-Null
+    & icacls.exe $aside /reset /C /Q | Out-Null
+    Write-Warn "Existing config was not created by an administrator; moved to $aside and starting fresh"
+}
 if (Test-Path $ConfigFile) {
     if ($SkipTelegram) {
         # Keep a prior onboarding-set config on reinstall; never prompt in this unattended path.

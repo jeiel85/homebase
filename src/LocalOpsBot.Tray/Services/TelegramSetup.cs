@@ -29,7 +29,7 @@ internal static class TelegramSetup
 
         try
         {
-            var psi = new ProcessStartInfo("powershell.exe",
+            var psi = new ProcessStartInfo(LocalOpsBot.Core.Updates.UpdateService.PowerShellPath,
                 $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
                 $"-File \"{script}\" -Token \"{token}\" -ChatId \"{chatId}\"")
             {

@@ -26,6 +26,9 @@ public sealed record UpdateInfo(
     string ReleaseNotes,
     DateTimeOffset PublishedAt);
 
+/// <summary>A downloaded package and the SHA-256 it was verified against (lowercase hex).</summary>
+public sealed record DownloadedUpdate(string Path, string Sha256);
+
 public sealed class UpdateService
 {
     private static readonly Version CurrentVersion = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 1, 0);
@@ -97,8 +100,13 @@ public sealed class UpdateService
         return latest;
     }
 
-    public async Task<string> DownloadUpdateAsync(UpdateInfo info, IProgress<int>? progress, CancellationToken ct)
+    public async Task<DownloadedUpdate> DownloadUpdateAsync(UpdateInfo info, IProgress<int>? progress, CancellationToken ct)
     {
+        // Fail closed before downloading anything: a package that cannot be verified is never installed.
+        if (string.IsNullOrEmpty(info.Sha256Url))
+            throw new UpdateCheckException(UpdateCheckErrorKind.Integrity,
+                "The release publishes no checksum (Homebase-Setup.zip.sha256); refusing to install an unverified package.");
+
         var tempDir = Path.Combine(Path.GetTempPath(), "Homebase_Update");
         Directory.CreateDirectory(tempDir);
         var tempFile = Path.Combine(tempDir, $"update_{Guid.NewGuid():N}.zip");
@@ -125,17 +133,15 @@ public sealed class UpdateService
             }
         }
 
-        await VerifyChecksumAsync(tempFile, info.Sha256Url, ct);
-        return tempFile;
+        var sha256 = await VerifyChecksumAsync(tempFile, info.Sha256Url, ct);
+        return new DownloadedUpdate(tempFile, sha256);
     }
 
-    // Verifies the downloaded file against the release's published .sha256 asset.
-    // Throws UpdateCheckException(Integrity) on mismatch and deletes the bad file.
-    private async Task VerifyChecksumAsync(string filePath, string? sha256Url, CancellationToken ct)
+    // Verifies the downloaded file against the release's published .sha256 asset and returns that
+    // digest. Throws UpdateCheckException(Integrity) on a missing, malformed or mismatching checksum
+    // and deletes the file.
+    private async Task<string> VerifyChecksumAsync(string filePath, string sha256Url, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(sha256Url))
-            return; // No checksum published — nothing to verify against.
-
         string expected;
         try
         {
@@ -146,7 +152,13 @@ public sealed class UpdateService
         }
         catch (HttpRequestException ex)
         {
+            TryDelete(filePath);
             throw new UpdateCheckException(UpdateCheckErrorKind.Integrity, $"Could not fetch checksum: {ex.Message}");
+        }
+        if (!IsSha256Hex(expected))
+        {
+            TryDelete(filePath);
+            throw new UpdateCheckException(UpdateCheckErrorKind.Integrity, "The published checksum is not a SHA-256 digest.");
         }
 
         string actual;
@@ -162,7 +174,10 @@ public sealed class UpdateService
             throw new UpdateCheckException(UpdateCheckErrorKind.Integrity,
                 $"Checksum mismatch — the download may be corrupt or tampered. Expected {expected}, got {actual}.");
         }
+        return expected.ToLowerInvariant();
     }
+
+    private static bool IsSha256Hex(string s) => s.Length == 64 && s.All(Uri.IsHexDigit);
 
     private static void TryDelete(string path)
     {
@@ -174,22 +189,76 @@ public sealed class UpdateService
     /// Applies a downloaded update package. Returns <c>true</c> once the elevated apply process is
     /// launched; <c>false</c> if the user declined the UAC prompt (nothing changed).
     /// </summary>
+    /// <param name="update">The package and the SHA-256 it was verified against at download.</param>
     /// <param name="elevate">
     /// Request UAC elevation. The tray runs non-elevated, so it must pass <c>true</c> — the apply
     /// script writes to <c>C:\Program Files</c> and stops/starts the Windows service, all of which
     /// need admin. The Agent already runs as LocalSystem, so it leaves this <c>false</c>.
     /// </param>
-    public bool ApplyUpdate(string zipPath, bool elevate = false)
+    /// <remarks>
+    /// The tray downloads into the user's %TEMP%, which every non-elevated process of that user can
+    /// write. So nothing the elevated step runs or installs is read from there after it was checked:
+    /// the script travels on the command line (<c>-EncodedCommand</c>, no .ps1 on disk), and it copies
+    /// the zip into a folder only SYSTEM and Administrators can open, checks the SHA-256 again on that
+    /// copy and extracts it there.
+    /// </remarks>
+    public bool ApplyUpdate(DownloadedUpdate update, bool elevate = false)
     {
-        // The update package is Homebase-Setup.zip, whose root contains Agent\ and
-        // Tray\ folders. Extract to a temp dir, then copy each component into place so
-        // both the service and the tray app get updated. Uses a non-interpolated verbatim
-        // string + Replace so PowerShell's own braces don't need doubling. The script
-        // logs to ProgramData\...\update.log and, on any failure, restarts the service so
-        // a botched update never leaves the monitor permanently down.
-        var script = @"$ErrorActionPreference = 'Stop'
+        var psi = BuildApplyStartInfo(update, elevate);
+        try
+        {
+            return Process.Start(psi) != null;
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // 1223 = ERROR_CANCELLED: the user dismissed the UAC prompt; nothing was changed.
+            return false;
+        }
+    }
+
+    /// <summary>Windows PowerShell by full path, so no folder on a user-writable PATH can stand in for it.</summary>
+    public static string PowerShellPath =>
+        Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+
+    public static ProcessStartInfo BuildApplyStartInfo(DownloadedUpdate update, bool elevate)
+    {
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(BuildApplyScript(update)));
+        var args = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand {encoded}";
+        return elevate
+            ? new ProcessStartInfo(PowerShellPath, args)
+            {
+                // Non-elevated caller (the tray): request UAC so the script can write Program Files
+                // and stop/start the service. Verb=runas requires UseShellExecute = true.
+                UseShellExecute = true,
+                Verb = "runas",
+                WindowStyle = ProcessWindowStyle.Hidden,
+            }
+            : new ProcessStartInfo(PowerShellPath, args)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            };
+    }
+
+    /// <summary>The PowerShell the apply step runs; pure, so tests pin its safety checks.</summary>
+    public static string BuildApplyScript(DownloadedUpdate update)
+    {
+        if (!IsSha256Hex(update.Sha256))
+            throw new ArgumentException("The verified SHA-256 is not a 64-digit hex digest.", nameof(update));
+        if (update.Path.IndexOfAny(['\r', '\n', '\0']) >= 0)
+            throw new ArgumentException("Invalid package path.", nameof(update));
+
+        // The update package is Homebase-Setup.zip, whose root contains Agent\ and Tray\ folders.
+        // Extract, then copy each component into place so both the service and the tray app get
+        // updated. A non-interpolated verbatim string + Replace keeps PowerShell's own braces as they
+        // are; the path goes into a single-quoted literal, so its quotes are doubled. The script logs
+        // to ProgramData\...\update.log and, on any failure, restarts the service so a botched update
+        // never leaves the monitor permanently down.
+        return @"$ErrorActionPreference = 'Stop'
 $zip = '__ZIP_PATH__'
-$extract = Join-Path ([System.IO.Path]::GetTempPath()) ('Homebase_Update_' + [Guid]::NewGuid().ToString('N'))
+$expectedSha256 = '__SHA256__'
+$work = Join-Path $env:ProgramData ('Homebase_Update_' + [Guid]::NewGuid().ToString('N'))
+$extract = Join-Path $work 'package'
 $agentDir = 'C:\Program Files\Homebase\Agent'
 $trayDir = 'C:\Program Files\Homebase\Tray'
 $serviceName = 'Homebase.Agent'
@@ -200,6 +269,20 @@ function Write-Log($m) {
     $line = ('{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $m)
     Write-Host $line
     try { Add-Content -Path $log -Value $line -ErrorAction SilentlyContinue } catch { }
+}
+
+# A folder only SYSTEM and Administrators can open, created with that ACL in one step so no
+# non-elevated process can put or change anything in it.
+function New-PrivateDirectory($path) {
+    if (Test-Path -LiteralPath $path) { throw ('Work folder already exists: ' + $path) }
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+            (New-Object System.Security.Principal.SecurityIdentifier($sid)), 'FullControl', $inherit, 'None', 'Allow')))
+    }
+    [System.IO.Directory]::CreateDirectory($path, $acl) | Out-Null
 }
 
 # Copy with retries: even after the processes exit, a binary can stay briefly locked (AV scan,
@@ -220,8 +303,17 @@ function Copy-WithRetry($src, $dest) {
 try { New-Item -ItemType Directory -Force -Path $logDir | Out-Null } catch { }
 
 try {
+    New-PrivateDirectory $work
+    $package = Join-Path $work 'Homebase-Setup.zip'
+    Copy-Item -LiteralPath $zip -Destination $package -Force
+    # Check the copy that gets installed, not the download the non-elevated side checked.
+    $actualSha256 = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        throw ('Update package changed after it was verified (SHA-256 ' + $actualSha256 + '); aborting.')
+    }
+
     Write-Log 'Extracting update package...'
-    Expand-Archive -Path $zip -DestinationPath $extract -Force
+    Expand-Archive -LiteralPath $package -DestinationPath $extract -Force
 
     $agentSrc = Join-Path $extract 'Agent'
     $traySrc  = Join-Path $extract 'Tray'
@@ -275,40 +367,10 @@ catch {
     exit 1
 }
 finally {
-    Remove-Item $zip -Force -ErrorAction SilentlyContinue
-    Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-".Replace("__ZIP_PATH__", zipPath);
-
-        var psFile = Path.Combine(Path.GetTempPath(), $"localops_update_{Guid.NewGuid():N}.ps1");
-        File.WriteAllText(psFile, script);
-
-        var args = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{psFile}\"";
-        var psi = elevate
-            ? new ProcessStartInfo("powershell.exe", args)
-            {
-                // Non-elevated caller (the tray): request UAC so the script can write Program Files
-                // and stop/start the service. Verb=runas requires UseShellExecute = true.
-                UseShellExecute = true,
-                Verb = "runas",
-                WindowStyle = ProcessWindowStyle.Hidden,
-            }
-            : new ProcessStartInfo("powershell.exe", args)
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-            };
-
-        try
-        {
-            return Process.Start(psi) != null;
-        }
-        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
-        {
-            // 1223 = ERROR_CANCELLED: the user dismissed the UAC prompt; nothing was changed.
-            TryDelete(psFile);
-            return false;
-        }
+".Replace("__ZIP_PATH__", update.Path.Replace("'", "''")).Replace("__SHA256__", update.Sha256.ToLowerInvariant());
     }
 
     private sealed record GitHubRelease(

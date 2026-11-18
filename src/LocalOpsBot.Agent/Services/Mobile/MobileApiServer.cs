@@ -469,6 +469,9 @@ public sealed class MobileApiServer : BackgroundService
             {
                 var device = _devices.Authenticate(head.BearerToken() ?? "");
                 if (device is null) return (401, Error("unauthorized", "This phone is not paired with this PC."));
+                // Pushes carry every alert and the Claude approval prompts (with their ids). A linked PC
+                // never takes pushes, so its token must not subscribe an endpoint of its own choosing.
+                if (device.Kind == DeviceKind.Pc) return (403, Error("forbidden", "Only a phone registers for push."));
                 PushSubscriptionRequest? req;
                 try { req = JsonSerializer.Deserialize<PushSubscriptionRequest>(body!, MobileProtocol.Json); }
                 catch (JsonException) { req = null; }
@@ -588,6 +591,8 @@ public sealed class MobileApiServer : BackgroundService
                 if (_approvals is null) return (404, Error("not_found", "Not found."));
                 var device = _devices.Authenticate(head.BearerToken() ?? "");
                 if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                // Allow runs what Claude Code asked for on this PC: only a phone the user holds answers.
+                if (device.Kind == DeviceKind.Pc) return (403, Error("forbidden", "Only a phone answers approvals."));
                 ApprovalAnswer? answer;
                 try { answer = JsonSerializer.Deserialize<ApprovalAnswer>(body!, MobileProtocol.Json); }
                 catch (JsonException) { answer = null; }

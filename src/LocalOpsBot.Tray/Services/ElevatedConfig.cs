@@ -1,14 +1,17 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LocalOpsBot.Core.Updates;
 
 namespace LocalOpsBot.Tray.Services;
 
 /// <summary>
 /// Shared read/write for the Agent's admin-owned config (ProgramData). Reads happen in-process; a
 /// write edits the JSON in C# (System.Text.Json preserves arrays — avoiding PowerShell 5.1's
-/// single-element-array unwrap) and applies it via one elevated copy + Agent restart, since the
+/// single-element-array unwrap) and applies it via one elevated write + Agent restart, since the
 /// config is admin-owned and the Agent reads it at startup.
 /// </summary>
 internal static class ElevatedConfig
@@ -27,37 +30,28 @@ internal static class ElevatedConfig
     }
 
     /// <summary>
-    /// Applies <paramref name="root"/> as the new config via an elevated copy to ProgramData + an
+    /// Applies <paramref name="root"/> as the new config via an elevated write to ProgramData + an
     /// Agent restart. Returns <c>true</c> on success, <c>false</c> if the user declined the UAC prompt.
     /// </summary>
+    /// <remarks>
+    /// The config is staged in the user's %TEMP%, which every non-elevated process of that user can
+    /// change — and the Agent runs as SYSTEM what the config names (cloudflared's path, say). So the
+    /// elevated step reads the staged file once into memory, checks its SHA-256 against the one passed
+    /// on its command line, and writes exactly those bytes; its script travels inline
+    /// (<c>-EncodedCommand</c>), never as a .ps1 on disk.
+    /// </remarks>
     public static async Task<bool> WriteAsync(JsonObject root)
     {
+        var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+            .GetBytes(root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         var tempConfig = Path.Combine(Path.GetTempPath(), $"homebase_cfg_{Guid.NewGuid():N}.json");
-        await File.WriteAllTextAsync(tempConfig,
-            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-
-        // Elevated helper: copy the staged file over the admin-owned config, then restart the Agent
-        // so it re-reads at startup. No JSON parsing in PowerShell — copy only.
-        var script = @"$ErrorActionPreference = 'Stop'
-$src = '__SRC__'
-$configDir = 'C:\ProgramData\Homebase\config'
-$configFile = Join-Path $configDir 'appsettings.json'
-New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-Copy-Item -LiteralPath $src -Destination $configFile -Force
-# Restart is best-effort: the config is already written and the service reads it at startup.
-try {
-    $svc = Get-Service -Name 'Homebase.Agent' -ErrorAction SilentlyContinue
-    if ($svc) { Restart-Service -Name 'Homebase.Agent' -Force -ErrorAction SilentlyContinue }
-} catch { }
-".Replace("__SRC__", tempConfig.Replace("'", "''"));
-
-        var psFile = Path.Combine(Path.GetTempPath(), $"homebase_cfgapply_{Guid.NewGuid():N}.ps1");
-        await File.WriteAllTextAsync(psFile, script);
+        await File.WriteAllBytesAsync(tempConfig, bytes);
 
         try
         {
-            var psi = new ProcessStartInfo("powershell.exe",
-                $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{psFile}\"")
+            var psi = new ProcessStartInfo(UpdateService.PowerShellPath,
+                "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand " +
+                Convert.ToBase64String(Encoding.Unicode.GetBytes(BuildApplyScript(tempConfig, Sha256Hex(bytes)))))
             {
                 UseShellExecute = true, // required for Verb=runas
                 Verb = "runas",
@@ -74,9 +68,45 @@ try {
         }
         finally
         {
-            TryDelete(psFile);
             TryDelete(tempConfig);
         }
+    }
+
+    internal static string Sha256Hex(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    /// <summary>
+    /// The elevated helper: read the staged file once, check it is what the Tray wrote, and write those
+    /// bytes as a new file (owned by Administrators, inheriting the folder's ACL — so a config a
+    /// non-admin created earlier, and still owns, is replaced rather than written into); then restart
+    /// the Agent so it re-reads at startup. No JSON parsing in PowerShell.
+    /// </summary>
+    internal static string BuildApplyScript(string stagedPath, string sha256)
+    {
+        if (sha256.Length != 64 || !sha256.All(Uri.IsHexDigit))
+            throw new ArgumentException("Not a SHA-256 hex digest.", nameof(sha256));
+        if (stagedPath.IndexOfAny(['\r', '\n', '\0']) >= 0)
+            throw new ArgumentException("Invalid path.", nameof(stagedPath));
+        return @"$ErrorActionPreference = 'Stop'
+$src = '__SRC__'
+$expected = '__SHA256__'
+$configDir = 'C:\ProgramData\Homebase\config'
+$configFile = Join-Path $configDir 'appsettings.json'
+$bytes = [System.IO.File]::ReadAllBytes($src)
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$actual = ([System.BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
+if ($actual -ne $expected) { throw 'The staged configuration changed after Homebase wrote it; nothing was applied.' }
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+$staged = Join-Path $configDir ('appsettings.' + [Guid]::NewGuid().ToString('N') + '.new')
+$out = [System.IO.File]::Open($staged, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+try { $out.Write($bytes, 0, $bytes.Length) } finally { $out.Dispose() }
+if (Test-Path -LiteralPath $configFile) { Remove-Item -LiteralPath $configFile -Force }
+Move-Item -LiteralPath $staged -Destination $configFile
+# Restart is best-effort: the config is already written and the service reads it at startup.
+try {
+    $svc = Get-Service -Name 'Homebase.Agent' -ErrorAction SilentlyContinue
+    if ($svc) { Restart-Service -Name 'Homebase.Agent' -Force -ErrorAction SilentlyContinue }
+} catch { }
+".Replace("__SRC__", stagedPath.Replace("'", "''")).Replace("__SHA256__", sha256.ToLowerInvariant());
     }
 
     private static void TryDelete(string path)
