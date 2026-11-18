@@ -45,6 +45,17 @@ Log.Logger = new LoggerConfiguration()
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
+// Standard users must not plant config or links where the service reads and writes (see ProgramDataAcl).
+try
+{
+    foreach (var note in ProgramDataAcl.Restrict(ProgramDataAcl.Root)) Log.Warning("ProgramData: {Note}", note);
+}
+catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or InvalidOperationException
+                               or System.Security.AccessControl.PrivilegeNotHeldException)
+{
+    Log.Warning(ex, "Could not limit access to {Root}; standard users may still create files in it.", ProgramDataAcl.Root);
+}
+
 // Single-instance guard. The SCM already keeps the *service* single, but a second instance
 // launched directly (e.g. from a console) would double-poll Telegram and duplicate every alert.
 // Global\ so it spans sessions; refuse to start if another Agent already holds it.

@@ -68,6 +68,18 @@ public class PushApiTests
         Assert.False(_sampler.Started); // registering never starts live collection (M-13)
     }
 
+    // A linked PC never takes pushes; its token subscribing an endpoint of its own would receive every
+    // alert and the Claude approval prompts with their ids.
+    [Fact]
+    public async Task A_linked_pc_cannot_subscribe()
+    {
+        var (code, _) = _pairing.Begin();
+        var pcToken = _pairing.TryPair(code, "OTHER-PC", "Windows", DeviceKind.Pc).Token!;
+
+        Assert.Equal(403, (await _api.HandleRestAsync(Req("POST", pcToken), Body(Sub()), default)).Status);
+        Assert.Empty(_store.PushTargets());
+    }
+
     [Fact]
     public async Task Requires_a_paired_token()
     {

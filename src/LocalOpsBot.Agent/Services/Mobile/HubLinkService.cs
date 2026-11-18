@@ -214,6 +214,16 @@ public sealed class HubLinkService : BackgroundService
             return new HubLinkResult(false, offer.PcName, "rejected", message);
         }
 
+        // The PC that answered must be the one the offer named: otherwise whoever sits behind an
+        // endpoint could pose as another linked PC and have its real link (and our pairing there) dropped.
+        if (!string.Equals(paired.PcId, offer.PcId, StringComparison.Ordinal) || paired.PcId == _devices.PcId)
+        {
+            _logger.LogWarning("Pairing answered by {Answered} but the offer named {Offered}; not linking.", paired.PcId, offer.PcId);
+            _ = UnpairQuietlyAsync(new LinkedHub(paired.PcId, paired.PcName, paired.DeviceId, paired.Token, offer.Endpoints.ToList(), _time.GetUtcNow()));
+            client.Dispose();
+            return new HubLinkResult(false, offer.PcName, "mismatch", "응답한 PC가 링크한 PC와 다릅니다. 연결하지 않았습니다.");
+        }
+
         var endpoints = offer.Endpoints;
         var fresh = await client.GetAsync(endpoints, "/api/v1/endpoints", paired.Token, CallTimeout, ct);
         if (fresh.Ok && fresh.Read<EndpointsResponse>() is { Endpoints.Count: > 0 } e) endpoints = e.Endpoints;
