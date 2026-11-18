@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Google Play build only: the "new version on Play" check (DECISIONS M-57). Merged into
+     src/main/AndroidManifest.xml. Play installs the update; this build has no installer code and no
+     install permission (M-33). Comments are merged too, so the names Mobile CI greps for stay out of this file. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The banner and the notification open this app's page in the Play Store app (API 30+ package visibility). -->
+    <queries>
+        <package android:name="com.android.vending" />
+    </queries>
+
+    <application>
+        <!-- Background "is there a newer version on Play?" check → one notification per version. -->
+        <service
+            android:name=".update.StoreUpdateJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+    </application>
+</manifest>

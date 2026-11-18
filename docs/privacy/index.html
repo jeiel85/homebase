@@ -30,7 +30,7 @@
 <body>
 <main>
   <h1>Homebase 개인정보처리방침</h1>
-  <p class="meta">시행일 2026년 11월 16일 · 대상: Homebase Android 앱(<code>io.github.jeiel85.homebase</code>)과 Homebase Windows PC 프로그램</p>
+  <p class="meta">시행일 2026년 11월 18일 · 대상: Homebase Android 앱(<code>io.github.jeiel85.homebase</code>)과 Homebase Windows PC 프로그램</p>
 
   <div class="note">
     <p><b>요약</b> — Homebase는 내가 직접 연결한 내 PC와 휴대폰끼리만 통신합니다. 개발자는 어떤 정보도 받지 않으며, 개발자가 운영하는 서버도 없습니다. 광고·분석·사용 기록 수집이 없습니다.</p>
@@ -67,7 +67,7 @@
     <li><b>푸시 배포자</b>(예: <a href="https://ntfy.sh/">ntfy</a>) — 사용자가 설치한 UnifiedPush 배포자 앱과 그 서버가 PC의 알림을 휴대폰으로 전달합니다. 내용은 PC가 휴대폰의 키로 종단 암호화(RFC 8291)하므로 중계 서버는 내용을 읽을 수 없고, 보낸 시각·크기 같은 전송 정보만 봅니다. 해당 서비스의 개인정보처리방침이 적용됩니다.</li>
     <li><b>Tailscale, Cloudflare</b> — 사용자가 PC에서 이 연결 방법을 켠 경우에만 연결이 그 서비스를 거칩니다. Cloudflare Tunnel은 Cloudflare 엣지에서 HTTPS를 처리합니다. 각 서비스의 개인정보처리방침이 적용됩니다.</li>
     <li><b>인터넷 응답 시간 측정(1.1.1.1)</b> — 휴대폰이 PC 화면을 보고 있는 동안 PC가 2초마다 Cloudflare 공용 DNS 주소(1.1.1.1)에 ping(ICMP)을 보내 응답 시간을 잽니다. 내용 없는 측정 패킷이며, 받는 쪽은 PC의 공인 IP 주소만 봅니다. PC 설정 파일의 <code>mobile.pingHost</code>로 주소를 바꾸거나 빈 값(<code>""</code>)으로 끌 수 있습니다.</li>
-    <li><b>Google Play</b> — 앱 설치·업데이트에 Google Play의 정책이 적용됩니다. 앱 자체는 Google 서비스에 정보를 보내지 않습니다.</li>
+    <li><b>Google Play</b> — 앱 설치·업데이트에 Google Play의 정책이 적용됩니다. Google Play에서 받은 앱은 새 버전이 있는지 휴대폰의 Play 스토어 앱에 묻습니다(Play In-App Updates, 하루 두 번과 앱을 열 때 — 설정 "새 버전 알림"으로 끌 수 있음). 이 확인은 Play 스토어가 처리하며 Google Play의 개인정보처리방침이 적용됩니다. 그 밖에 앱 자체는 Google 서비스에 정보를 보내지 않습니다.</li>
   </ul>
 
   <h2>6. PC 프로그램이 보관하는 정보</h2>
