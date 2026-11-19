@@ -63,22 +63,37 @@ class NotificationPriorityTest {
     }
 
     @Test
-    fun defaultsKeepAppNotificationsFromPoppingUp() {
-        // Relayed phone notifications used to pop up like PC alerts; they now ring in the shade, bundled.
+    fun defaultsKeepAppNotificationsSilent() {
+        // DECISIONS M-58: app notifications arrive in bursts, so by default they neither ring nor buzz.
         val deviceDefault = NotificationPriority.resolve(device, "Galaxy · 카카오톡", NotificationRules())
-        assertEquals(AlertLevel.NORMAL, AlertLevel.of(deviceDefault))
+        assertEquals(AlertLevel.QUIET, AlertLevel.of(deviceDefault))
+        assertTrue(deviceDefault.shade)
         assertTrue(deviceDefault.bundle)
-        assertEquals(AlertLevel.NORMAL, AlertLevel.of(NotificationPriority.resolve(toast, "KakaoTalk", NotificationRules())))
-        // PC alerts keep popping up; a category no group knows is treated as an alert.
-        assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("process_watch", "process_watch", NotificationRules())))
-        assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("something_new", "x", NotificationRules())))
+        val toastDefault = NotificationPriority.resolve(toast, "KakaoTalk", NotificationRules())
+        assertEquals(AlertLevel.QUIET, AlertLevel.of(toastDefault))
+        assertFalse(toastDefault.vibrate)
+        assertFalse(toastDefault.sound)
+        // So do the PC's informational alerts.
+        for (category in listOf("event_log", "advisor", "boot")) {
+            assertEquals(category, AlertLevel.QUIET, AlertLevel.of(NotificationPriority.resolve(category, category, NotificationRules())))
+        }
+        // Watch alerts keep popping up with sound and vibration; a category no group knows is treated as an alert.
+        for (category in listOf("process_watch", "service_watch", "http_monitor", "port_monitor", "something_new")) {
+            assertEquals(category, AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve(category, category, NotificationRules())))
+        }
     }
 
     @Test
-    fun anAiSessionWaitingPopsUpAndOneThatFinishedRings() {
-        // DECISIONS M-45: waiting blocks the work until the user answers; done can wait for a look.
+    fun everyUrgentGroupExists() {
+        val keys = NotificationGroups.ALL.map { it.key }.toSet()
+        assertTrue(NotificationPriority.URGENT_GROUPS.toString(), keys.containsAll(NotificationPriority.URGENT_GROUPS))
+    }
+
+    @Test
+    fun anAiSessionWaitingPopsUpAndOneThatFinishedIsSilent() {
+        // DECISIONS M-45/M-58: waiting blocks the work until the user answers; done can wait for a look.
         assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("agent-waiting", "Claude Code", NotificationRules())))
-        assertEquals(AlertLevel.NORMAL, AlertLevel.of(NotificationPriority.resolve("agent-done", "Codex", NotificationRules())))
+        assertEquals(AlertLevel.QUIET, AlertLevel.of(NotificationPriority.resolve("agent-done", "Codex", NotificationRules())))
         // DECISIONS M-48: a permission prompt holds the session until it is answered.
         assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("agent-approval", "Claude Code", NotificationRules())))
     }
