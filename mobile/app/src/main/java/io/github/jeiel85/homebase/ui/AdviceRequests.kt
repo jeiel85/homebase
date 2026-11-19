@@ -59,7 +59,8 @@ object AdviceRequests {
             states[pcId] = result
             jobs.remove(pcId)
             val entry = (result as? AdviceUi.Done)?.let { adviceHistoryEntry(pc, it.reply, System.currentTimeMillis()) }
-            if (entry != null) {
+            // Deleted from the list meanwhile (close() normally cancels first): keep nothing for it.
+            if (entry != null && store.get(pcId) != null) {
                 // Loading the history reads the disk (and the Keystore) the first time.
                 withContext(Dispatchers.IO) {
                     PushHistory.ensureLoaded(app)
@@ -70,7 +71,7 @@ object AdviceRequests {
         }
     }
 
-    /** Closes [pcId]'s card; a request still under way is cancelled. Main thread. */
+    /** Closes [pcId]'s card; a request still under way is cancelled. Main thread. Also when the PC is deleted. */
     fun close(pcId: String) {
         jobs.remove(pcId)?.cancel()
         states.remove(pcId)
