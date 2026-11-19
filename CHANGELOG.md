@@ -10,6 +10,20 @@
   you set yourself in Settings → 알림 → 알림 우선순위 keep your choice; to have an app ring again, set that app
   to 보통 (sound and vibration) or 긴급 there. The notification center keeps everything as before.
 
+## v0.42.3 — A linked PC shows once, and its live view opens whichever way gets through
+
+### Fixed
+- PC: **a linked PC no longer shows up among your phones.** In a group PCs connect both ways (each
+  pairs with the other), so Settings › Phone listed the other PC under "연결된 휴대폰" (Paired phones)
+  and again under "다른 PC 연결" (Link another PC). Paired phones now lists phones only, and each linked
+  PC is one row under "다른 PC 연결": online when either direction is, with the state of the side that
+  is reporting. Its "연결 끊기" (Unlink) takes it out of the group both ways.
+- PC: **the Homebase window's device list shows such a PC once, and its live view opens even when this
+  PC's own connection to it doesn't get through** (another network, a Quick Tunnel that restarted). It
+  used to wait on "연결하는 중…" (connecting…) forever; it now shows the view that PC shares here, and
+  switches back to the direct connection when that comes up, keeping your selection and the traces under
+  the gauges. Its line reads "서로 연결됨" (linked both ways).
+
 ## v0.42.2 — The tray closes cleanly, and a click while it closes no longer shows a ".NET" error
 
 ### Fixed
