@@ -41,17 +41,17 @@ internal static class LinkedPcs
     /// </summary>
     public static IReadOnlyList<PcLink> Pair(IEnumerable<LinkedHubView> hubs, IEnumerable<DeviceEntry> here)
     {
-        var links = hubs.Select(h => new PcLink(h, new List<DeviceEntry>())).ToList();
+        var links = hubs.Select(h => (Hub: (LinkedHubView?)h, Here: new List<DeviceEntry>())).ToList();
         foreach (var d in here.Where(d => d.Kind == DeviceKind.Pc))
         {
             var pcId = d.PcId is { Length: > 0 } id ? id : null;
-            var link = links.FirstOrDefault(l => pcId is not null
-                ? string.Equals(l.PcId, pcId, StringComparison.Ordinal)
-                : SameName(l.Name, d.Name));
-            if (link is null) links.Add(new PcLink(null, new List<DeviceEntry> { d }));
-            else ((List<DeviceEntry>)link.Here).Add(d);
+            var i = links.FindIndex(l => pcId is not null
+                ? string.Equals(l.Hub?.PcId ?? l.Here.Select(x => x.PcId).FirstOrDefault(x => x is { Length: > 0 }), pcId, StringComparison.Ordinal)
+                : SameName(l.Hub?.PcName ?? l.Here[0].Name, d.Name));
+            if (i < 0) links.Add((null, new List<DeviceEntry> { d }));
+            else links[i].Here.Add(d);
         }
-        return links;
+        return links.Select(l => new PcLink(l.Hub, l.Here)).ToList();
     }
 
     /// <summary>Settings › Phone's rows: <see cref="Pair"/>, each as one <see cref="LinkedPc"/>.</summary>

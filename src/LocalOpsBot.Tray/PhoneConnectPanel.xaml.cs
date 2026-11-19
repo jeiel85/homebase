@@ -506,17 +506,19 @@ public partial class PhoneConnectPanel : UserControl
     {
         if ((sender as FrameworkElement)?.Tag is not LinkedPc pc || MobileHost.Client is not { } client) return;
         if (!MessageDialog.Show("Homebase", L.PhoneUnlinkConfirm, L.PhoneUnlink, L.Cancel, owner: Window.GetWindow(this))) return;
-        try
-        {
-            // By pcId the Agent takes the PC out of the group: its link there and its pairing here (M-47).
-            if (pc.PcId is { } pcId)
-                await client.RequestAsync(MobileBridge.OpHubsUnlink, new { pcId }, timeout: TimeSpan.FromSeconds(20));
-            // A pairing whose pcId the Agent doesn't know yet is not reached that way.
-            foreach (var deviceId in pc.RevokeIds)
-                await client.RequestAsync(MobileBridge.OpDevicesRevoke, new { deviceId });
-        }
-        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+        // By pcId the Agent takes the PC out of the group: its link there and its pairing here (M-47).
+        if (pc.PcId is { } pcId)
+            await TryRequestAsync(client, MobileBridge.OpHubsUnlink, new { pcId }, TimeSpan.FromSeconds(20));
+        // A pairing whose pcId the Agent doesn't know yet is not reached that way; revoked even if the unlink failed.
+        foreach (var deviceId in pc.RevokeIds)
+            await TryRequestAsync(client, MobileBridge.OpDevicesRevoke, new { deviceId }, null);
         await LoadDevicesAsync();
+    }
+
+    private static async Task TryRequestAsync(MobileBridgeClient client, string op, object payload, TimeSpan? timeout)
+    {
+        try { await client.RequestAsync(op, payload, timeout: timeout); }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
     }
 
     private void UpdateCountdown()

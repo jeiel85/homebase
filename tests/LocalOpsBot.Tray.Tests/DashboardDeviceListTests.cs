@@ -71,7 +71,15 @@ public sealed class DashboardDeviceListTests
 
         Assert.Equal(2, items.Count);
         Assert.Contains(items, i => i.Key == "hub:pc-a" && i.Role == DeviceRole.Hub && !i.TwoWay);
-        Assert.Contains(items, i => i.Key == "device:d1" && i.Role == DeviceRole.LinkedHere && !i.TwoWay);
+        // Keyed by pcId, so it keeps its key when this PC's link to it comes up later.
+        Assert.Contains(items, i => i.Key == "hub:pc-b" && i.Role == DeviceRole.LinkedHere && !i.TwoWay);
+    }
+
+    [Fact]
+    public void Two_pcs_of_the_same_name_both_show()
+    {
+        var items = Others(Overview(new[] { Hub("pc-a", "OFFICE", online: true) }, Pc("d1", "OFFICE", "pc-b", online: true)));
+        Assert.Equal(new[] { "hub:pc-a", "hub:pc-b" }, items.Select(i => i.Key).OrderBy(k => k));
     }
 
     [Fact]

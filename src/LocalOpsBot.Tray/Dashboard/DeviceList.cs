@@ -98,7 +98,7 @@ internal static class DeviceList
         foreach (var link in LinkedPcs.Pair(overview.Hubs, overview.Here.Devices))
         {
             var names = link.Here.Select(d => d.Name).Prepend(link.Name).Select(n => Seen(DeviceKind.Pc, n)).ToList();
-            if (names.Any(seen.Contains)) continue; // this PC itself, linked to its own code
+            if (names.Contains(Seen(DeviceKind.Pc, selfName))) continue; // this PC itself, linked to its own code
             seen.UnionWith(names);
             items.Add(PcItem(link, local));
         }
@@ -134,8 +134,9 @@ internal static class DeviceList
         var viaHub = h is not null && (h.Online || here is not { Online: true });
         LocalDeviceInfo? info = null;
         if (here is not null) local.TryGetValue(here.DeviceId, out info);
+        // Keyed by pcId once known, so the entry keeps its key when this PC's link to it comes up later.
         return new DeviceItem(
-            h is not null ? "hub:" + h.PcId : "device:" + here!.DeviceId,
+            pc.PcId is { } key ? "hub:" + key : "device:" + here!.DeviceId,
             viaHub ? DeviceRole.Hub : DeviceRole.LinkedHere,
             DeviceKind.Pc, pc.Name, null, pc.Online, pc.LastSeen, pc.Status,
             viaHub ? Core.Mobile.LiveTarget.Hub(h!.PcId) : Core.Mobile.LiveTarget.Device(here!.DeviceId),
