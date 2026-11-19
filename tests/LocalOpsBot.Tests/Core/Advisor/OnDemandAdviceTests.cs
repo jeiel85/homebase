@@ -1,5 +1,6 @@
 using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Tests.Mobile;
 using Xunit;
 
@@ -139,6 +140,76 @@ public sealed class OnDemandAdviceTests
         Assert.Null(failed.Summary); // empty → left out
         Assert.Equal(AdviceErrors.ModelMissing, failed.Error);
         Assert.Equal("not pulled", failed.Message);
+    }
+
+    // ---- kept in the PC's notification center (M-61) -------------------------------------------
+
+    [Fact]
+    public async Task New_advice_is_kept_in_the_notification_center_once()
+    {
+        var time = new ManualTimeProvider();
+        var history = new RecordingStore();
+        var advisor = new GatedAdvisor { Immediate = new AdvisoryResult(true, "- CPU is busy: close Chrome.\n- Free up C:.", null) };
+        var advice = new OnDemandAdvice(advisor, Options, time, history);
+
+        await advice.GetAsync(CancellationToken.None);
+        await advice.GetAsync(CancellationToken.None); // reused within the minute: not kept again
+
+        var r = Assert.Single(history.Records);
+        Assert.Equal(NotificationInbox.SelfOrigin, r.OriginId);
+        Assert.Equal(DeviceKind.Pc, r.OriginKind);
+        Assert.Equal("CPU is busy: close Chrome.", r.Title);
+        Assert.Equal("- CPU is busy: close Chrome.\n- Free up C:.", r.Body);
+        Assert.Equal($"advice-{time.Now.ToUnixTimeMilliseconds()}", r.NotifId);
+    }
+
+    [Fact]
+    public async Task A_failure_is_not_kept_in_the_notification_center()
+    {
+        var history = new RecordingStore();
+        var advisor = new GatedAdvisor { Immediate = new AdvisoryResult(false, "", "down", AdviceErrors.Unreachable) };
+        await new OnDemandAdvice(advisor, Options, new ManualTimeProvider(), history).GetAsync(CancellationToken.None);
+
+        Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task A_history_that_fails_to_write_does_not_cost_the_advice()
+    {
+        var advisor = new GatedAdvisor { Immediate = new AdvisoryResult(true, "Fine.", null) };
+        var reply = await new OnDemandAdvice(advisor, Options, new ManualTimeProvider(), new RecordingStore { Fail = true })
+            .GetAsync(CancellationToken.None);
+
+        Assert.True(reply.Ok);
+        Assert.Equal("Fine.", reply.Text);
+    }
+
+    [Fact]
+    public void A_long_first_line_is_cut_for_the_title()
+    {
+        var reply = new AdviceReply(true, new string('a', 300), null, null, "", "m", DateTimeOffset.UnixEpoch);
+        var r = OnDemandAdvice.HistoryRecord(reply, "HOME-PC", DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(120, r.Title.Length);
+        Assert.EndsWith("…", r.Title);
+        Assert.Equal("HOME-PC", r.OriginName);
+    }
+
+    private sealed class RecordingStore : INotificationHistoryStore
+    {
+        public List<DeviceNotificationRecord> Records { get; } = new();
+        public bool Fail { get; init; }
+
+        public Task AddAsync(DeviceNotificationRecord record, CancellationToken ct)
+        {
+            if (Fail) throw new IOException("disk full");
+            Records.Add(record);
+            return Task.CompletedTask;
+        }
+
+        public Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> ClearDevicesAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct) => throw new NotSupportedException();
     }
 
     /// <summary>An advisor whose reply the test hands over when it chooses (or at once, with <see cref="Immediate"/>).</summary>

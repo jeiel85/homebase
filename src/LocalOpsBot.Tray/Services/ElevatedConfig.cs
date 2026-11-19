@@ -72,6 +72,27 @@ internal static class ElevatedConfig
         }
     }
 
+    /// <summary>
+    /// Sets <c><paramref name="section"/>.<paramref name="key"/></c> in <paramref name="root"/>, creating the
+    /// section when the file has none (or it isn't an object). The Agent binds config without regard to
+    /// case, and its JSON reader refuses two keys that differ only in case — so a file that spells it
+    /// "LlmAdvisor"/"Model" is written under that spelling instead of gaining a second key that would stop
+    /// the Agent from reading its config at all.
+    /// </summary>
+    internal static void SetValue(JsonObject root, string section, string key, JsonNode? value)
+    {
+        var sectionKey = KeyOf(root, section);
+        if (root[sectionKey] is not JsonObject obj)
+        {
+            obj = new JsonObject();
+            root[sectionKey] = obj;
+        }
+        obj[KeyOf(obj, key)] = value;
+    }
+
+    private static string KeyOf(JsonObject obj, string name) =>
+        obj.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) ?? name;
+
     internal static string Sha256Hex(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     /// <summary>

@@ -50,6 +50,13 @@ object PushNotifier {
      */
     const val ACTION_OPEN_CENTER = "io.github.jeiel85.homebase.action.OPEN_NOTIFICATIONS"
 
+    /**
+     * Action of an alert's "AI 조언" button (DECISIONS M-61): opens the PC and asks its AI at once.
+     * [EXTRA_NOTIFICATION_ID] is the notification to take away.
+     */
+    const val ACTION_ASK_ADVICE = "io.github.jeiel85.homebase.action.ASK_ADVICE"
+    const val EXTRA_NOTIFICATION_ID = "io.github.jeiel85.homebase.NOTIFICATION_ID"
+
     /** Newest notifications one source keeps in the shade; older ones stay in the notification center. */
     internal const val MAX_IN_BUNDLE = 8
 
@@ -141,10 +148,23 @@ object PushNotifier {
         }
         val id = message.id.hashCode()
         message.approval?.let { addApprovalActions(context, builder, message, it, id) }
+        if (message.category in NotificationGroups.ADVICE_ON) builder.addAction(0, "AI 조언", askAdvice(context, message.pcId, id))
         if (!post(context, null, id, builder.build())) return false
         if (stacked) updateStack(context, channelId, message, id, mark)
         return true
     }
+
+    /** "AI 조언" on an alert: one PendingIntent per notification (its id), told apart from the tap by its action. */
+    private fun askAdvice(context: Context, pcId: String, id: Int): PendingIntent = PendingIntent.getActivity(
+        context,
+        id,
+        Intent(context, MainActivity::class.java)
+            .setAction(ACTION_ASK_ADVICE)
+            .putExtra(EXTRA_PC_ID, pcId)
+            .putExtra(EXTRA_NOTIFICATION_ID, id)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     /**
      * Allow / Deny on a Claude Code permission prompt (DECISIONS M-48). Both need the phone unlocked

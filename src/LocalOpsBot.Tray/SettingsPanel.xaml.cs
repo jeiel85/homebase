@@ -77,6 +77,7 @@ public partial class SettingsPanel : UserControl
                 _loaded = true;
                 LoadForwardingState();
                 LoadMonitors();
+                LoadAiAutomation();
             }
         }
         SyncPhonePanel();
@@ -582,6 +583,52 @@ public partial class SettingsPanel : UserControl
             _savingModel = false;
             UpdateModelSave();
         }
+    }
+
+    // ── The AI on its own (M-61): auto advice, event-log interpretation ─────────────────────────────
+    // The checkboxes only stage the change; APPLY writes both with one approval (the Agent restarts).
+    private AiAutomationState? _aiAuto;
+
+    private void LoadAiAutomation()
+    {
+        try { _aiAuto = AiAutomationConfig.Read(TrayConfig.Load()); }
+        catch { _aiAuto = null; }
+        AutoAdviceCheckBox.IsChecked = _aiAuto?.AutoAdvice == true;
+        InterpretCheckBox.IsChecked = _aiAuto?.InterpretErrors == true;
+        AutoAdviceCheckBox.IsEnabled = InterpretCheckBox.IsEnabled = _aiAuto is not null;
+        AutoAdviceHint.Text = _aiAuto is { } s
+            ? L.AiAutoAdviceHint(s.CpuPercent, s.MemoryPercent, s.DiskPercent, s.TempCelsius, s.SustainMinutes, s.CooldownMinutes)
+            : "";
+        InterpretHint.Text = _aiAuto is { EventLogOn: false } ? L.AiInterpretHintOff : L.AiInterpretHint;
+        ApplyAiAutoButton.IsEnabled = false;
+    }
+
+    private bool AiAutomationDirty() => _aiAuto is { } s
+        && ((AutoAdviceCheckBox.IsChecked == true) != s.AutoAdvice || (InterpretCheckBox.IsChecked == true) != s.InterpretErrors);
+
+    private void AiAutomation_Click(object sender, RoutedEventArgs e) => ApplyAiAutoButton.IsEnabled = AiAutomationDirty();
+
+    private async void ApplyAiAutomation_Click(object sender, RoutedEventArgs e)
+    {
+        var autoAdvice = AutoAdviceCheckBox.IsChecked == true;
+        var interpret = InterpretCheckBox.IsChecked == true;
+        ApplyAiAutoButton.IsEnabled = false;
+        SetResult(AiAutoStatusText, L.AiModelSaving, null);
+        try
+        {
+            if (await AiAutomationConfig.SaveAsync(autoAdvice, interpret))
+            {
+                LoadAiAutomation(); // reads back what was written
+                SetResult(AiAutoStatusText, L.AiAutoSaved, true);
+                return;
+            }
+            SetResult(AiAutoStatusText, L.AiModelNotSaved, false);
+        }
+        catch (Exception ex)
+        {
+            SetResult(AiAutoStatusText, L.Failed(ex.Message), false);
+        }
+        ApplyAiAutoButton.IsEnabled = AiAutomationDirty();
     }
 
     // ── Updates ────────────────────────────────────────────────────────────────────────────────

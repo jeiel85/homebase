@@ -192,6 +192,24 @@ public static class L
         _ => T($"Couldn't get advice: {message ?? code ?? "?"}", $"조언을 만들지 못했습니다: {message ?? code ?? "?"}"),
     };
 
+    public static string AiAutoHeader => T("AI ON ITS OWN", "자동 AI 조언");
+    public static string AiAutoWhat => T(
+        "Besides advice you ask for, the PC can use its local AI by itself. Both are off at first, and both need Ollama running with the model pulled.",
+        "직접 묻는 조언 말고도 PC가 스스로 로컬 AI를 쓰게 할 수 있습니다. 둘 다 처음에는 꺼져 있고, Ollama가 실행 중이며 모델을 받아 둬야 동작합니다.");
+    public static string AiAutoAdvice => T("Send advice when the PC stays overloaded", "PC가 계속 과부하면 조언 보내기");
+    public static string AiAutoAdviceHint(double cpu, double mem, double disk, double temp, int minutes, int cooldown) => T(
+        $"When CPU ≥ {cpu:0}%, memory ≥ {mem:0}%, a disk ≥ {disk:0}% used or a temperature ≥ {temp:0}°C lasts about {minutes} min, AI advice comes to your phone — at most once every {cooldown} min.",
+        $"CPU {cpu:0}%·메모리 {mem:0}%·디스크 {disk:0}%·온도 {temp:0}°C 이상이 {minutes}분쯤 이어지면 AI 조언이 휴대폰으로 옵니다({cooldown}분에 한 번까지).");
+    public static string AiInterpret => T("Explain event-log errors with AI", "이벤트 로그 오류 알림에 AI 해석 붙이기");
+    public static string AiInterpretHint => T(
+        "Each Windows event-log error alert gets a short note on what it means and what to check (up to 3 per check).",
+        "Windows 이벤트 로그 오류 알림마다 무슨 뜻이고 무엇을 확인할지 짧게 덧붙입니다(한 번 점검에 3건까지).");
+    public static string AiInterpretHintOff => T(
+        "Event-log monitoring is off in the Agent config (eventLog.enabled), so there are no alerts to explain.",
+        "Agent 설정 파일에서 이벤트 로그 감시가 꺼져 있어(eventLog.enabled) 해석할 알림이 없습니다.");
+    public static string AiAutoApply => T("APPLY", "적용");
+    public static string AiAutoSaved => T("Saved. The monitoring service is restarting to apply.", "저장했습니다. 감시 서비스가 다시 시작되며 적용됩니다.");
+
     public static string AiModelHeader => T("CHANGE MODEL", "모델 바꾸기");
     public static string AiModelLabel => T("Model", "모델");
     public static string AiModelHint => T(

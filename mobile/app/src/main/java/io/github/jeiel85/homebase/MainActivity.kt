@@ -17,12 +17,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.core.app.NotificationManagerCompat
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
 import io.github.jeiel85.homebase.push.PushNotifier
+import io.github.jeiel85.homebase.ui.AdviceRequests
 import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.NotificationCenterScreen
 import io.github.jeiel85.homebase.ui.NotificationPriorityScreen
@@ -45,6 +47,9 @@ class MainActivity : ComponentActivity() {
     /** Where a push notification tapped while the app is already open leads (a PC, or the notification center). */
     private var tappedRoute by mutableStateOf<String?>(null)
 
+    private lateinit var store: PcStore
+    private lateinit var api: HomebaseApi
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // The saved light/dark choice sets the window background before anything draws — first, since
         // enableEdgeToEdge creates the window's views and with them the background.
@@ -63,9 +68,11 @@ class MainActivity : ComponentActivity() {
         UpdateSurface.sync(this)
         // Keeps this phone's state reaching the paired PCs while the app is closed (DECISIONS M-27).
         PresenceScheduler.sync(this)
-        val store = PcStore(this)
+        store = PcStore(this)
         val probe = NetworkProbe(this)
-        val api = HomebaseApi(networks = probe::current)
+        api = HomebaseApi(networks = probe::current)
+        // An alert's "AI 조언" button (M-61); not again when the activity is recreated with the same intent.
+        if (savedInstanceState == null) askAdviceIfTapped(intent)
         setContent {
             val dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())
             // The navigation bar follows the app's theme choice, not only the system's.
@@ -155,6 +162,7 @@ class MainActivity : ComponentActivity() {
             updateTapped++
         }
         intent.pushRoute()?.let { tappedRoute = it }
+        askAdviceIfTapped(intent)
     }
 
     override fun onResume() {
@@ -175,6 +183,15 @@ class MainActivity : ComponentActivity() {
         // androidx.activity's default navigation-bar scrims for gesture-less (3-button) navigation.
         val NAV_SCRIM_LIGHT = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
         val NAV_SCRIM_DARK = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
+    }
+
+    /** An alert's "AI 조언" (DECISIONS M-61): ask the PC now; its screen opens through [pushRoute]. */
+    private fun askAdviceIfTapped(tapped: Intent?) {
+        if (tapped?.action != PushNotifier.ACTION_ASK_ADVICE) return
+        val pcId = tapped.getStringExtra(PushNotifier.EXTRA_PC_ID) ?: return
+        tapped.getIntExtra(PushNotifier.EXTRA_NOTIFICATION_ID, 0).takeIf { it != 0 }
+            ?.let { NotificationManagerCompat.from(this).cancel(it) }
+        AdviceRequests.ask(this, api, store, pcId)
     }
 
     private fun Intent?.pairingLink(): String? =

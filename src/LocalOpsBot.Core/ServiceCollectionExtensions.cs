@@ -69,7 +69,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(llmOpts);
         services.AddSingleton<IPcStateAdvisor, PcStateAdvisor>();
         // Advice asked for from the phone app or the tray (M-60): one generation at a time, briefly reused.
-        services.AddSingleton(sp => new OnDemandAdvice(sp.GetRequiredService<IPcStateAdvisor>(), llmOpts, sp.GetService<TimeProvider>()));
+        services.AddSingleton(sp => new OnDemandAdvice(sp.GetRequiredService<IPcStateAdvisor>(), llmOpts, sp.GetService<TimeProvider>(),
+            sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>()));
         services.AddSingleton<IEventLogAdvisor, EventLogAdvisor>();
 
         var temperatureOpts = config.GetSection("temperature").Get<TemperatureOptions>() ?? new TemperatureOptions();

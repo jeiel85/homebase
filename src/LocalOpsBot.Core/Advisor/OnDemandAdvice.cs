@@ -1,3 +1,7 @@
+using LocalOpsBot.Core.Localization;
+using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Notifications;
+
 namespace LocalOpsBot.Core.Advisor;
 
 /// <summary>
@@ -49,6 +53,8 @@ public sealed record AdviceReply(
 /// busy for seconds, and several phones can ask at once, so: at most one generation runs — callers
 /// arriving meanwhile wait for the same one — and a successful reply is handed out again for
 /// <see cref="ReuseFor"/>. Failures aren't kept, so "start Ollama, ask again" works at once.
+/// Each newly written advice is also kept in the PC's notification center (DECISIONS M-61), as one of
+/// this PC's own entries, so it can be read again from the tray later.
 /// </summary>
 public sealed class OnDemandAdvice
 {
@@ -59,14 +65,17 @@ public sealed class OnDemandAdvice
     private readonly LlmAdvisorOptions _options;
     private readonly TimeProvider _time;
     private readonly object _gate = new();
+    private readonly INotificationHistoryStore? _history;
     private Task<AdviceReply>? _running;
     private AdviceReply? _last;
 
-    public OnDemandAdvice(IPcStateAdvisor advisor, LlmAdvisorOptions options, TimeProvider? time = null)
+    public OnDemandAdvice(IPcStateAdvisor advisor, LlmAdvisorOptions options, TimeProvider? time = null,
+        INotificationHistoryStore? history = null)
     {
         _advisor = advisor;
         _options = options;
         _time = time ?? TimeProvider.System;
+        _history = history;
     }
 
     /// <summary>
@@ -107,6 +116,34 @@ public sealed class OnDemandAdvice
             if (reply.Ok) _last = reply;
             _running = null;
         }
+        if (reply.Ok) await RecordAsync(reply);
         return reply;
+    }
+
+    /// <summary>
+    /// The notification-center entry for newly written advice: this PC's own (<c>self</c>), the app
+    /// "AI 조언", the advice's first line as the title and the whole advice as the body.
+    /// </summary>
+    public static DeviceNotificationRecord HistoryRecord(AdviceReply reply, string pcName, DateTimeOffset now)
+    {
+        var firstLine = reply.Text.Split('\n').Select(l => l.Trim().TrimStart('-', '*', '•').Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
+        var title = firstLine.Length <= 120 ? firstLine : firstLine[..119] + "…";
+        return new DeviceNotificationRecord(
+            $"advice-{reply.GeneratedAt.ToUnixTimeMilliseconds()}", NotificationInbox.SelfOrigin, pcName, DeviceKind.Pc,
+            Strings.AiAdvisorTitle, title, reply.Text, reply.GeneratedAt, now);
+    }
+
+    // A failed write never costs the asker the advice: the history is a convenience.
+    private async Task RecordAsync(AdviceReply reply)
+    {
+        if (_history is null) return;
+        try
+        {
+            await _history.AddAsync(HistoryRecord(reply, Environment.MachineName, _time.GetUtcNow()), CancellationToken.None);
+        }
+        catch
+        {
+            // Core has no logger; the advice itself has already been produced.
+        }
     }
 }

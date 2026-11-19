@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.48.0 — AI advice, step two: turn it on by itself, ask from an alert, keep it
+
+### Added
+- **Settings › AI advice › AI on its own.** Two switches for what the PC does with its local AI by itself,
+  both off at first: **send advice when the PC stays overloaded** — CPU, memory, a disk or a temperature
+  over its threshold for about ten minutes (the thresholds are shown) — and **explain event-log errors**,
+  a short note on what an error means and what to check. APPLY saves both with one administrator approval
+  and the monitoring service restarts. Until now both meant editing the config file.
+- **Phone: an "AI 조언" button on alerts.** A push about a process, service, website or port that stopped,
+  or an event-log error, has an **AI 조언** button: it opens that PC and asks its AI at once.
+- **Advice is kept in the notification center**, on the PC as one of this PC's own entries (app "AI 조언")
+  and on the phone under PC state advice (center only, no notification), so it can be read again later.
+  The same advice handed out again within a minute is kept once.
+
+### Changed
+- Phone: the advice on a PC's screen stays when the phone is turned, and a request still waiting can be
+  stopped (그만 기다리기) instead of locking the card.
+- Clearing relayed notifications in the tray's notification center also clears the advice kept there.
+
 ## v0.47.0 — Pick the AI advice model from a list
 
 ### Changed

@@ -261,7 +261,7 @@
             <Border Style="{StaticResource SectionHeaderBar}">
               <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiModelHeader}"/>
             </Border>
-            <Border Style="{StaticResource Card}">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
               <StackPanel>
                 <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.AiModelLabel}"/>
                 <!-- Only what the server has pulled can be picked; filled in by each probe. -->
@@ -287,6 +287,33 @@
                     <StackPanel Orientation="Horizontal"><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock VerticalAlignment="Center" Text="{x:Static local:L.AiModelSave}"/></StackPanel>
                   </Button>
                   <TextBlock x:Name="AiModelStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                             Style="{StaticResource Type.BodyStrong}" Margin="0,0,8,0"/>
+                </DockPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- The Agent's own use of the local AI (M-61): staged here, applied with one approval. -->
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiAutoHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiAutoWhat}"/>
+                <CheckBox x:Name="AutoAdviceCheckBox" Margin="0,12,0,0" Content="{x:Static local:L.AiAutoAdvice}"
+                          Click="AiAutomation_Click"/>
+                <TextBlock x:Name="AutoAdviceHint" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="22,2,0,0"/>
+                <CheckBox x:Name="InterpretCheckBox" Margin="0,10,0,0" Content="{x:Static local:L.AiInterpret}"
+                          Click="AiAutomation_Click"/>
+                <TextBlock x:Name="InterpretHint" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="22,2,0,0"/>
+                <Border Style="{StaticResource AdminNote}" Margin="0,12,0,0">
+                  <DockPanel><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiModelSaveNote}"/></DockPanel>
+                </Border>
+                <DockPanel Margin="0,10,0,0" LastChildFill="True">
+                  <Button x:Name="ApplyAiAutoButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}"
+                          IsEnabled="False" Click="ApplyAiAutomation_Click">
+                    <StackPanel Orientation="Horizontal"><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock VerticalAlignment="Center" Text="{x:Static local:L.AiAutoApply}"/></StackPanel>
+                  </Button>
+                  <TextBlock x:Name="AiAutoStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
                              Style="{StaticResource Type.BodyStrong}" Margin="0,0,8,0"/>
                 </DockPanel>
               </StackPanel>
