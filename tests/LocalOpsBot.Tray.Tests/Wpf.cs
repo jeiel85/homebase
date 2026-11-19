@@ -31,6 +31,8 @@ internal static class Wpf
         // TrayLog writes to %ProgramData%\Homebase\logs; expanded from this process's environment.
         Environment.SetEnvironmentVariable("ProgramData", DataDir);
         Services.UpdateAutoOutcome.FilePath = Path.Combine(DataDir, "update-auto-outcome.txt");
+        // Closing the setup checklist marks onboarding done; keep that out of the user's own profile.
+        Services.OnboardingState.MarkerPath = Path.Combine(DataDir, "onboarding.done");
 
         var ready = new TaskCompletionSource<Dispatcher>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>

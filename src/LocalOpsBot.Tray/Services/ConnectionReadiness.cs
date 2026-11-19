@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.ServiceProcess;
+using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Infrastructure.Telegram;
 using Microsoft.Extensions.Configuration;
@@ -27,12 +28,30 @@ internal sealed record OllamaProbe(
     public IReadOnlyList<string> Installed => InstalledModels ?? [];
 }
 
+/// <summary>Where the phone connection (the main alert channel) stands, for the setup checklist.</summary>
+internal enum PhoneReadiness
+{
+    /// <summary><c>mobile:enabled</c> is off: Settings › Phone turns it on.</summary>
+    Off,
+    /// <summary>On, but the Tray has no bridge to the Agent (service stopped or still starting).</summary>
+    NoBridge,
+    /// <summary>On and reachable, but no phone is paired yet.</summary>
+    NoPhone,
+    /// <summary>At least one phone is paired.</summary>
+    Ready,
+    /// <summary>The Agent did not answer the device list.</summary>
+    Unknown,
+}
+
+internal sealed record PhoneProbe(PhoneReadiness Status, int Phones);
+
 /// <summary>
-/// Read-only view of whether this machine is ready to talk to Telegram, plus a one-shot
-/// test send. Everything here works without elevation: the Agent service status comes from
-/// <see cref="ServiceController"/>, the chat allowlist from the world-readable ProgramData
-/// config the installer writes, and the bot token from the machine-level environment
-/// variable the installer sets. Nothing is written back — onboarding only guides and probes.
+/// Read-only view of whether this machine can reach its owner — the phone connection (the main
+/// channel) and Telegram (the optional fallback) — plus a one-shot test send. Everything here works
+/// without elevation: the Agent service status comes from <see cref="ServiceController"/>, the paired
+/// phones from the Agent over the Tray's mobile bridge, the chat allowlist from the world-readable
+/// ProgramData config the installer writes, and the bot token from the machine-level environment
+/// variable. Nothing is written back — onboarding only guides and probes.
 /// </summary>
 internal sealed class ConnectionReadiness
 {
@@ -49,6 +68,38 @@ internal sealed class ConnectionReadiness
             TokenConfigured: !string.IsNullOrWhiteSpace(token),
             ChatConfigured: chatId is not null,
             PrimaryChatId: chatId);
+    }
+
+    /// <summary>
+    /// Checks the phone connection: whether it is turned on, whether the Tray's bridge to the Agent is
+    /// up, and how many phones the Agent has paired. Uses the bridge the tray already runs; it never
+    /// starts one. Throws what <see cref="Mobile.MobileBridgeClient.RequestAsync"/> throws when the
+    /// bridge drops mid-request.
+    /// </summary>
+    public async Task<PhoneProbe> ProbePhoneAsync(CancellationToken ct)
+    {
+        var enabled = Mobile.MobileHost.IsEnabled();
+        if (!enabled || Mobile.MobileHost.Client is not { IsConnected: true } bridge)
+            return ClassifyPhone(enabled, bridgeConnected: false, devices: null);
+
+        var response = await bridge.RequestAsync(MobileBridge.OpDevicesList, ct: ct);
+        var devices = (bool?)response["ok"] == true
+            ? response["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new()
+            : null; // an error reply (an Agent that doesn't know the op): don't claim no phone is paired
+        return ClassifyPhone(enabled, bridgeConnected: true, devices);
+    }
+
+    /// <summary>
+    /// The phone row's state from what the Tray knows. <paramref name="devices"/> is the Agent's device
+    /// list, null when it could not be read; linked PCs in it (device groups) are not phones.
+    /// </summary>
+    internal static PhoneProbe ClassifyPhone(bool enabled, bool bridgeConnected, IReadOnlyCollection<MobileDeviceInfo>? devices)
+    {
+        if (!enabled) return new PhoneProbe(PhoneReadiness.Off, 0);
+        if (!bridgeConnected) return new PhoneProbe(PhoneReadiness.NoBridge, 0);
+        if (devices is null) return new PhoneProbe(PhoneReadiness.Unknown, 0);
+        var phones = devices.Count(d => DeviceKind.Normalize(d.Kind) == DeviceKind.Phone);
+        return new PhoneProbe(phones > 0 ? PhoneReadiness.Ready : PhoneReadiness.NoPhone, phones);
     }
 
     /// <summary>

@@ -8,7 +8,8 @@ namespace LocalOpsBot.Tray.Services;
 /// </summary>
 internal static class OnboardingState
 {
-    private static string MarkerPath => System.IO.Path.Combine(
+    /// <summary>The marker file. Settable so tests never mark the developer's own onboarding done.</summary>
+    internal static string MarkerPath { get; set; } = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Homebase", "onboarding.done");
 
