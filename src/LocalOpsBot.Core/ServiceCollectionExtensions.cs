@@ -68,7 +68,7 @@ public static class ServiceCollectionExtensions
         var llmOpts = config.GetSection("llmAdvisor").Get<LlmAdvisorOptions>() ?? new LlmAdvisorOptions();
         services.AddSingleton(llmOpts);
         services.AddSingleton<IPcStateAdvisor, PcStateAdvisor>();
-        // Advice asked for from the phone app or the tray (M-59): one generation at a time, briefly reused.
+        // Advice asked for from the phone app or the tray (M-60): one generation at a time, briefly reused.
         services.AddSingleton(sp => new OnDemandAdvice(sp.GetRequiredService<IPcStateAdvisor>(), llmOpts, sp.GetService<TimeProvider>()));
         services.AddSingleton<IEventLogAdvisor, EventLogAdvisor>();
 

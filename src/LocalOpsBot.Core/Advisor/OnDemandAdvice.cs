@@ -2,7 +2,7 @@ namespace LocalOpsBot.Core.Advisor;
 
 /// <summary>
 /// Why advice couldn't be produced, as a stable code the phone app and the tray turn into their own
-/// wording (the <c>error</c> of <c>POST /api/v1/advise</c>, DECISIONS M-59). The English detail travels
+/// wording (the <c>error</c> of <c>POST /api/v1/advise</c>, DECISIONS M-60). The English detail travels
 /// beside it for logs and the Telegram reply.
 /// </summary>
 public static class AdviceErrors
@@ -45,7 +45,7 @@ public sealed record AdviceReply(
     bool Cached = false);
 
 /// <summary>
-/// Advice asked for from the phone app or the tray (DECISIONS M-59). Generating it keeps the GPU or CPU
+/// Advice asked for from the phone app or the tray (DECISIONS M-60). Generating it keeps the GPU or CPU
 /// busy for seconds, and several phones can ask at once, so: at most one generation runs — callers
 /// arriving meanwhile wait for the same one — and a successful reply is handed out again for
 /// <see cref="ReuseFor"/>. Failures aren't kept, so "start Ollama, ask again" works at once.

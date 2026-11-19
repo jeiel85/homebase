@@ -121,7 +121,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
     val history = remember(pc.pcId) { History() }
     var appSort by remember { mutableStateOf(AppSortSetting.load(context)) }
     val appOrder = remember(pc.pcId) { AppOrders.apps(pc.pcId) }
-    // The PC's local AI advice (DECISIONS M-59): asked for only on a tap, kept while this screen is open.
+    // The PC's local AI advice (DECISIONS M-60): asked for only on a tap, kept while this screen is open.
     var advice by remember(pc.pcId) { mutableStateOf<AdviceUi>(AdviceUi.Idle) }
     val scope = rememberCoroutineScope()
     val askAdvice: () -> Unit = {
@@ -130,7 +130,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
             scope.launch {
                 advice = try {
                     api.advise(store.get(pc.pcId) ?: pc)?.let { AdviceUi.Done(it) }
-                        ?: AdviceUi.Failed("이 PC의 Homebase가 이 기능보다 오래된 버전입니다. PC를 v0.45.0 이상으로 업데이트하면 여기서 조언을 받을 수 있습니다.")
+                        ?: AdviceUi.Failed("이 PC의 Homebase가 이 기능보다 오래된 버전입니다. PC를 v0.46.0 이상으로 업데이트하면 여기서 조언을 받을 수 있습니다.")
                 } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                     throw e
                 } catch (e: UnauthorizedException) {
@@ -893,7 +893,7 @@ private fun EmptyNote(title: String, body: String?) {
     }
 }
 
-/** "AI 조언" under the panel (DECISIONS M-59): nothing asked yet, asking, the PC's answer, or why there is none. */
+/** "AI 조언" under the panel (DECISIONS M-60): nothing asked yet, asking, the PC's answer, or why there is none. */
 private sealed interface AdviceUi {
     data object Idle : AdviceUi
     data object Asking : AdviceUi

@@ -517,7 +517,10 @@ public sealed class MobileApiServer : BackgroundService
                 try { report = JsonSerializer.Deserialize<PresenceReport>(body!, MobileProtocol.Json); }
                 catch (JsonException) { report = null; }
                 if (PresenceReport.Validate(report) is { } invalid) return (400, Error("invalid_presence", invalid));
-                return (200, Json(_deviceHub.Presence(device, report!)));
+                var answer = _deviceHub.Presence(device, report!);
+                // A linked PC's paths reach this PC's own link to it when that one went stale (M-59).
+                _group?.AdoptPaths(device, report!.Sanitized());
+                return (200, Json(answer));
             }
 
             case ("GET", "/api/v1/devices"):
@@ -610,7 +613,7 @@ public sealed class MobileApiServer : BackgroundService
 
             case ("POST", "/api/v1/advise"):
             {
-                // The local LLM's health advice, asked for from the app (M-59). Any paired device may ask:
+                // The local LLM's health advice, asked for from the app (M-60). Any paired device may ask:
                 // it reads this PC's state like the live view does and changes nothing.
                 if (_advice is null) return (404, Error("not_found", "Not found."));
                 var device = _devices.Authenticate(head.BearerToken() ?? "");

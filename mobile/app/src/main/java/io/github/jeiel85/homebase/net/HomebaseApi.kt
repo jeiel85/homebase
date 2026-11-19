@@ -57,7 +57,7 @@ class HomebaseApi(
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
-    /** For the PC's local AI (DECISIONS M-59): a model loading cold can take most of a minute to answer. */
+    /** For the PC's local AI (DECISIONS M-60): a model loading cold can take most of a minute to answer. */
     private val patient: OkHttpClient = client.newBuilder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
@@ -231,8 +231,8 @@ class HomebaseApi(
     }
 
     /**
-     * Asks [pc]'s local AI for advice about its current state (DECISIONS M-59). Null when the PC
-     * predates the route (404/405: v0.44.0 and older). Advice that couldn't be produced (Ollama not
+     * Asks [pc]'s local AI for advice about its current state (DECISIONS M-60). Null when the PC
+     * predates the route (404/405: v0.45.0 and older). Advice that couldn't be produced (Ollama not
      * running, model not pulled …) is a reply with `ok = false`, not an exception.
      */
     suspend fun advise(pc: PcEntry): AdviceReply? =

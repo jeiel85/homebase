@@ -253,7 +253,7 @@ data class Hardware(
 }
 
 /**
- * `POST /api/v1/advise` reply (DECISIONS M-59): the PC's local AI's advice about its current state, or
+ * `POST /api/v1/advise` reply (DECISIONS M-60): the PC's local AI's advice about its current state, or
  * why there is none — [error] is a code this app words itself (see the constants), [message] the PC's
  * English detail. [summary] is what the model was shown. [text] is free-form model output: shown as
  * plain text only, never as markup or links.

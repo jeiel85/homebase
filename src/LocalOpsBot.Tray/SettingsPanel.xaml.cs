@@ -442,7 +442,7 @@ public partial class SettingsPanel : UserControl
         finally { AiRecheckButton.IsEnabled = true; }
     }
 
-    // "Get advice now" (M-59): the Agent's shared on-demand advice, the same the phone app asks for.
+    // "Get advice now" (M-60): the Agent's shared on-demand advice, the same the phone app asks for.
     private async void Advise_Click(object sender, RoutedEventArgs e)
     {
         if (Services.Mobile.MobileHost.Client is not { IsConnected: true } bridge)

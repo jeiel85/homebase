@@ -52,6 +52,10 @@ public partial class DashboardWindow : ThemedWindow
     private string? _liveKey;
     private string? _shownKey;
     private bool _refreshing;
+    /// <summary>The list's refresh (M-59) is waiting for the Agent.</summary>
+    private bool _reconnecting;
+    /// <summary>Read the device list on the next tick, whatever the count (after a refresh).</summary>
+    private bool _reread;
     private int _ticks;
     private Connections? _connections;
     private DashTab _tab = DashTab.Devices;
@@ -93,8 +97,16 @@ public partial class DashboardWindow : ThemedWindow
         DeviceNames.Aliases.Changed += onAliases;
         PreviewKeyDown += (_, e) =>
         {
-            // F2 renames the selected device on the Devices page only (Settings has text fields of its own).
-            if (e.Key != Key.F2 || _tab != DashTab.Devices || _items.Count == 0) return;
+            // F2 renames the selected device and F5 refreshes the list (M-59), on the Devices page only
+            // (Settings has text fields of its own).
+            if (_tab != DashTab.Devices) return;
+            if (e.Key == Key.F5)
+            {
+                e.Handled = true;
+                RefreshDevices();
+                return;
+            }
+            if (e.Key != Key.F2 || _items.Count == 0) return;
             e.Handled = true;
             Rename(_selected);
         };
@@ -176,8 +188,9 @@ public partial class DashboardWindow : ThemedWindow
                     ApplyServiceStatus(_preview ? new ServiceStatusInfo("Running", true, true) : await Task.Run(ReadServiceStatus));
                 return;
             }
-            if (_ticks % 4 == 0)
+            if (_ticks % 4 == 0 || _reread)
             {
+                _reread = false;
                 ApplyServiceStatus(_preview ? new ServiceStatusInfo("Running", true, true) : await Task.Run(ReadServiceStatus));
                 var overview = _source.Connected ? await _source.OverviewAsync() : null;
                 // A failed answer keeps what is shown; no bridge at all leaves just this PC.
@@ -606,6 +619,42 @@ public partial class DashboardWindow : ThemedWindow
     }
 
     private void AddDevice_Click(object sender, RoutedEventArgs e) => ShowTab(DashTab.Settings, SettingsTab.Phone);
+
+    private void RefreshDevices_Click(object sender, RoutedEventArgs e) => RefreshDevices();
+
+    /// <summary>
+    /// The list's refresh (M-59, the button or F5): the Agent tries every linked PC now and syncs the group
+    /// instead of waiting for its next turn, then the list is read again at once. The icon turns meanwhile.
+    /// </summary>
+    private async void RefreshDevices()
+    {
+        if (_reconnecting) return;
+        _reconnecting = true;
+        RefreshButton.IsEnabled = false;
+        RefreshButton.ToolTip = L.DashRefreshing;
+        var spin = new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromSeconds(0.9))
+            { RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever };
+        RefreshSpin.BeginAnimation(RotateTransform.AngleProperty, spin);
+        try
+        {
+            var result = await _source.RefreshAsync();
+            if (result is not null) TrayLog.Info("dashboard", $"Refresh: {result.Reached} of {result.Pcs} linked PC(s) answered");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            TrayLog.Info("dashboard", $"Refresh failed: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            RefreshSpin.BeginAnimation(RotateTransform.AngleProperty, null);
+            RefreshButton.ToolTip = L.DashRefreshTip;
+            RefreshButton.IsEnabled = true;
+            _reconnecting = false;
+        }
+        // Read the list on the next tick even when a tick is running now.
+        _reread = true;
+        Refresh();
+    }
 
     /// <summary>
     /// Shows the window if it is hidden (near the tray, as a tray click does), otherwise restores and

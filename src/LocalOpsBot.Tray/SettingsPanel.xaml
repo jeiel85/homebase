@@ -233,7 +233,7 @@
               </StackPanel>
             </Border>
 
-            <!-- Ask now (M-59): the same shared advice the phone app asks for. -->
+            <!-- Ask now (M-60): the same shared advice the phone app asks for. -->
             <Border Style="{StaticResource SectionHeaderBar}">
               <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiAskHeader}"/>
             </Border>

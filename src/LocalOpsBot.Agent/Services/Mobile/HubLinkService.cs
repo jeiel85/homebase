@@ -17,10 +17,13 @@ namespace LocalOpsBot.Agent.Services.Mobile;
 /// <item>this PC's own Windows notifications → <c>POST /api/v1/notifications</c>;</item>
 /// <item>a long poll of <c>GET /api/v1/inbox</c>; what arrives is shown here and pushed to this PC's
 /// phones, except phones the hub already reaches (M-28) — and never sent on again;</item>
-/// <item>every 10 minutes, the hub's current paths (<c>GET /api/v1/endpoints</c>) replace the stored ones;</item>
+/// <item>every 10 minutes, the hub's current paths (<c>GET /api/v1/endpoints</c>) replace the stored ones,
+/// keeping its Tailscale paths while it has none up (<see cref="HubPaths.Refresh"/>, M-59);</item>
 /// <item>while the hub's Tray looks at this PC (its inbox answers say <c>live</c>), this PC's live snapshots
 /// every 2 s → <c>POST /api/v1/live-snapshot</c>, until the hub answers <c>live: false</c> (M-46).</item>
 /// </list>
+/// The presence also names this PC's own paths, so a hub whose link back here went stale can take them
+/// up (<see cref="AdoptPaths"/>), and the Tray's refresh retries every link at once (<see cref="RetryNowAsync"/>).
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class HubLinkService : BackgroundService
@@ -46,6 +49,7 @@ public sealed class HubLinkService : BackgroundService
     private CancellationToken _stopping;
     private readonly HubFinder? _finder;
     private readonly LiveSnapshotHub? _live;
+    private readonly Func<IReadOnlyList<MobileEndpoint>>? _ownPaths;
 
     private sealed class Link(LinkedHub hub, HubClient client, CancellationTokenSource cts)
     {
@@ -61,6 +65,21 @@ public sealed class HubLinkService : BackgroundService
         /// <summary>1 while this PC shares its live view with the hub (M-46).</summary>
         public int Sharing;
         public IReadOnlyCollection<string> HubPushHashes => LastDevices?.PushHashes ?? (IReadOnlyCollection<string>)Array.Empty<string>();
+
+        private TaskCompletionSource _wake = Signal();
+        private TaskCompletionSource _attempted = Signal();
+
+        /// <summary>Completes when the loops should stop waiting and try now (new paths, the Tray's refresh).</summary>
+        public Task Woken => Volatile.Read(ref _wake).Task;
+
+        /// <summary>Completes when the presence loop has finished its next attempt.</summary>
+        public Task NextAttempt => Volatile.Read(ref _attempted).Task;
+
+        public void Wake() => Interlocked.Exchange(ref _wake, Signal()).TrySetResult();
+
+        public void Attempted() => Interlocked.Exchange(ref _attempted, Signal()).TrySetResult();
+
+        private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     public HubLinkService(
@@ -72,10 +91,12 @@ public sealed class HubLinkService : BackgroundService
         NotificationForwardingService? forwarding = null,
         bool allowLoopback = false,
         HubFinder? finder = null,
-        LiveSnapshotHub? live = null)
+        LiveSnapshotHub? live = null,
+        Func<IReadOnlyList<MobileEndpoint>>? ownPaths = null)
     {
         _finder = finder;
         _live = live;
+        _ownPaths = ownPaths;
         _store = store;
         _devices = devices;
         _status = status;
@@ -97,6 +118,9 @@ public sealed class HubLinkService : BackgroundService
         });
         return Task.CompletedTask;
     }
+
+    /// <summary>Loopback paths are used (tests only: every PC there is on 127.0.0.1).</summary>
+    internal bool AllowsLoopback => _allowLoopback;
 
     /// <summary>Raised after this PC linked to another (by hand or by a group introduction, M-47).</summary>
     public event Action<LinkedHub>? Linked;
@@ -139,6 +163,46 @@ public sealed class HubLinkService : BackgroundService
         if (link.Client.Preferred is { } p && hub.Endpoints.Contains(p))
             hub = hub with { Endpoints = new[] { p }.Concat(hub.Endpoints.Where(e => e != p)).ToList() };
         return hub;
+    }
+
+    /// <summary>
+    /// A linked PC that reaches this one named its current paths (M-59). While this PC can't reach it —
+    /// its Quick Tunnel restarted under a new name, its LAN address changed, or its Tailscale was down
+    /// when its paths were last read — they replace the stored ones (Tailscale paths kept, see
+    /// <see cref="HubPaths.Refresh"/>) and the link tries them at once. A link that is up is left alone:
+    /// it reads the paths itself every 10 minutes. False when nothing changed.
+    /// </summary>
+    public bool AdoptPaths(string pcId, IReadOnlyList<MobileEndpoint> advertised)
+    {
+        if (!_links.TryGetValue(pcId, out var link) || link.Online) return false;
+        var fresh = advertised.Where(e => _allowLoopback || e.Transport != MobileTransport.Loopback).ToList();
+        if (fresh.Count == 0) return false;
+        var paths = HubPaths.Refresh(fresh, link.Hub.Endpoints);
+        if (paths.SequenceEqual(link.Hub.Endpoints)) return false;
+        _store.UpdateEndpoints(pcId, paths);
+        link.Hub = link.Hub with { Endpoints = paths };
+        _logger.LogInformation("Linked PC {Name} is unreachable but named its current paths ({Paths}); trying them now.",
+            link.Hub.PcName, string.Join(", ", paths.Select(e => $"{e.Transport}:{e.Host}")));
+        link.Wake();
+        return true;
+    }
+
+    /// <summary>
+    /// The Tray's refresh (M-59): every link tries its hub now instead of at its next turn (up to 30 s,
+    /// 5 minutes after a refusal), and this waits up to <paramref name="wait"/> for those attempts.
+    /// </summary>
+    public async Task<DevicesRefreshResult> RetryNowAsync(TimeSpan wait, CancellationToken ct)
+    {
+        var links = _links.Values.ToList();
+        var attempts = links.Select(l =>
+        {
+            var next = l.NextAttempt;
+            l.Wake();
+            return next;
+        }).ToList();
+        try { await Task.WhenAll(attempts).WaitAsync(wait, _time, ct); }
+        catch (TimeoutException) { }
+        return new DevicesRefreshResult(links.Count, links.Count(l => l.Online));
     }
 
     /// <summary>
@@ -286,6 +350,32 @@ public sealed class HubLinkService : BackgroundService
     private IReadOnlyList<string> OwnPushHashes() =>
         _devices.PushTargets().Select(t => PushHash.Of(t.Subscription.Endpoint)).Distinct().ToList();
 
+    /// <summary>This PC's own paths for its presence (M-59), loopback left out; null when there are none.</summary>
+    private IReadOnlyList<MobileEndpoint>? OwnPaths()
+    {
+        try
+        {
+            var paths = _ownPaths?.Invoke().Where(e => _allowLoopback || e.Transport != MobileTransport.Loopback)
+                .Take(PresenceReport.MaxEndpoints).ToList();
+            return paths is { Count: > 0 } ? paths : null;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Never worth ending the link over: the presence goes without them.
+            _logger.LogDebug(ex, "This PC's paths are unavailable for the presence");
+            return null;
+        }
+    }
+
+    /// <summary>Waits <paramref name="wait"/>, or less when <paramref name="woken"/> completes first.</summary>
+    private async Task PauseAsync(TimeSpan wait, Task woken, CancellationToken ct)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        await Task.WhenAny(Task.Delay(wait, _time, cts.Token), woken);
+        cts.Cancel(); // the delay, when the wake came first
+        ct.ThrowIfCancellationRequested();
+    }
+
     private async Task RunPresenceAsync(Link link, CancellationToken ct)
     {
         var endpointsAt = DateTimeOffset.MinValue;
@@ -293,9 +383,11 @@ public sealed class HubLinkService : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
-                // The pcId lets the hub's group know this PC (M-47).
+                // Taken before the attempt, so a wake while it runs is not missed.
+                var woken = link.Woken;
+                // The pcId lets the hub's group know this PC (M-47); the paths let it reach this PC back (M-59).
                 var reply = await link.Client.PostAsync(link.Hub.Endpoints, "/api/v1/presence",
-                    _status.Report(OwnPushHashes()) with { PcId = _devices.PcId }, link.Hub.Token, CallTimeout, ct);
+                    _status.Report(OwnPushHashes()) with { PcId = _devices.PcId, Endpoints = OwnPaths() }, link.Hub.Token, CallTimeout, ct);
                 var wait = PresenceInterval;
                 if (reply.Ok && reply.Read<DevicesResponse>() is { } devices)
                 {
@@ -309,8 +401,10 @@ public sealed class HubLinkService : BackgroundService
                         var e = await link.Client.GetAsync(link.Hub.Endpoints, "/api/v1/endpoints", link.Hub.Token, CallTimeout, ct);
                         if (e.Ok && e.Read<EndpointsResponse>() is { Endpoints.Count: > 0 } fresh)
                         {
-                            _store.UpdateEndpoints(link.Hub.PcId, fresh.Endpoints);
-                            link.Hub = link.Hub with { Endpoints = fresh.Endpoints.ToList() };
+                            // Its Tailscale may be down just now: keep those paths for when it is back.
+                            var paths = HubPaths.Refresh(fresh.Endpoints, link.Hub.Endpoints);
+                            _store.UpdateEndpoints(link.Hub.PcId, paths);
+                            link.Hub = link.Hub with { Endpoints = paths };
                             endpointsAt = _time.GetUtcNow();
                         }
                     }
@@ -326,7 +420,8 @@ public sealed class HubLinkService : BackgroundService
                     }
                     else link.Error = reply.Status == 0 ? "unreachable" : $"HTTP {reply.Status}";
                 }
-                await Task.Delay(wait, _time, ct);
+                link.Attempted();
+                await PauseAsync(wait, woken, ct);
             }
         }
         catch (OperationCanceledException) { }
@@ -340,11 +435,12 @@ public sealed class HubLinkService : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
+                var woken = link.Woken;
                 var reply = await link.Client.GetAsync(link.Hub.Endpoints, $"/api/v1/inbox?after={cursor ?? 0}",
                     link.Hub.Token, InboxTimeout, ct);
                 if (!reply.Ok || reply.Read<InboxResponse>() is not { } inbox)
                 {
-                    await Task.Delay(reply.Status == 401 ? RejectedRetry : PresenceInterval, _time, ct);
+                    await PauseAsync(reply.Status == 401 ? RejectedRetry : PresenceInterval, woken, ct);
                     continue;
                 }
                 // The hub's Tray is looking at this PC: share the live view while it does (M-46).

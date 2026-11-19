@@ -47,6 +47,9 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly AgentAlertGate _agentAlerts = new();
     private readonly SemaphoreSlim _aliasSends = new(1, 1);
     private static readonly TimeSpan AliasSendTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long the Tray's refresh waits for the linked PCs (a path that times out takes 5 s to connect).</summary>
+    internal static readonly TimeSpan RefreshWait = TimeSpan.FromSeconds(8);
     private readonly ApprovalBroker? _approvals;
     private readonly OnDemandAdvice? _advice;
     private readonly List<Connection> _connections = new();
@@ -225,10 +228,16 @@ public sealed class MobileBridgeServer : BackgroundService
         }
 
         if (id is null) return; // requests need an id to answer
+        if (op == MobileBridge.OpDevicesRefresh)
+        {
+            // Waits a few seconds for the linked PCs: off the read loop so live views keep flowing (M-59).
+            _ = Task.Run(() => RefreshDevicesAsync(conn, id, ct), CancellationToken.None);
+            return;
+        }
         if (op == MobileBridge.OpAdvise)
         {
             // Generating takes seconds to a minute: answered off the read loop so this connection's
-            // session reports and other requests keep flowing meanwhile (M-59).
+            // session reports and other requests keep flowing meanwhile (M-60).
             _ = Task.Run(() => AdviseAsync(conn, id, ct), CancellationToken.None);
             return;
         }
@@ -367,8 +376,30 @@ public sealed class MobileBridgeServer : BackgroundService
         }
     }
 
+    /// <summary>
+    /// The Tray's refresh (M-59): the group syncs now (its backoffs cleared) and every linked PC is tried at
+    /// once; answered when they have all answered or after <see cref="RefreshWait"/>.
+    /// </summary>
+    private async Task RefreshDevicesAsync(Connection conn, string id, CancellationToken ct)
+    {
+        var result = new DevicesRefreshResult(0, 0);
+        try
+        {
+            _group?.Refresh();
+            if (_hubLinks is not null) result = await _hubLinks.RetryNowAsync(RefreshWait, ct);
+            _logger.LogInformation("Devices refreshed from the Tray: {Reached} of {Pcs} linked PC(s) answered.", result.Reached, result.Pcs);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Refreshing the devices failed");
+        }
+        try { await SendAsync(conn, MobileBridge.Response(id, true, result), ct); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+    }
+
     /// <summary>A Claude Code permission prompt for the phones (M-48); answers null (ask on the PC) on any failure.</summary>
-    /// <summary>The tray's "get advice now" (M-59): the same shared generation the phone app asks for.</summary>
+    /// <summary>The tray's "get advice now" (M-60): the same shared generation the phone app asks for.</summary>
     private async Task AdviseAsync(Connection conn, string id, CancellationToken ct)
     {
         JsonObject response;

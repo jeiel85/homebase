@@ -3,7 +3,7 @@ using LocalOpsBot.Core.Advisor;
 namespace LocalOpsBot.Core.Mobile;
 
 /// <summary>
-/// The reply to <c>POST /api/v1/advise</c> and the bridge op <c>advise</c> (DECISIONS M-59): the local
+/// The reply to <c>POST /api/v1/advise</c> and the bridge op <c>advise</c> (DECISIONS M-60): the local
 /// LLM's health advice about this PC, asked for from the phone app or the tray.
 /// </summary>
 /// <remarks>

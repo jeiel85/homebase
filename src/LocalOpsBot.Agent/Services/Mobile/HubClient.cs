@@ -29,7 +29,9 @@ public sealed record HubReply(int Status, string? Body, MobileEndpoint? Via, str
 /// rules as the phone app: LAN is TLS whose certificate must match the pinned SHA-256, Tailscale is
 /// plain HTTP (WireGuard encrypts), Cloudflare is public TLS. Loopback is used only when allowed
 /// (tests): a remote PC's 127.0.0.1 would otherwise reach this PC's own Agent.
-/// The path that answered last is tried first next time.
+/// The path that answered last is tried first next time. Cloudflare's edge answering that the tunnel
+/// behind it is gone (502, 504, 520–530 — a Quick Tunnel that restarted under a new name) is not the
+/// PC's answer, so the next path is tried (M-59).
 /// </summary>
 public sealed class HubClient : IDisposable
 {
@@ -69,6 +71,11 @@ public sealed class HubClient : IDisposable
             try
             {
                 using var response = await ClientFor(ep).SendAsync(request, cts.Token);
+                if (ep.Transport == MobileTransport.Cloudflare && IsTunnelDown((int)response.StatusCode))
+                {
+                    lastError = $"{ep.Transport} {ep.Host}: HTTP {(int)response.StatusCode}";
+                    continue;
+                }
                 var body = await response.Content.ReadAsStringAsync(cts.Token);
                 lock (_gate) _preferred = ep;
                 return new HubReply((int)response.StatusCode, body, ep, null);
@@ -81,6 +88,12 @@ public sealed class HubClient : IDisposable
         }
         return new HubReply(0, null, null, lastError ?? "no usable path");
     }
+
+    /// <summary>
+    /// Cloudflare's own errors for an origin it can't reach (the Agent answers 503 itself, with a JSON
+    /// body, so that one is the PC's answer and is not here).
+    /// </summary>
+    internal static bool IsTunnelDown(int status) => status is 502 or 504 or (>= 520 and <= 530);
 
     private IEnumerable<MobileEndpoint> Order(IReadOnlyList<MobileEndpoint> endpoints)
     {

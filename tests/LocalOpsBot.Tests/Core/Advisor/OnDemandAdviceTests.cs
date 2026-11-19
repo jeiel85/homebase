@@ -6,7 +6,7 @@ using Xunit;
 namespace LocalOpsBot.Tests.Core.Advisor;
 
 /// <summary>
-/// Advice asked for from the phone app or the tray (DECISIONS M-59): one generation at a time, shared
+/// Advice asked for from the phone app or the tray (DECISIONS M-60): one generation at a time, shared
 /// by everyone waiting, a successful reply reused for a minute, a failure never kept.
 /// </summary>
 public sealed class OnDemandAdviceTests

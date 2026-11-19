@@ -6,7 +6,7 @@ using Xunit;
 namespace LocalOpsBot.Tray.Tests;
 
 /// <summary>
-/// Settings › AI advice › "Get advice now" (DECISIONS M-59): the Agent's reply shown as plain text with
+/// Settings › AI advice › "Get advice now" (DECISIONS M-60): the Agent's reply shown as plain text with
 /// what the model saw, or a failure in the tray's own words that points at the step above.
 /// </summary>
 public sealed class AdviceTests

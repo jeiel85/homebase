@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZoneId
 
-/** Wording around the PC's AI advice (DECISIONS M-59). */
+/** Wording around the PC's AI advice (DECISIONS M-60). */
 class AdviceTextTest {
 
     private fun reply(

@@ -12,7 +12,7 @@ using Xunit;
 namespace LocalOpsBot.Tests.Mobile;
 
 /// <summary>
-/// <c>POST /api/v1/advise</c> (DECISIONS M-59): a paired device asks for the local LLM's advice about
+/// <c>POST /api/v1/advise</c> (DECISIONS M-60): a paired device asks for the local LLM's advice about
 /// this PC; a failure to produce it is still a handled request with <c>ok: false</c> and a code.
 /// </summary>
 public sealed class AdviceApiTests

@@ -37,7 +37,8 @@ public static class MobileBridge
     public const string OpApprovalAsk = "approval.ask";       // request ApprovalRequest → ApprovalAskResult (M-48, waits up to 10 min)
     public const string OpApprovalCancel = "approval.cancel"; // push {id} — the user is back at the PC (M-48)
     public const string OpAliasesSet = "aliases.set";         // request AliasSetRequest → bool, shared with the group (M-51)
-    public const string OpAdvise = "advise";                  // request → AdviceResponse, the local LLM's advice (M-59, takes up to a minute)
+    public const string OpDevicesRefresh = "devices.refresh"; // request → DevicesRefreshResult: retry linked PCs now, group sync (M-59)
+    public const string OpAdvise = "advise";                  // request → AdviceResponse, the local LLM's advice (M-60, takes up to a minute)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
@@ -49,7 +50,7 @@ public static class MobileBridge
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
         OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
-        OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpAdvise,
+        OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpDevicesRefresh, OpAdvise,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
@@ -183,6 +184,12 @@ public sealed record DeviceOverview(
     DevicesResponse Here,
     IReadOnlyList<LinkedHubView> Hubs,
     IReadOnlyList<LocalDeviceInfo>? Local = null);
+
+/// <summary>
+/// <c>devices.refresh</c> (M-59): the Tray's refresh asked every PC this one is linked to again at once.
+/// <c>Pcs</c> is how many there are, <c>Reached</c> how many answered within the wait.
+/// </summary>
+public sealed record DevicesRefreshResult(int Pcs, int Reached);
 
 /// <summary>
 /// A device paired with this PC as the Tray's device page shows it (M-46): <c>Push</c> — it registered a
