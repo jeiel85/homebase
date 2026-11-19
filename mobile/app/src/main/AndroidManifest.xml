@@ -64,11 +64,17 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="homebase" android:host="pair" />
             </intent-filter>
+            <!-- The share sheet's PC shortcuts (Direct Share, Android 10+): res/xml/shortcuts.xml declares the share target. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- "Homebase" in the share sheet for text: puts it on a paired PC's clipboard (DECISIONS M-62).
-             Exported for the share sheet; it always waits for a tap on a PC, so another app can't push
-             text to a PC by itself. Its own task, so sharing doesn't bring the app's screens up. -->
+        <!-- "Homebase" in the share sheet: the share center (docs/SHARE_CONVENIENCE.md §9), where text and files go to
+             the PCs and phones the user checks (DECISIONS M-62, M-64). Exported for the share sheet and its PC shortcuts;
+             nothing is sent until the user taps [공유 시작], so another app can't push text or files to a PC by itself —
+             not even with a shortcut id, which only checks that PC. Its own task, so sharing doesn't bring the app's
+             screens up. -->
         <activity
             android:name=".clip.ClipShareActivity"
             android:exported="true"

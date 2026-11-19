@@ -143,6 +143,8 @@ public sealed class TrayIconManager : IDisposable
         {
             SendBundle.CleanLeftovers();
             if (Environment.ProcessPath is { } exe) SendToShortcut.Sync(SendPrefs.SendToMenu, exe);
+            // The "files received" toast's app id and links point at this install (M-67).
+            ReceivedToast.Prepare();
         });
         var dispatcher = Application.Current.Dispatcher;
         _ = Task.Run(() => SendRequests.ServeAsync(
@@ -266,9 +268,13 @@ public sealed class TrayIconManager : IDisposable
                     return;
                 }
                 var first = result.Paths[0];
-                ShowBalloon(L.FilesReceivedTitle(from, result.Paths.Count, total),
-                    L.FilesReceivedBody(result.Paths.Select(System.IO.Path.GetFileName).ToList()!, picture, result.Ok),
-                    () => OpenInExplorer(first));
+                var title = L.FilesReceivedTitle(from, result.Paths.Count, total);
+                var body = L.FilesReceivedBody(result.Paths.Select(System.IO.Path.GetFileName).ToList()!, picture, result.Ok);
+                // A Windows toast above the clock, with the picture and [Open] / [Open folder] (M-67); the balloon if Windows won't.
+                OwnToasts.Remember(title);
+                var showsPicture = transfer.Files.Count == 1 && FileReceiver.IsPicture(transfer.Files[0]);
+                if (!ReceivedToast.Show(title, body, result.Paths, showsPicture))
+                    ShowBalloon(title, body, () => OpenInExplorer(first));
             }).Task.Unwrap();
         }
         return new LocalOpsBot.Core.Mobile.TrayTransferSaved(transfer.Id, result.Ok, result.Error);

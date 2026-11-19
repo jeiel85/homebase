@@ -51,7 +51,10 @@ internal class Uploader(
     private val pcId: String,
     private val transferId: String,
     private val files: List<OutgoingFile>,
-    private val onProgress: (sent: Long, total: Long) -> Unit,
+    /** Phones (the PC's device ids) the PC passes the files on to instead of saving them (docs/SHARE_CONVENIENCE.md §4.8). */
+    private val to: List<String> = emptyList(),
+    /** [via]: the path the PC answered on last, for the notification (Cloudflare is slow, §4.7). */
+    private val onProgress: (sent: Long, total: Long, via: Endpoint?) -> Unit,
 ) {
     private val total = files.sumOf { it.size }
 
@@ -91,12 +94,12 @@ internal class Uploader(
         var rekeyed = false
         repeat(MAX_PASSES) {
             // 1. Create, or the status of the transfer the PC already has under this id.
-            var created = post(pc, TransferProtocol.PATH, json(TransferMessages.sealMeta(key, transferId, files.map { f -> f.toTransferFile() }).toJson()))
+            var created = post(pc, TransferProtocol.PATH, json(meta(key)))
             if (!rekeyed && (created.error == TransferErrors.KEY_NEEDED || created.code == 400)) {
                 // The PC holds no key for this phone, or another one (the metadata doesn't open): agree again, once.
                 rekeyed = true
                 key = ClipShare.keyFor(context, api, pc, stale = key) ?: return tooOld
-                created = post(pc, TransferProtocol.PATH, json(TransferMessages.sealMeta(key, transferId, files.map { f -> f.toTransferFile() }).toJson()))
+                created = post(pc, TransferProtocol.PATH, json(meta(key)))
             }
             val status = when {
                 created.ok -> TransferStatus.parse(created.body) ?: return UploadOutcome.Retry("${name}의 응답을 읽지 못했습니다")
@@ -122,6 +125,9 @@ internal class Uploader(
         return UploadOutcome.Retry("${name}이(가) 전송을 마무리하지 못했습니다")
     }
 
+    private fun meta(key: ByteArray): JSONObject =
+        TransferMessages.sealMeta(key, transferId, files.map { f -> f.toTransferFile() }, to = to).toJson()
+
     /** Sends what is missing from [status] and returns each file's SHA-256 (lowercase hex). */
     private suspend fun sendFiles(pc: PcEntry, clipKey: ByteArray, status: TransferStatus): List<String> {
         val transferKey = TransferCrypto.transferKey(clipKey, transferId)
@@ -129,7 +135,7 @@ internal class Uploader(
         var sent = files.withIndex().sumOf { (f, file) ->
             status.arrived(f).sumOf { n -> TransferProtocol.chunkLength(file.size, n).toLong() }
         }
-        onProgress(sent, total)
+        onProgress(sent, total, via)
         val hashes = mutableListOf<String>()
         for ((f, file) in files.withIndex()) {
             val arrived = status.arrived(f)
@@ -143,7 +149,7 @@ internal class Uploader(
                     if (n in arrived) continue
                     sendChunk(pc, f, n, TransferCrypto.sealChunk(transferKey, f, n, buffer, 0, length))
                     sent += length
-                    onProgress(sent, total)
+                    onProgress(sent, total, via)
                 }
                 if (readByte(input, file.name) >= 0) throw Changed(file.name) // longer than it was
             }
@@ -209,7 +215,8 @@ internal class Uploader(
         /** Lowercase hex, as the PC compares hashes. */
         internal fun hex(bytes: ByteArray): String = bytes.joinToString("") { b -> (b.toInt() and 0xff).toString(16).padStart(2, '0') }
 
-        private fun savedOf(body: String?): String = try {
+        /** `saved` of a `done` answer: `tray`, `waiting`, or `forwarded` (passed on to other phones, §4.8). */
+        internal fun savedOf(body: String?): String = try {
             JSONObject(body ?: "").optString("saved").ifEmpty { "tray" }
         } catch (_: Exception) {
             "tray"

@@ -8,7 +8,10 @@ import io.github.jeiel85.homebase.net.ClipCrypto
 import io.github.jeiel85.homebase.net.ClipProtocol
 import io.github.jeiel85.homebase.net.ClipPush
 import io.github.jeiel85.homebase.net.ClipSendResult
+import io.github.jeiel85.homebase.net.Forwarded
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.net.RelayPhone
+import io.github.jeiel85.homebase.net.ShareRelay
 import io.github.jeiel85.homebase.net.UnauthorizedException
 import io.github.jeiel85.homebase.push.RecentPushIds
 import kotlinx.coroutines.Dispatchers
@@ -65,24 +68,47 @@ object ClipShare {
      * or can't open the text (its key differs — it was re-installed, or this phone's key was lost), a new
      * key is agreed and the text sent once more.
      */
-    suspend fun send(context: Context, api: HomebaseApi, pc: PcEntry, text: String, sensitive: Boolean): String {
+    suspend fun send(context: Context, api: HomebaseApi, pc: PcEntry, text: String, sensitive: Boolean): String =
+        send(context, api, pc, text, sensitive, phones = emptyList())
+
+    /**
+     * [send] through [pc] to other [phones] it listed (docs/SHARE_CONVENIENCE.md §4.8): the PC passes the text on
+     * instead of putting it on its own clipboard, and says which phones it reached. Only for a PC that answered
+     * `GET /api/v1/share/phones` — an older PC would ignore `to` and paste it itself.
+     */
+    suspend fun sendRelayed(context: Context, api: HomebaseApi, pc: PcEntry, text: String, phones: List<RelayPhone>): String =
+        send(context, api, pc, text, sensitive = false, phones = phones)
+
+    private suspend fun send(context: Context, api: HomebaseApi, pc: PcEntry, text: String, sensitive: Boolean, phones: List<RelayPhone>): String {
         problem(text)?.let { return it }
         // The entry the caller holds may predate a key agreed meanwhile (the registrar's, another send).
         val current = withContext(Dispatchers.IO) { PcStore(context).get(pc.pcId) } ?: pc
         val name = current.displayName
         val tooOld = "${name}의 Homebase를 업데이트하세요"
+        val to = phones.map { it.deviceId }
         return try {
             val stored = ClipCrypto.decodeKey(current.clipKey)
             val key = stored ?: keyFor(context, api, current, stale = null) ?: return tooOld
-            var result = api.sendClip(current, key, text, sensitive)
+            var result = api.sendClip(current, key, text, sensitive, to)
             if (stored != null && (result == ClipSendResult.KeyNeeded || result == ClipSendResult.Rejected)) {
                 Log.i(TAG, "clipboard key with ${current.name} no longer matches; agreeing a new one")
-                result = api.sendClip(current, keyFor(context, api, current, stale = key) ?: return tooOld, text, sensitive)
+                result = api.sendClip(current, keyFor(context, api, current, stale = key) ?: return tooOld, text, sensitive, to)
             }
             when (val r = result) {
                 ClipSendResult.Sent -> {
+                    if (phones.isEmpty()) {
+                        remember(context, current.pcId)
+                        "${name}에 보냈습니다"
+                    } else {
+                        // A PC that took `to` always answers with `forwarded`; without it, it pasted the text itself.
+                        "${name}이(가) 다른 휴대폰에 넘기지 못해 PC 클립보드에 넣었습니다"
+                    }
+                }
+                is ClipSendResult.Relayed -> if (phones.isEmpty()) {
                     remember(context, current.pcId)
                     "${name}에 보냈습니다"
+                } else {
+                    relayedLine(r.forwarded, phones, name)
                 }
                 ClipSendResult.NoUserSession -> "${name}에 로그인한 사용자가 없습니다"
                 ClipSendResult.ClipboardBusy -> "${name}의 클립보드가 사용 중이었습니다. 다시 보내세요"
@@ -97,6 +123,19 @@ object ClipShare {
             Log.i(TAG, "clipboard to ${current.name} failed: ${e.message}")
             "${name}에 닿지 않습니다"
         }
+    }
+
+    /**
+     * What a relayed send came to, in a line: "Galaxy Tab S9에 보냈습니다(집 PC 경유)", and the phones the PC could not
+     * push it to. A phone the PC didn't mention counts as not reached.
+     */
+    internal fun relayedLine(forwarded: List<Forwarded>, phones: List<RelayPhone>, pcName: String): String {
+        val ok = phones.filter { p -> forwarded.any { it.deviceId == p.deviceId && it.ok } }
+        val failed = phones - ok.toSet()
+        return listOfNotNull(
+            ok.takeIf { it.isNotEmpty() }?.let { "${ShareRelay.names(it.map { p -> p.name })}에 보냈습니다(${pcName} 경유)" },
+            failed.takeIf { it.isNotEmpty() }?.let { "${ShareRelay.names(it.map { p -> p.name })}에 보내지 못했습니다(${pcName} 경유)" },
+        ).joinToString("\n")
     }
 
     /**
@@ -193,10 +232,11 @@ object ClipShare {
         }
         val name = pc.displayName
         val text = content.text
+        // Another phone's text the PC passed on (docs/SHARE_CONVENIENCE.md §4.8) names that phone in `from`.
         if (text == null) {
-            ClipNotifier.offer(context, pc.pcId, name, push.id, content.chars)
+            ClipNotifier.offer(context, pc.pcId, name, push.id, content.chars, content.from)
         } else if (PhoneClipboard.write(context, text, content.sensitive)) {
-            ClipNotifier.copied(context, name, text, content.sensitive, push.id)
+            ClipNotifier.copied(context, name, text, content.sensitive, push.id, content.from)
         }
     }
 

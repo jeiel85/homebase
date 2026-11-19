@@ -1,8 +1,10 @@
 package io.github.jeiel85.homebase.share
 
+import android.content.ActivityNotFoundException
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -34,6 +36,40 @@ internal interface ReceivingFile {
 internal object ReceivedStore {
     fun create(context: Context, name: String, mime: String?): ReceivingFile =
         if (Build.VERSION.SDK_INT >= 29) MediaStoreFile.create(context, name, mime) else AppDirFile.create(context, name)
+
+    /**
+     * The first of [uris] (received files, as the notification center keeps them) that can still be read — one deleted
+     * in the gallery or a file app is gone. Blocking: call it off the main thread.
+     */
+    fun firstExisting(context: Context, uris: List<String>): Uri? =
+        uris.asSequence()
+            .mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
+            .firstOrNull { uri ->
+                try {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                } catch (_: Exception) {
+                    false
+                }
+            }
+
+    /** Opens [uri] in whatever app handles its type; false when there is none. */
+    fun view(context: Context, uri: Uri): Boolean {
+        val type = try {
+            context.contentResolver.getType(uri)
+        } catch (_: Exception) {
+            null
+        } ?: "*/*"
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, type)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        }
+    }
 
     /** "name (2).ext", "name (3).ext", … for the first that [exists] says is free. */
     fun unique(name: String, exists: (String) -> Boolean): String {

@@ -59,6 +59,8 @@ public sealed class FileSendService : BackgroundService
         public List<TargetState> Targets { get; set; } = new();
         public bool Started { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
+        /// <summary>The phone they came from, when this PC passes another phone's files on (M-67); null for this PC's own.</summary>
+        public string? From { get; set; }
     }
 
     internal sealed class TargetState
@@ -101,6 +103,56 @@ public sealed class FileSendService : BackgroundService
         _freeSpace = freeSpace;
         Directory.CreateDirectory(_root);
         Load();
+    }
+
+    /// <summary>
+    /// Files a phone uploaded to this PC for other phones (M-67, <see cref="FileShareService.Forwarder"/>): moved (same disk)
+    /// into a send of their own, already written and started, and announced to those phones like any send from here — with
+    /// the sender's name. Phones not (or no longer) able to fetch files from here are left out. Null when on their way, else
+    /// why not.
+    /// </summary>
+    public string? Adopt(ForwardedFiles files)
+    {
+        var known = Targets().ToDictionary(t => t.Key, StringComparer.Ordinal);
+        var targets = files.To.Distinct(StringComparer.Ordinal)
+            .Where(id => id != files.FromDeviceId)
+            .Select(id => known.GetValueOrDefault(ClipTargetKeys.Device(id)))
+            .OfType<ClipTarget>()
+            .ToList();
+        if (targets.Count == 0) return ClipErrors.UnknownTarget;
+        if (files.Sha256.Count != files.Files.Count || files.Paths.Count != files.Files.Count) return TransferErrors.Invalid;
+
+        Send send;
+        lock (_gate)
+        {
+            if (_sends.Values.Sum(s => s.TotalBytes) + files.Files.Sum(f => f.Size) > _storeCap) return TransferErrors.NoSpace;
+            var id = ClipProtocol.NewId();
+            var state = new SendState
+            {
+                Id = id, Files = files.Files.ToList(), Sha256 = files.Sha256.Select(h => (string?)h).ToList(), Started = true,
+                CreatedAt = _time.GetUtcNow(), From = files.FromName,
+                Targets = targets.Select(t => new TargetState { Key = t.Key, Name = t.Name, Kind = t.Kind }).ToList(),
+            };
+            var dir = Path.Combine(_root, id);
+            Directory.CreateDirectory(dir);
+            try
+            {
+                for (var i = 0; i < files.Paths.Count; i++) File.Move(files.Paths[i], FilePath(dir, i));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning("Files from {Name} could not be taken for passing on: {Message}", files.FromName, ex.Message);
+                try { Directory.Delete(dir, recursive: true); } catch (Exception del) when (del is IOException or UnauthorizedAccessException) { }
+                return ClipErrors.Failed;
+            }
+            send = new Send(state, dir);
+            Save(send);
+            _sends[id] = send;
+        }
+        _logger.LogInformation("Send {Id}: {Count} file(s) from {Name} passed on to {Targets}.", send.State.Id, files.Files.Count,
+            files.FromName, string.Join(", ", targets.Select(t => t.Name)));
+        foreach (var target in send.State.Targets) _ = Task.Run(() => DeliverAsync(send, target, _stopping), CancellationToken.None);
+        return null;
     }
 
     /// <summary>Progress for the Tray (the bridge broadcasts it as <c>files.progress</c>).</summary>
@@ -283,7 +335,8 @@ public sealed class FileSendService : BackgroundService
             Finish(send, target, FileSendStates.Failed, ClipErrors.UnknownTarget);
             return;
         }
-        var notice = new ShareNotice(MobileProtocol.Schema, send.State.Files.Count, send.TotalBytes, send.State.Files[0].Name, send.State.CreatedAt);
+        var notice = new ShareNotice(MobileProtocol.Schema, send.State.Files.Count, send.TotalBytes, send.State.Files[0].Name, send.State.CreatedAt,
+            send.State.From);
         var (ok, error) = await _push(push, FileSendMessages.PushPlaintext(_devices.PcId, key, send.State.Id, notice), ct);
         if (!ok)
         {
@@ -444,6 +497,7 @@ public sealed class FileSendService : BackgroundService
             FileSendStates.Received => "받음",
             _ => "실패: " + FailureText(target.Error),
         };
+        if (send.State.From is { } from) outcome += $" · {from}에서 받아 넘김";
         var body = outcome + "\n" + string.Join("\n", files.Take(10).Select(f => TransferNames.Clean(f.Name)))
             + (files.Count > 10 ? $"\n… 외 {files.Count - 10}개" : "");
         var origin = ClipTargetKeys.DeviceId(target.Key) ?? ClipTargetKeys.PcId(target.Key) ?? target.Key;

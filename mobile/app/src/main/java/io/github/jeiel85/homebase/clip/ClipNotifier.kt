@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import io.github.jeiel85.homebase.R
 import io.github.jeiel85.homebase.net.ClipProtocol
+import io.github.jeiel85.homebase.net.ShareRelay
 import io.github.jeiel85.homebase.push.PushNotifier
 
 /**
@@ -26,11 +27,14 @@ object ClipNotifier {
     /** Characters of the text shown in the notification (never for sensitive text). */
     private const val PREVIEW_CHARS = 120
 
-    /** [pcName]'s text is on the clipboard now. */
-    fun copied(context: Context, pcName: String, text: String, sensitive: Boolean, id: String) {
+    /**
+     * [pcName]'s text is on the clipboard now. [from]: another phone sent it through that PC (docs/SHARE_CONVENIENCE.md
+     * §4.8) — "Galaxy S24에서(집 PC 경유) 텍스트 — 복사됨".
+     */
+    fun copied(context: Context, pcName: String, text: String, sensitive: Boolean, id: String, from: String? = null) {
         if (!ensureChannel(context)) return
         val preview = if (sensitive) "민감한 내용이라 미리 보기를 숨겼습니다" else preview(text)
-        val title = "${pcName}에서 받은 텍스트를 복사했습니다"
+        val title = if (from.isNullOrBlank()) "${pcName}에서 받은 텍스트를 복사했습니다" else "${ShareRelay.fromLine(pcName, from)} 텍스트 — 복사됨"
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -48,8 +52,11 @@ object ClipNotifier {
         post(context, id, notification)
     }
 
-    /** [pcName]'s text was too long for a push: tap to fetch and copy it, within the PC's 10 minutes. */
-    fun offer(context: Context, pcId: String, pcName: String, id: String, chars: Int) {
+    /**
+     * [pcName]'s text was too long for a push: tap to fetch and copy it, within the PC's 10 minutes. [from]: another
+     * phone sent it through that PC.
+     */
+    fun offer(context: Context, pcId: String, pcName: String, id: String, chars: Int, from: String? = null) {
         if (!ensureChannel(context)) return
         val tap = PendingIntent.getActivity(
             context,
@@ -61,7 +68,7 @@ object ClipNotifier {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val title = "${pcName}에서 긴 텍스트(${String.format(java.util.Locale.ROOT, "%,d", chars)}자)"
+        val title = "${ShareRelay.fromLine(pcName, from)} 긴 텍스트(${String.format(java.util.Locale.ROOT, "%,d", chars)}자)"
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)

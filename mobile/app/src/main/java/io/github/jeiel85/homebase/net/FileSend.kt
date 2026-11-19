@@ -22,11 +22,25 @@ object FileSendProtocol {
     /** Listed in `features` of `POST /api/v1/push`: the PC only offers files to phones that fetch them. */
     const val FEATURE = "share"
 
-    /** Received without asking (DECISIONS M-65, decision 2): this much or less, on a network that isn't metered. */
+    /**
+     * On a metered network, more than this waits for the user's [받기] (docs/SHARE_CONVENIENCE.md §9.3, Q2) — unless
+     * the user turned on "모바일 데이터에서도 자동으로 받기".
+     */
     const val AUTO_RECEIVE_BYTES = 25_000_000L
 
-    /** Whether a transfer of [totalBytes] is received at once rather than on the user's tap. */
-    fun autoReceive(totalBytes: Long, metered: Boolean): Boolean = !metered && totalBytes in 0..AUTO_RECEIVE_BYTES
+    /**
+     * Whether a transfer of [totalBytes] is fetched as soon as its push arrives rather than on the user's tap: always
+     * on a network that isn't [metered]; on a metered one when it is at most [AUTO_RECEIVE_BYTES], or any size when
+     * [onMetered] (the setting) is on.
+     */
+    fun autoReceive(totalBytes: Long, metered: Boolean, onMetered: Boolean = false): Boolean =
+        totalBytes >= 0 && (!metered || onMetered || totalBytes <= AUTO_RECEIVE_BYTES)
+
+    /**
+     * Whether a transfer fetched by itself must wait for a network that isn't metered: one over [AUTO_RECEIVE_BYTES]
+     * that started on Wi-Fi must not go on over mobile data without asking, unless [onMetered] allows it.
+     */
+    fun unmeteredOnly(totalBytes: Long, onMetered: Boolean): Boolean = !onMetered && totalBytes > AUTO_RECEIVE_BYTES
 
     /** Whether a notice stamped [ts] by the PC is past the day the PC keeps the files (unreadable stamps are not). */
     fun isExpired(ts: String, nowMillis: Long): Boolean {
@@ -35,28 +49,36 @@ object FileSendProtocol {
     }
 }
 
-/** What the `share` push says: enough for a notification. [name] is the first file's (cut short by the PC). */
-data class ShareNotice(val count: Int, val totalBytes: Long, val name: String?, val ts: String) {
+/**
+ * What the `share` push says: enough for a notification. [name] is the first file's (cut short by the PC). [from] is
+ * the name of the phone that sent the files through the PC (docs/SHARE_CONVENIENCE.md §4.8); null when the PC itself
+ * sent them, and from PCs older than the relay.
+ */
+data class ShareNotice(val count: Int, val totalBytes: Long, val name: String?, val ts: String, val from: String? = null) {
     companion object {
         /** The notice in [push], sealed with [clipKey]; null when it doesn't open or isn't a notice of this schema. */
         fun open(clipKey: ByteArray, push: ClipPush): ShareNotice? {
             if (!ClipProtocol.isValidId(push.id)) return null
             val plain = ClipCrypto.open(clipKey, push.nonce, push.data) ?: return null
-            return try {
-                val o = JSONObject(plain.toString(Charsets.UTF_8))
-                if (o.optInt("schema") != SCHEMA) {
-                    null
-                } else {
-                    ShareNotice(
-                        count = o.optInt("count"),
-                        totalBytes = o.optLong("totalBytes"),
-                        name = if (o.isNull("name")) null else o.optString("name").ifEmpty { null },
-                        ts = o.getString("ts"),
-                    ).takeIf { it.count in 1..TransferProtocol.MAX_FILES && it.totalBytes >= 0 }
-                }
-            } catch (_: Exception) {
+            return parse(plain.toString(Charsets.UTF_8))
+        }
+
+        /** The notice in its JSON text (once opened); null when it isn't a notice of this schema or out of bounds. */
+        fun parse(json: String): ShareNotice? = try {
+            val o = JSONObject(json)
+            if (o.optInt("schema") != SCHEMA) {
                 null
+            } else {
+                ShareNotice(
+                    count = o.optInt("count"),
+                    totalBytes = o.optLong("totalBytes"),
+                    name = if (o.isNull("name")) null else o.optString("name").ifEmpty { null },
+                    ts = o.getString("ts"),
+                    from = if (o.isNull("from")) null else o.optString("from").trim().ifEmpty { null },
+                ).takeIf { it.count in 1..TransferProtocol.MAX_FILES && it.totalBytes >= 0 }
             }
+        } catch (_: Exception) {
+            null
         }
     }
 }

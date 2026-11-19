@@ -186,6 +186,15 @@ PC의 트레이가 보낸 파일(2b). 다른 PC로는 Agent가 위 "파일"(2a) 
 - **조각** `GET /api/v1/transfer/fetch?id=&f=&n=`: 2a와 같은 전송 키(그 휴대폰의 합의 키 + 전송 id)와 위치 nonce로 봉인한 조각, 본문은 원시 바이트(`application/octet-stream`). 휴대폰은 해시가 맞아야 저장한다.
 - **받음** `POST /api/v1/transfer/received?id=`: PC의 트레이에 "받았습니다"가 뜬다. 모든 대상이 끝나면 PC가 파일을 지우고, 아니면 24시간 뒤 지운다.
 
+### 휴대폰 ↔ 휴대폰 (M-67)
+
+같은 PC에 연결된 다른 휴대폰으로 그 PC를 거쳐 보낸다. 견본 [`share-relay.v1.json`](mobile-protocol/share-relay.v1.json)(봉인 전 평문)을 .NET과 Kotlin이 함께 읽는다.
+
+- **목록** `GET /api/v1/share/phones` → `{schema, phones: [{deviceId, name, clip, files}]}`: 그 PC와 키를 합의했고 푸시를 받는 다른 휴대폰(묻는 휴대폰 제외). `clip`은 클립보드 텍스트를, `files`는 파일을 받을 수 있다는 뜻이다. 404면 옛 PC라 넘기지 못한다.
+- **텍스트**: 위 `POST /api/v1/clip`의 봉인한 내용에 `to: [deviceId]`(1~10개)를 넣는다. 그러면 PC는 자기 클립보드에 넣지 않고, 받을 휴대폰마다 위 "PC → 휴대폰" 푸시를 그 휴대폰 키로 봉인해 보낸다(새 `id`, 내용에 `from`: 보낸 휴대폰 이름). 답은 200 `{schema, accepted: true, forwarded: [{deviceId, ok, error?}]}`(`error`: `unknown_target`·`push_failed` 등).
+- **파일**: 위 "파일"(2a)과 같고, 봉인한 전송 설명에 `to: [deviceId]`를 넣는다. `done`이 맞으면 PC는 트레이 대신 받을 휴대폰에 "PC가 보내는 파일" 흐름으로 알리고(봉인한 요약에 `from`), 200 `{schema, saved: "forwarded"}`로 답한다. 같은 전송의 `done`을 다시 보내도 같은 답이다. 넘길 휴대폰이 없으면 409 `unknown_target`(받은 것은 지움). 자기 자신은 `to`에 넣을 수 없다(400).
+- PC는 보낸 휴대폰의 키로 열어 받는 휴대폰의 키로 다시 봉인하므로 내용을 거쳐 간다. 저장하지 않으며, 파일은 받을 휴대폰이 받을 때까지(최대 24시간) Agent 폴더에 둔다.
+
 ### 앱 쪽 UnifiedPush 규약 (AND_3.1.0, 라이브러리 없이)
 
 - 배포자 찾기: `queryBroadcastReceivers(org.unifiedpush.android.distributor.REGISTER)`(매니페스트 `<queries>`). 하나면 자동으로 쓰고, 여럿이면 고르게 하고, 없으면 ntfy 설치를 안내한다.

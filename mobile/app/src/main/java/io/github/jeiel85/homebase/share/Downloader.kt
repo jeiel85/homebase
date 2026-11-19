@@ -29,7 +29,7 @@ import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 
 /** A file received and saved: where it is now, for [열기] and [공유]. */
-data class SavedFile(val uri: Uri, val name: String, val mime: String?)
+data class SavedFile(val uri: Uri, val name: String, val mime: String?, val size: Long = 0)
 
 /** How a download ended. */
 sealed interface DownloadOutcome {
@@ -79,7 +79,8 @@ internal class Downloader(
     private val api: HomebaseApi,
     private val pcId: String,
     private val transferId: String,
-    private val onProgress: (got: Long, total: Long) -> Unit,
+    /** [via]: the path the PC answered on last, for the notification (Cloudflare is slow, docs/SHARE_CONVENIENCE.md §4.7). */
+    private val onProgress: (got: Long, total: Long, via: Endpoint?) -> Unit,
 ) {
     /** The path that answered last: asked first for the next chunk. */
     private var via: Endpoint? = null
@@ -124,13 +125,13 @@ internal class Downloader(
         val finished = ReceiveProgress.finished(context, transferId)
         val total = offer.totalBytes
         var got = offer.files.withIndex().filter { it.index in finished }.sumOf { it.value.size }
-        onProgress(got, total)
+        onProgress(got, total, via)
         val saved = mutableListOf<SavedFile>()
         for ((f, file) in offer.files.withIndex()) {
             val shown = ReceivedNames.clean(file.name, "file-${f + 1}")
             val already = finished[f]
             if (already != null) {
-                saved += SavedFile(Uri.parse(already), shown, file.mime)
+                saved += SavedFile(Uri.parse(already), shown, file.mime, file.size)
                 continue
             }
             val dest = try {
@@ -158,7 +159,7 @@ internal class Downloader(
                             throw SaveFailed(e)
                         }
                         got += plain.size
-                        onProgress(got, total)
+                        onProgress(got, total, via)
                     }
                 }
                 if (Uploader.hex(digest.digest()) != file.sha256) throw Corrupt()
@@ -169,7 +170,7 @@ internal class Downloader(
                 }
                 whole = true
                 ReceiveProgress.markFinished(context, transferId, f, dest.uri.toString())
-                saved += SavedFile(dest.uri, shown, file.mime)
+                saved += SavedFile(dest.uri, shown, file.mime, file.size)
             } finally {
                 // Stopped, cut off or not matching: nothing half-written stays.
                 if (!whole) dest.discard()

@@ -33,6 +33,36 @@ public partial class App : Application
             return;
         }
 
+        // A click on a "files received" toast (M-67): homebase://files/… opens a received file or the folder, then exits.
+        //   Homebase.Tray.exe --toast <link>
+        if (ArgAfter(e.Args, Services.Mobile.ReceivedToast.Argument) is { } link)
+        {
+            Services.Mobile.ReceivedToast.Handle(link);
+            Shutdown();
+            return;
+        }
+
+        // Shows a sample "files received" toast (M-67) for the files given, as if a phone had sent them; nothing is saved:
+        //   Homebase.Tray.exe --preview-received-toast <path> [<path> …] [--lang en]
+        if (e.Args.Contains("--preview-received-toast"))
+        {
+            base.OnStartup(e);
+            var lang = ArgAfter(e.Args, "--lang");
+            if (lang is not null) CultureInfo.CurrentUICulture = CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo(lang);
+            else ApplyLanguage();
+            var files = e.Args.SkipWhile(a => a != "--preview-received-toast").Skip(1).TakeWhile(a => !a.StartsWith("--", StringComparison.Ordinal))
+                .Where(System.IO.File.Exists).ToList();
+            if (files.Count > 0)
+            {
+                var total = files.Sum(f => new System.IO.FileInfo(f).Length);
+                var shown = Services.Mobile.ReceivedToast.Show(L.FilesReceivedTitle("Galaxy S24", files.Count, total),
+                    L.FilesReceivedBody(files.Select(System.IO.Path.GetFileName).ToList()!, false, true), files, picture: true);
+                TrayLog.Info("Files", $"Preview toast: shown={shown}, {Services.Mobile.ReceivedToast.Diagnose()}");
+            }
+            Shutdown();
+            return;
+        }
+
         // Design preview of the "Send to" picker (M-66) with made-up devices; nothing is sent:
         //   Homebase.Tray.exe --preview-send-picker [--lang en]
         if (e.Args.Contains("--preview-send-picker"))

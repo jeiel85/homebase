@@ -1,0 +1,82 @@
+{
+  "phones": {
+    "schema": 1,
+    "phones": [
+      {
+        "deviceId": "3b9c0f2e7a1d4e5f",
+        "name": "Galaxy Tab S9",
+        "clip": true,
+        "files": true
+      },
+      {
+        "deviceId": "8e2d4c6a1f3b5d7e",
+        "name": "Pixel 8",
+        "clip": true,
+        "files": false
+      }
+    ]
+  },
+  "clipContent": {
+    "schema": 1,
+    "text": "회의실 와이파이: hb-guest",
+    "chars": 18,
+    "ts": "2026-11-19T06:30:00+00:00",
+    "to": [
+      "3b9c0f2e7a1d4e5f",
+      "8e2d4c6a1f3b5d7e"
+    ]
+  },
+  "clipForwarded": {
+    "schema": 1,
+    "text": "회의실 와이파이: hb-guest",
+    "chars": 18,
+    "ts": "2026-11-19T06:30:00+00:00",
+    "from": "Galaxy S24"
+  },
+  "clipAccepted": {
+    "schema": 1,
+    "accepted": true,
+    "forwarded": [
+      {
+        "deviceId": "3b9c0f2e7a1d4e5f",
+        "ok": true
+      },
+      {
+        "deviceId": "8e2d4c6a1f3b5d7e",
+        "ok": false,
+        "error": "push_failed"
+      }
+    ]
+  },
+  "transferMeta": {
+    "schema": 1,
+    "files": [
+      {
+        "name": "IMG_0412.jpg",
+        "size": 2400000,
+        "mime": "image/jpeg"
+      },
+      {
+        "name": "IMG_0413.jpg",
+        "size": 5000000,
+        "mime": "image/jpeg"
+      }
+    ],
+    "ts": "2026-11-19T06:30:00+00:00",
+    "to": [
+      "3b9c0f2e7a1d4e5f"
+    ]
+  },
+  "transferDone": {
+    "schema": 1,
+    "saved": "forwarded"
+  },
+  "shareNotice": {
+    "schema": 1,
+    "count": 3,
+    "totalBytes": 12400000,
+    "name": "IMG_0412.jpg",
+    "ts": "2026-11-19T06:30:00+00:00",
+    "from": "Galaxy S24"
+  }
+}

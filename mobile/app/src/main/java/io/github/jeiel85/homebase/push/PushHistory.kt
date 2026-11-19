@@ -46,6 +46,11 @@ data class HistoryEntry(
      * PC removed since, or a relayed device, keeps its colour here (#57). Null in entries from before.
      */
     val color: Int? = null,
+    /**
+     * A [FileHistory.RECEIVED] entry's saved files (content URIs, the first opened by a tap); empty for anything else.
+     * Where they are, never what is in them.
+     */
+    val uris: List<String> = emptyList(),
 ) {
     /** Unique enough for list keys: the same id can arrive twice (e.g. a PC re-sending after a restart). */
     val key: String get() = "$pcId/$id/$receivedAt"
@@ -90,14 +95,19 @@ object PushHistoryRules {
     fun prune(entries: List<HistoryEntry>, now: Long): List<HistoryEntry> =
         entries.filter { now - it.receivedAt <= MAX_AGE_MS }.take(MAX_ENTRIES)
 
-    fun unreadCount(entries: List<HistoryEntry>, lastSeenAt: Long): Int = entries.count { it.receivedAt > lastSeenAt }
+    /** What came in since [lastSeenAt]; files this phone sent itself are no news ([FileHistory.SENT]). */
+    fun unreadCount(entries: List<HistoryEntry>, lastSeenAt: Long): Int = entries.count { isUnread(it, lastSeenAt) }
+
+    fun isUnread(entry: HistoryEntry, lastSeenAt: Long): Boolean = entry.receivedAt > lastSeenAt && entry.category != FileHistory.SENT
 
     /** The notification group a category belongs to (the same groups as the receive settings, M-25). */
     fun groupOf(category: String): NotificationGroup? = NotificationGroups.ALL.firstOrNull { category in it.categories }
 
-    /** Short label of a category for a tag: its group, or "테스트" / "기타". */
+    /** Short label of a category for a tag: its group, "받은 파일" / "보낸 파일", or "테스트" / "기타". */
     fun categoryLabel(category: String): String = when {
         category == NotificationGroups.TEST -> "테스트"
+        category == FileHistory.RECEIVED -> FileHistory.RECEIVED_LABEL
+        category == FileHistory.SENT -> FileHistory.SENT_LABEL
         else -> groupOf(category)?.label ?: "기타"
     }
 
@@ -149,7 +159,8 @@ object PushHistoryRules {
                     .put("receivedAt", e.receivedAt)
                     .put("shown", e.shown)
                     .put("quiet", e.quiet)
-                    .apply { e.color?.let { put("color", it) } },
+                    .apply { e.color?.let { put("color", it) } }
+                    .apply { if (e.uris.isNotEmpty()) put("uris", JSONArray(e.uris)) },
             )
         }
         return JSONObject().put("v", FORMAT).put("entries", array).toString()
@@ -179,6 +190,8 @@ object PushHistoryRules {
                     quiet = o.optBoolean("quiet", false),
                     // Absent before #57; a colour a newer build added is dropped.
                     color = PcMarks.validColor(if (o.has("color")) o.optInt("color", -1) else null),
+                    // Only received files have them; absent in everything else and before.
+                    uris = o.optJSONArray("uris")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } } } ?: emptyList(),
                 )
             } catch (_: Exception) {
                 null

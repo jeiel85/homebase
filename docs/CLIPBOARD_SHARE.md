@@ -4,7 +4,7 @@
 > 1단계 구현에서 정한 것: `features` 값은 `share.v1`이 아니라 `clip`(파일은 2단계에서 따로), 텍스트 최대 10만 자, PC → 휴대폰 푸시 TTL 600초, 단축키는 넣지 않음(트레이 메뉴만), 트레이는 연결 직후 `clip.ready`로 받을 수 있음을 알리고 받은 텍스트마다 `clip.done`으로 넣었는지 답한다.
 > **§4.6 키 수정(PR 리뷰)**: 아래 "토큰의 SHA-256에서 키를 만든다"는 Bearer 토큰이 Cloudflare 엣지를 지나므로 엣지도 키를 만들 수 있어 쓰지 않는다. 대신 기기·PC 쌍이 `POST /api/v1/clip/key`로 한 번 ECDH 합의한 키를 쓴다(M-62). 2단계 파일 전송도 이 키를 쓴다.
 > 2단계(파일·이미지) 상세 설계안: [`FILE_SHARE.md`](FILE_SHARE.md) — 2a(휴대폰 → PC)는 v0.50.0(M-64), 2b(PC → 휴대폰·PC)는 v0.51.0(M-65).
-> 3단계(편의) 상세 설계안: [`SHARE_CONVENIENCE.md`](SHARE_CONVENIENCE.md) — 3a PC 입구(탐색기 보내기·끌어다 놓기·폴더 zip·보낸 파일 기록), 3b 휴대폰 입구(Direct Share·기록·Cloudflare 표시), 3c 휴대폰 ↔ 휴대폰 중계(선택). 3a는 v0.52.0(M-66).
+> 3단계(편의) 상세 설계안: [`SHARE_CONVENIENCE.md`](SHARE_CONVENIENCE.md) — 3a PC 입구(탐색기 보내기·끌어다 놓기·폴더 zip·보낸 파일 기록), 3b 휴대폰 입구(Direct Share·기록·Cloudflare 표시), 3c 휴대폰 ↔ 휴대폰 중계. 3a는 v0.52.0(M-66), 퀵 쉐어(3b·3c를 묶음)는 v0.53.0(M-67).
 > 관련 결정: M-10(트레이 브리지), M-15~M-18(경로), M-19·M-21(푸시), M-23(서명 푸시), M-27~M-29·M-47(기기 그룹), M-32(데이터 폴더 ACL)
 
 ## 1. 요구와 성공 기준

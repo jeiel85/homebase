@@ -130,13 +130,16 @@ public static class MobileServiceCollectionExtensions
         services.AddSingleton(sp =>
         {
             var push = sp.GetRequiredService<UnifiedPushOutboundChannel>();
-            return new FileSendService(Path.Combine(MobileDeviceStore.DefaultDirectory, "outgoing"),
+            var sends = new FileSendService(Path.Combine(MobileDeviceStore.DefaultDirectory, "outgoing"),
                 sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(), sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<FileSendService>>(),
                 (target, plaintext, ct) => push.SendDirectAsync(target, plaintext, FileSendProtocol.PushTtlSeconds, "high", ct),
                 sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<ClipShareService>(),
                 history: sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>(),
                 storeCapBytes: sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>().Value.FilesStoreBytes);
+            // Files a phone uploads for other phones go on from here (M-67).
+            sp.GetRequiredService<FileShareService>().Forwarder = sends.Adopt;
+            return sends;
         });
         services.AddHostedService(sp => sp.GetRequiredService<FileSendService>());
         services.AddHostedService(sp => new TransferPipeServer(sp.GetRequiredService<FileShareService>(),

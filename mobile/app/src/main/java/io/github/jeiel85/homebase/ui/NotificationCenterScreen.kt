@@ -1,5 +1,6 @@
 package io.github.jeiel85.homebase.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.jeiel85.homebase.data.PcMark
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.push.FileHistory
 import io.github.jeiel85.homebase.push.HistoryEntry
 import io.github.jeiel85.homebase.push.NotificationGroups
 import io.github.jeiel85.homebase.push.NotificationLook
@@ -64,7 +67,9 @@ import io.github.jeiel85.homebase.push.PushHistory
 import io.github.jeiel85.homebase.push.PushHistoryRules
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushState
+import io.github.jeiel85.homebase.share.ReceivedStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -128,7 +133,21 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     val now = remember(entries) { System.currentTimeMillis() }
     val byDay = remember(shown, now) {
         shown.groupBy { PushHistoryRules.dayOf(it.receivedAt, zone) }.toList().map { (day, dayEntries) ->
-            Triple(day, dayEntries, PushHistoryRules.stack(dayEntries) { rules.resolve(it.category, it.source).bundle })
+            // Each transfer is a card of its own: files are not bundled like notifications of one source.
+            Triple(day, dayEntries, PushHistoryRules.stack(dayEntries) { !FileHistory.isFile(it.category) && rules.resolve(it.category, it.source).bundle })
+        }
+    }
+    val scope = rememberCoroutineScope()
+    // A received file entry opens the first of its files that is still there (docs/SHARE_CONVENIENCE.md §4.5).
+    fun openFiles(e: HistoryEntry) {
+        scope.launch {
+            val uri = withContext(Dispatchers.IO) { ReceivedStore.firstExisting(context, e.uris) }
+            val message = when {
+                uri == null -> "파일이 없습니다 — 지워졌거나 옮겨졌습니다"
+                !ReceivedStore.view(context, uri) -> "이 파일을 열 앱이 없습니다"
+                else -> null
+            }
+            message?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -190,7 +209,7 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                     )
                 }
             }
-            fun isUnread(e: HistoryEntry) = seenBefore.let { it != null && e.receivedAt > it }
+            fun isUnread(e: HistoryEntry) = seenBefore.let { it != null && PushHistoryRules.isUnread(e, it) }
             byDay.forEach { (day, dayEntries, rows) ->
                 item(key = "day:$day") {
                     SectionLabel(
@@ -226,6 +245,11 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
                                 canOpenPc = e.pcId in paired,
                                 onToggle = { expanded = if (expanded == e.key) null else e.key },
                                 onOpenPc = { onOpenPc(e.pcId) },
+                                onOpenFiles = if (e.category == FileHistory.RECEIVED && e.uris.isNotEmpty()) {
+                                    { openFiles(e) }
+                                } else {
+                                    null
+                                },
                                 onDelete = {
                                     PushHistory.remove(context, e)
                                     if (expanded == e.key) expanded = null
@@ -311,10 +335,13 @@ private fun HistoryCard(
     onDelete: () -> Unit,
     zone: ZoneId,
     modifier: Modifier = Modifier,
+    /** A received file entry: opens its file (shown folded too, so one tap opens it). */
+    onOpenFiles: (() -> Unit)? = null,
 ) {
     val hb = Hb.colors
     val time = remember(entry.receivedAt) { TIME.format(Instant.ofEpochMilli(entry.receivedAt).atZone(zone)) }
     val kind = PushHistoryRules.categoryLabel(entry.category)
+    val file = FileHistory.isFile(entry.category)
     // The header line already names the source; the PC sends titles as "카카오톡: 홍길동", so drop the repeat.
     val title = if (expanded) entry.title else entry.title.removePrefix("${entry.source}: ").ifBlank { entry.title }
     Plate(
@@ -371,14 +398,15 @@ private fun HistoryCard(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            if (entry.quiet) {
+            // A file entry is a transfer, not a push: there is no shade it could have been kept out of.
+            if (!file && entry.quiet) {
                 Text(
                     "알림 우선순위가 '센터에만'이라 알림 창에는 띄우지 않았습니다",
                     style = MaterialTheme.typography.bodySmall,
                     color = hb.inkSoft,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-            } else if (!entry.shown) {
+            } else if (!file && !entry.shown) {
                 Text(
                     "Android 알림이 꺼져 있어 알림 창에는 뜨지 않았습니다",
                     style = MaterialTheme.typography.bodySmall,
@@ -388,14 +416,24 @@ private fun HistoryCard(
             }
             if (expanded) {
                 Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val at = FULL.format(Instant.ofEpochMilli(entry.sentAt).atZone(zone))
                     Text(
-                        "PC 발송 ${FULL.format(Instant.ofEpochMilli(entry.sentAt).atZone(zone))}",
+                        when (entry.category) {
+                            FileHistory.RECEIVED -> "받음 $at"
+                            FileHistory.SENT -> "보냄 $at"
+                            else -> "PC 발송 $at"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = hb.inkSoft,
                         modifier = Modifier.weight(1f),
                     )
+                    if (onOpenFiles != null) TextButton(onClick = onOpenFiles) { Text("열기") }
                     if (canOpenPc) TextButton(onClick = onOpenPc) { Text("PC 열기") }
                     TextButton(onClick = onDelete) { Text("삭제") }
+                }
+            } else if (onOpenFiles != null) {
+                Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onOpenFiles) { Text("열기") }
                 }
             }
         }
@@ -408,6 +446,7 @@ private fun HistoryCard(
  * it adds something.
  */
 private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): String {
+    if (FileHistory.isFile(entry.category)) return FileHistory.header(entry, pcName)
     val source = sourceLabel(entry)
     return when {
         entry.category == NotificationGroups.DEVICE -> "${entry.source} · $pcName 경유"

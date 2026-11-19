@@ -34,8 +34,11 @@ public static class FileSendProtocol
     public const int PushTtlSeconds = 24 * 3600;
 }
 
-/// <summary>Sealed in the <c>share</c> push: how many files, how big, the first one's name — enough for a notification.</summary>
-public sealed record ShareNotice(int Schema, int Count, long TotalBytes, string? Name, DateTimeOffset Ts);
+/// <summary>
+/// Sealed in the <c>share</c> push: how many files, how big, the first one's name — enough for a notification.
+/// <see cref="From"/>: the phone they came from, when this PC passes them on (M-67).
+/// </summary>
+public sealed record ShareNotice(int Schema, int Count, long TotalBytes, string? Name, DateTimeOffset Ts, string? From = null);
 
 /// <summary>Sealed in <c>GET /api/v1/transfer/offer</c>: the files, in order, with their SHA-256 (lowercase hex).</summary>
 public sealed record TransferOffer(int Schema, IReadOnlyList<TransferOfferFile> Files, DateTimeOffset Ts);

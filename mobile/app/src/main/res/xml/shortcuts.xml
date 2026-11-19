@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Direct Share (Android 10+, docs/SHARE_CONVENIENCE.md §4.6): the dynamic shortcuts of category SHARE_TO_PC (one per
+     PC, ShareShortcuts) show in the share sheet's top row for text and files, and open the share center with that PC
+     checked. It still waits for [공유 시작]: any app can put a shortcut id into a share intent. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="io.github.jeiel85.homebase.clip.ClipShareActivity">
+        <data android:mimeType="text/plain" />
+        <data android:mimeType="*/*" />
+        <category android:name="io.github.jeiel85.homebase.SHARE_TO_PC" />
+    </share-target>
+</shortcuts>

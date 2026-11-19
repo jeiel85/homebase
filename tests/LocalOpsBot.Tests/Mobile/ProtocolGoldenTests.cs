@@ -468,6 +468,43 @@ public class ProtocolGoldenTests
         Assert.DoesNotContain("netRxBps", json);
     }
 
+    /// <summary>
+    /// <c>share-relay.v1.json</c> (M-67): plaintext samples of what phone ↔ phone through a PC adds — the phone list, clipboard
+    /// content with <c>to</c> (phone → PC) and with <c>from</c> (PC → phone), the answer with <c>forwarded</c>, a transfer
+    /// description with <c>to</c>, <c>saved: forwarded</c>, and a share notice with <c>from</c>. The Kotlin test reads each.
+    /// </summary>
+    [Fact]
+    public void Share_relay_shapes_match_the_shared_fixture()
+    {
+        var ts = new DateTimeOffset(2026, 11, 19, 6, 30, 0, TimeSpan.Zero);
+        const string Tab = "3b9c0f2e7a1d4e5f", Pixel = "8e2d4c6a1f3b5d7e";
+        const string Text = "회의실 와이파이: hb-guest";
+        JsonNode Node<T>(T value) => JsonSerializer.SerializeToNode(value, ClipProtocol.ContentJson)!;
+        var actual = new JsonObject
+        {
+            ["phones"] = Node(new SharePhones(MobileProtocol.Schema,
+                [new SharePhone(Tab, "Galaxy Tab S9", true, true), new SharePhone(Pixel, "Pixel 8", true, false)])),
+            ["clipContent"] = Node(new ClipContent(MobileProtocol.Schema, Text, Text.Length, ts, To: [Tab, Pixel])),
+            ["clipForwarded"] = Node(new ClipContent(MobileProtocol.Schema, Text, Text.Length, ts, From: "Galaxy S24")),
+            ["clipAccepted"] = Node(new ClipAccepted(MobileProtocol.Schema, true,
+                [new ClipForwardOutcome(Tab, true), new ClipForwardOutcome(Pixel, false, ClipErrors.PushFailed)])),
+            ["transferMeta"] = Node(new TransferMeta(MobileProtocol.Schema,
+                [new TransferFile("IMG_0412.jpg", 2_400_000, "image/jpeg"), new TransferFile("IMG_0413.jpg", 5_000_000, "image/jpeg")], ts, [Tab])),
+            ["transferDone"] = Node(new TransferDone(MobileProtocol.Schema, ShareRelay.Forwarded)),
+            ["shareNotice"] = Node(new ShareNotice(MobileProtocol.Schema, 3, 12_400_000, "IMG_0412.jpg", ts, "Galaxy S24")),
+        };
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "share-relay.v1.json");
+
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions(ClipProtocol.ContentJson) { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"share-relay.v1.json drifted:\n{actual}");
+        var fixture = JsonNode.Parse(File.ReadAllText(path))!;
+        Assert.Equal(new[] { Tab, Pixel }, fixture["clipContent"]!.Deserialize<ClipContent>(ClipProtocol.ContentJson)!.To);
+        Assert.Equal("Galaxy S24", fixture["shareNotice"]!.Deserialize<ShareNotice>(ClipProtocol.ContentJson)!.From);
+        Assert.Null(TransferProtocol.Check(fixture["transferMeta"]!.Deserialize<TransferMeta>(ClipProtocol.ContentJson)));
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
