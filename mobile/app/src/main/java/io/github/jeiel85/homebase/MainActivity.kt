@@ -24,6 +24,8 @@ import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
 import io.github.jeiel85.homebase.push.PushNotifier
+import io.github.jeiel85.homebase.push.PushRegistrar
+import io.github.jeiel85.homebase.share.ShareShortcuts
 import io.github.jeiel85.homebase.ui.AdviceRequests
 import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.NotificationCenterScreen
@@ -35,6 +37,7 @@ import io.github.jeiel85.homebase.ui.PushAutoSetup
 import io.github.jeiel85.homebase.ui.SettingsScreen
 import io.github.jeiel85.homebase.ui.ThemeSetting
 import io.github.jeiel85.homebase.update.UpdateSurface
+import kotlinx.coroutines.launch
 
 /** A handful of screens — list, pair, detail, settings, notification center — so plain state instead of a navigation library. */
 class MainActivity : ComponentActivity() {
@@ -71,6 +74,9 @@ class MainActivity : ComponentActivity() {
         store = PcStore(this)
         val probe = NetworkProbe(this)
         api = HomebaseApi(networks = probe::current)
+        // The share sheet's PC shortcuts (Android 10+), also for PCs paired before they existed; a no-op when current.
+        val app = applicationContext
+        PushRegistrar.scope.launch { ShareShortcuts.sync(app, PcStore(app).all()) }
         // An alert's "AI 조언" button (M-61); not again when the activity is recreated with the same intent.
         if (savedInstanceState == null) askAdviceIfTapped(intent)
         setContent {

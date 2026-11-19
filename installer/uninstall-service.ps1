@@ -108,6 +108,20 @@ if ($profileRoot) {
     }
 }
 
+# 4d) The "files received" toast (DECISIONS M-67) registered, per user, its app id and the homebase: links that
+#     run the tray. Users signed in now have their registry loaded; the installing user's keys also go with the
+#     installer's own uninstall entries. Only keys that run Homebase.Tray.exe go.
+Get-ChildItem -Path Registry::HKEY_USERS -ErrorAction SilentlyContinue |
+    Where-Object { $_.PSChildName -match '^S-1-5-21-[\d-]+$' } | ForEach-Object {
+        $classes = "Registry::HKEY_USERS\$($_.PSChildName)\Software\Classes"
+        $command = (Get-ItemProperty -Path "$classes\homebase\shell\open\command" -ErrorAction SilentlyContinue).'(default)'
+        if ($command -and $command -like '*Homebase.Tray.exe*') {
+            Remove-Item -Path "$classes\homebase" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$classes\AppUserModelId\Homebase.Tray" -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "Removed the Homebase toast links for $($_.PSChildName)"
+        }
+    }
+
 # 5) Remove binaries from the default location and, if given, the actual install dir.
 $roots = @($DefaultRoot)
 if ($InstallDir) { $roots += $InstallDir }

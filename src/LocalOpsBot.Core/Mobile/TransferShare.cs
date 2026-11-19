@@ -60,6 +60,7 @@ public static class TransferProtocol
     public static string? Check(TransferMeta? meta)
     {
         if (meta is not { Schema: MobileProtocol.Schema, Files: { Count: > 0 and <= MaxFiles } files }) return TransferErrors.Invalid;
+        if (!ShareRelay.IsValidTargets(meta.To)) return TransferErrors.Invalid;
         foreach (var f in files)
         {
             if (f is null || string.IsNullOrWhiteSpace(f.Name) || f.Name.Length > MaxNameChars || f.Size < 0) return TransferErrors.Invalid;
@@ -73,8 +74,11 @@ public static class TransferProtocol
 /// <summary>One file of a transfer as the device describes it; the PC never trusts <see cref="Name"/> as a path.</summary>
 public sealed record TransferFile(string Name, long Size, string? Mime = null);
 
-/// <summary>Sealed in <c>POST /api/v1/transfer</c>.</summary>
-public sealed record TransferMeta(int Schema, IReadOnlyList<TransferFile> Files, DateTimeOffset Ts);
+/// <summary>
+/// Sealed in <c>POST /api/v1/transfer</c>. <see cref="To"/> (M-67): other phones of that PC to pass the files on to,
+/// instead of this PC's Downloads.
+/// </summary>
+public sealed record TransferMeta(int Schema, IReadOnlyList<TransferFile> Files, DateTimeOffset Ts, IReadOnlyList<string>? To = null);
 
 /// <summary>Sealed in <c>POST /api/v1/transfer/done</c>: lowercase hex SHA-256 of each file, in order.</summary>
 public sealed record TransferHashes(int Schema, IReadOnlyList<string> Sha256);
@@ -87,7 +91,8 @@ public sealed record TransferStatus(int Schema, string Id, string State, int Chu
 
 /// <summary>
 /// Answer to <c>POST /api/v1/transfer/done</c>: <see cref="Saved"/> is <c>tray</c> when the signed-in user's Tray is
-/// saving them now, <c>waiting</c> when nobody is signed in (kept <see cref="TransferProtocol.KeepFor"/>).
+/// saving them now, <c>waiting</c> when nobody is signed in (kept <see cref="TransferProtocol.KeepFor"/>),
+/// <c>forwarded</c> when they went on to the phones in <see cref="TransferMeta.To"/> (M-67).
 /// </summary>
 public sealed record TransferDone(int Schema, string Saved);
 

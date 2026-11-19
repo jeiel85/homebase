@@ -16,8 +16,10 @@ import android.util.Log
 import android.webkit.MimeTypeMap
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.net.ClipProtocol
+import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.TransferFile
 import io.github.jeiel85.homebase.net.TransferProtocol
+import io.github.jeiel85.homebase.push.FileHistory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -53,6 +55,10 @@ object FileShare {
     internal const val EXTRA_SIZES = "sizes"
     internal const val EXTRA_MIMES = "mimes"
 
+    // Phones the PC passes the files on to (docs/SHARE_CONVENIENCE.md §4.8): their device ids and names; absent otherwise.
+    internal const val EXTRA_TO = "to"
+    internal const val EXTRA_TO_NAMES = "toNames"
+
     /** The job of transfer [transferId] (32 hex characters). */
     fun jobId(transferId: String): Int = JOB_ID_BASE + transferId.substring(0, 5).toInt(16)
 
@@ -68,29 +74,35 @@ object FileShare {
      * its stream counted once. Throws [UnreadableFileException] for one that can't be read.
      */
     suspend fun describe(context: Context, uris: List<Uri>): List<OutgoingFile> = withContext(Dispatchers.IO) {
+        uris.mapIndexed { i, uri -> describeOne(context, uri, i) }
+    }
+
+    /**
+     * One of [describe]: [index] names a file the provider gives no name for ("file-3"). Blocking — call it off the
+     * main thread. Throws [UnreadableFileException].
+     */
+    internal fun describeOne(context: Context, uri: Uri, index: Int): OutgoingFile {
         val resolver = context.contentResolver
-        uris.mapIndexed { i, uri ->
-            var name: String? = null
-            var size: Long? = null
-            try {
-                resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
-                    if (c.moveToFirst()) {
-                        val ni = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (ni >= 0 && !c.isNull(ni)) name = c.getString(ni)
-                        val si = c.getColumnIndex(OpenableColumns.SIZE)
-                        if (si >= 0 && !c.isNull(si)) size = c.getLong(si)
-                    }
+        var name: String? = null
+        var size: Long? = null
+        try {
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val ni = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (ni >= 0 && !c.isNull(ni)) name = c.getString(ni)
+                    val si = c.getColumnIndex(OpenableColumns.SIZE)
+                    if (si >= 0 && !c.isNull(si)) size = c.getLong(si)
                 }
-                val mime = resolver.getType(uri)
-                val shown = fileName(name ?: uri.lastPathSegment, mime, i)
-                val bytes = size?.takeIf { it > 0 } ?: count(resolver, uri, shown)
-                OutgoingFile(uri, shown, bytes, mime)
-            } catch (e: UnreadableFileException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "could not read a shared file: ${e.javaClass.simpleName}")
-                throw UnreadableFileException(name ?: "파일 ${i + 1}", e)
             }
+            val mime = resolver.getType(uri)
+            val shown = fileName(name ?: uri.lastPathSegment, mime, index)
+            val bytes = size?.takeIf { it > 0 } ?: count(resolver, uri, shown)
+            return OutgoingFile(uri, shown, bytes, mime)
+        } catch (e: UnreadableFileException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read a shared file: ${e.javaClass.simpleName}")
+            throw UnreadableFileException(name ?: "파일 ${index + 1}", e)
         }
     }
 
@@ -123,11 +135,25 @@ object FileShare {
      * grants) rather than copies of them. Android 14+: a user-initiated data transfer job — no time limit, its own
      * progress notification; it can only be scheduled while a screen of this app is in front, which is when this
      * runs. Older Android: a normal job that Android may stop and start again; it goes on from where the PC is.
+     * With [to] (device ids [pc] listed, named [toNames]) the PC passes the files on to those phones instead of
+     * saving them (docs/SHARE_CONVENIENCE.md §4.8). Every call is a transfer — and a job and notification — of its
+     * own, so sending to several PCs at once runs that many uploads side by side.
      * Returns the transfer id, or null when the job could not be scheduled.
      */
-    fun schedule(context: Context, pc: PcEntry, files: List<OutgoingFile>): String? {
+    fun schedule(
+        context: Context,
+        pc: PcEntry,
+        files: List<OutgoingFile>,
+        to: List<String> = emptyList(),
+        toNames: List<String> = emptyList(),
+    ): String? {
         val scheduler = context.getSystemService(JobScheduler::class.java) ?: return null
-        val transferId = ClipProtocol.newId()
+        // A fresh id per transfer, and so per job: one whose job id is taken by an upload still pending is not reused.
+        var transferId = ClipProtocol.newId()
+        repeat(4) {
+            if (scheduler.getPendingJob(jobId(transferId)) == null) return@repeat
+            transferId = ClipProtocol.newId()
+        }
         // Raw URIs: the ClipData is only how the job gets the read grants, so the providers aren't asked for types.
         val clip = ClipData.newRawUri("Homebase", files.first().uri)
         files.drop(1).forEach { clip.addItem(ClipData.Item(it.uri)) }
@@ -139,6 +165,10 @@ object FileShare {
             putStringArray(EXTRA_NAMES, files.map { it.name }.toTypedArray())
             putLongArray(EXTRA_SIZES, files.map { it.size }.toLongArray())
             putStringArray(EXTRA_MIMES, files.map { it.mime.orEmpty() }.toTypedArray())
+            if (to.isNotEmpty()) {
+                putStringArray(EXTRA_TO, to.toTypedArray())
+                putStringArray(EXTRA_TO_NAMES, toNames.toTypedArray())
+            }
         }
         val total = files.sumOf { it.size }
 
@@ -171,29 +201,27 @@ object FileShare {
         return if (scheduled) transferId else null
     }
 
+    /**
+     * The progress notification's subtitle (docs/SHARE_CONVENIENCE.md §4.7): the path the last chunk went over —
+     * "LAN 경로", "Tailscale 경로", or for the Cloudflare tunnel "Cloudflare 경로 — 느릴 수 있음". Null before any.
+     */
+    fun pathLabel(via: Endpoint?): String? = when {
+        via == null -> null
+        via.transport == Endpoint.CLOUDFLARE -> "Cloudflare 경로 — 느릴 수 있음"
+        else -> "${via.label} 경로"
+    }
+
     /** "사진 3장 · 12.4MB": what is being sent and how much. */
     fun summary(files: List<TransferFile>): String = "${what(files)} · ${bytes(files.sumOf { it.size })}"
 
     /** "사진 3장", "동영상 2개", "파일 4개", or the name of the one file. */
-    fun what(files: List<TransferFile>): String {
-        val n = files.size
-        fun all(prefix: String) = files.all { it.mime?.startsWith(prefix) == true }
-        return when {
-            n == 1 -> files[0].name
-            all("image/") -> "사진 ${n}장"
-            all("video/") -> "동영상 ${n}개"
-            files.all { it.mime?.startsWith("image/") == true || it.mime?.startsWith("video/") == true } -> "사진·동영상 ${n}개"
-            else -> "파일 ${n}개"
-        }
-    }
+    fun what(files: List<TransferFile>): String = FileHistory.what(items(files))
+
+    /** [files] as the notification center's file entries describe them. */
+    fun items(files: List<TransferFile>): List<FileHistory.Item> = files.map { FileHistory.Item(it.name, it.size, it.mime) }
 
     /** Decimal units, as Android's own file sizes: "820KB", "12.4MB", "1.25GB". */
-    fun bytes(n: Long): String = when {
-        n < 1_000 -> "${n}B"
-        n < 1_000_000 -> String.format(Locale.ROOT, "%.0fKB", n / 1e3)
-        n < 1_000_000_000 -> String.format(Locale.ROOT, "%.1fMB", n / 1e6)
-        else -> String.format(Locale.ROOT, "%.2fGB", n / 1e9)
-    }
+    fun bytes(n: Long): String = FileHistory.bytes(n)
 
     /** "4.1/12.4 MB": both in the unit of [total]. */
     fun progress(sent: Long, total: Long): String = when {

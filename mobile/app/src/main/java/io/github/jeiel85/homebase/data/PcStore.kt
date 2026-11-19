@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.LocalNetworks
 import io.github.jeiel85.homebase.net.RouteSelector
+import io.github.jeiel85.homebase.share.ShareShortcuts
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -58,7 +59,8 @@ data class PcEntry(
  */
 class PcStore(context: Context) {
 
-    private val prefs = context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+    private val app = context.applicationContext
+    private val prefs = app.getSharedPreferences(NAME, Context.MODE_PRIVATE)
     private val cipher = KeystoreCipher(KEY_ALIAS)
 
     /**
@@ -188,6 +190,8 @@ class PcStore(context: Context) {
         val arr = JSONArray()
         list.forEach { arr.put(toJson(it)) }
         prefs.edit().putString(KEY_PCS, arr.toString()).apply()
+        // The share sheet's PC shortcuts follow every added, removed or renamed PC (only rebuilt when they change).
+        ShareShortcuts.sync(app, list)
     }
 
     private fun toJson(pc: PcEntry) = JSONObject()

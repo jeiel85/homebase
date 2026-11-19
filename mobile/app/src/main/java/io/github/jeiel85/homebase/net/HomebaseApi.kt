@@ -285,16 +285,32 @@ class HomebaseApi(
 
     /**
      * Puts [text] on [pc]'s clipboard (DECISIONS M-62), sealed with [key] (agreed with that PC), so the
-     * Cloudflare edge never reads it. Throws [UnauthorizedException] on 401 and [IOException] when no path
-     * answered; everything the PC said is a [ClipSendResult].
+     * Cloudflare edge never reads it. With [to] (device ids from [sharePhones]) the PC passes it on to those
+     * phones instead (docs/SHARE_CONVENIENCE.md §4.8) and answers [ClipSendResult.Relayed]. Throws
+     * [UnauthorizedException] on 401 and [IOException] when no path answered; everything the PC said is a
+     * [ClipSendResult].
      */
-    suspend fun sendClip(pc: PcEntry, key: ByteArray, text: String, sensitive: Boolean): ClipSendResult {
-        val envelope = ClipEnvelope.seal(key, ClipProtocol.newId(), ClipContent.of(text, sensitive))
+    suspend fun sendClip(pc: PcEntry, key: ByteArray, text: String, sensitive: Boolean, to: List<String> = emptyList()): ClipSendResult {
+        val envelope = ClipEnvelope.seal(key, ClipProtocol.newId(), ClipContent.of(text, sensitive, to = to))
         val body = envelope.toJson().toString().toRequestBody(JSON)
         return authedCall(pc, ClipProtocol.PATH, Request.Builder().post(body), base = clipClient) { code, answer ->
             ClipSendResult.of(code, answer)
         }
     }
+
+    /**
+     * The other phones [pc] can pass text and files on to (`GET /api/v1/share/phones`, docs/SHARE_CONVENIENCE.md §4.8),
+     * this phone not among them. Null when the PC is too old to relay (404/405) or its answer is unreadable — nothing
+     * is relayed through it then. Throws [UnauthorizedException] on 401 and [IOException] when no path answered.
+     */
+    suspend fun sharePhones(pc: PcEntry): List<RelayPhone>? =
+        authedCall(pc, ShareRelay.PHONES_PATH, Request.Builder().get()) { code, text ->
+            when {
+                code in 200..299 -> RelayPhone.parseList(text)
+                code == 404 || code == 405 -> null
+                else -> throw IOException(errorMessage(text) ?: "휴대폰 목록 확인 실패 (HTTP $code)")
+            }
+        }
 
     /**
      * Text [pc] kept for this phone because it was too long for a push (DECISIONS M-62), sealed with [key].

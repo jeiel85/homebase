@@ -68,7 +68,7 @@ public static class L
         var text = T($"Saved in Downloads\\Homebase: {shown}.", $"다운로드\\Homebase에 저장했습니다: {shown}.");
         if (pictureOnClipboard) text += T(" The picture is on the clipboard too.", " 사진은 클립보드에도 넣었습니다.");
         if (!all) text += T(" Some files could not be saved.", " 일부 파일은 저장하지 못했습니다.");
-        return text + T(" Click to show.", " 누르면 폴더가 열립니다.");
+        return text;
     }
     // ── Sending files (DECISIONS M-65) ───────────────────────────────────────
     public static string MenuSendFiles => T("Send files to", "파일 보내기");
@@ -141,6 +141,7 @@ public static class L
     public static string CenterFilesSent => T("Sent files", "보낸 파일");
     public static string CenterFilesHead => T("FILES", "파일");
     public static string CenterOpenFolder => T("Open folder", "폴더 열기");
+    public static string ToastOpen => T("Open", "열기");
 
     public static string FilesFailedTitle(string from) => T($"Files from {from} not saved", $"{from}에서 받은 파일을 저장하지 못했습니다");
     public static string FilesFailedBody => T("Check the free space in Downloads. They are kept on this PC for a day and saved at the next sign-in.",

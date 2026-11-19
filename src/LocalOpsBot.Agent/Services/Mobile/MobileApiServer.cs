@@ -726,14 +726,25 @@ public sealed class MobileApiServer : BackgroundService
                 if (_clips is null) return (404, Error("not_found", "Not found."));
                 var device = _devices.Authenticate(head.BearerToken() ?? "");
                 if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
-                return await _clips.AcceptAsync(device, Read<ClipEnvelope>(body), ct) switch
+                var (outcome, forwarded) = await _clips.ReceiveAsync(device, Read<ClipEnvelope>(body), ct);
+                return outcome switch
                 {
-                    ClipAcceptOutcome.Accepted => (200, "{\"schema\":1,\"accepted\":true}"),
+                    // Passed on to other phones (M-67): how each one fared.
+                    ClipAcceptOutcome.Accepted => (200, Json(new ClipAccepted(MobileProtocol.Schema, true, forwarded))),
                     ClipAcceptOutcome.KeyNeeded => (409, Error(ClipErrors.KeyNeeded, "Agree a clipboard key first (POST /api/v1/clip/key).")),
                     ClipAcceptOutcome.NoUserSession => (409, Error(ClipErrors.NoUserSession, "Nobody is signed in to this PC to receive it.")),
                     ClipAcceptOutcome.ClipboardBusy => (503, Error(ClipErrors.ClipboardBusy, "The clipboard was busy; nothing was pasted. Send it again.")),
                     _ => (400, Error(ClipErrors.Invalid, "Invalid clipboard text.")),
                 };
+            }
+
+            case ("GET", ShareRelay.PhonesPath):
+            {
+                // The other phones of this PC that a phone may send to through it (M-67).
+                if (_clips is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return (200, Json(_clips.RelayPhones(device)));
             }
 
             case ("GET", ClipProtocol.Path):

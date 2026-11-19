@@ -120,12 +120,26 @@ class FileSendTest {
     }
 
     @Test
-    fun small_transfers_on_wifi_come_without_asking() {
-        assertTrue(FileSendProtocol.autoReceive(25_000_000, metered = false))
+    fun files_come_without_asking_except_large_ones_over_mobile_data() {
+        // Not metered: any size (docs/SHARE_CONVENIENCE.md §9.3).
         assertTrue(FileSendProtocol.autoReceive(0, metered = false))
-        assertFalse(FileSendProtocol.autoReceive(25_000_001, metered = false))
-        assertFalse(FileSendProtocol.autoReceive(1_000, metered = true))
+        assertTrue(FileSendProtocol.autoReceive(25_000_001, metered = false))
+        assertTrue(FileSendProtocol.autoReceive(2_000_000_000, metered = false))
+        // Metered: up to 25 MB, beyond that only with "모바일 데이터에서도 자동으로 받기".
+        assertTrue(FileSendProtocol.autoReceive(1_000, metered = true))
+        assertTrue(FileSendProtocol.autoReceive(25_000_000, metered = true))
+        assertFalse(FileSendProtocol.autoReceive(25_000_001, metered = true))
+        assertTrue(FileSendProtocol.autoReceive(25_000_001, metered = true, onMetered = true))
+        // Nonsense is never fetched by itself.
         assertFalse(FileSendProtocol.autoReceive(-1, metered = false))
+        assertFalse(FileSendProtocol.autoReceive(-1, metered = true, onMetered = true))
+    }
+
+    @Test
+    fun a_large_fetch_that_started_by_itself_waits_for_wifi_unless_allowed() {
+        assertFalse(FileSendProtocol.unmeteredOnly(25_000_000, onMetered = false))
+        assertTrue(FileSendProtocol.unmeteredOnly(25_000_001, onMetered = false))
+        assertFalse(FileSendProtocol.unmeteredOnly(25_000_001, onMetered = true))
     }
 
     @Test

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.53.0 — Quick share: the share center, several devices at once, phone to phone
+
+### Added
+- **Homebase share center.** Share photos, files or text to **Homebase** from any app and a share screen opens:
+  previews of what you picked (add more with **+ 더 고르기**), every connected PC and the other phones with
+  checkboxes — tick several — and **공유 시작**. The devices you sent to last are ticked already.
+- **Phone to phone.** Other phones paired with your PC are listed as "… · 집 PC 경유": the PC passes the photos,
+  files or text on, and the other phone gets them like files from a PC, with your phone's name on the notification.
+- **Phones fetch files at once.** Files a PC sends now start downloading on the phone as soon as the notification
+  comes, whatever their size. On mobile data, over 25 MB still asks first, unless **모바일 데이터에서도 자동으로
+  받기** is turned on in the app's settings.
+- **File history on the phone.** The app's notification center keeps what was received and sent (names, size,
+  device — not the files), with filters for **받은 파일** and **보낸 파일**.
+- **PCs in the share sheet.** On Android 10 and later the share sheet's top row shows your PCs; picking one opens
+  the share center with that PC ticked.
+- Upload and download notifications say when the Cloudflare path is in use (it can be slow).
+- **Received files pop up above the clock on the PC.** A Windows notification replaces the tray balloon: a single
+  photo shows in it, with **열기** and **폴더 열기**. With Do not disturb on, it goes quietly to the notification
+  center, and its buttons still work from there.
+
+### Security
+- Passing on from phone to phone: your PC opens what the sending phone sealed with its own key and seals it again
+  with the receiving phone's key. The PC keeps files only until the other phone has them (at most a day), in its
+  service-only folder. A phone can pass things only to phones paired with the same PC.
+
+### Notes
+- Phone to phone needs this version on the PC and on both phones; an older PC simply lists no phones.
+
 ## v0.52.0 — Send from Explorer, drop files on Homebase, file history
 
 ### Added

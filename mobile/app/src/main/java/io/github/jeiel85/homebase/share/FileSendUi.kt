@@ -34,8 +34,8 @@ import kotlinx.coroutines.withContext
 /**
  * Sending [uris] to a PC (DECISIONS M-64): reads what they are, checks the limits, picks the PC — [presetPcId]
  * (a PC card's "파일 보내기"), else the one the tile would use when [pickAlways] is off, else the user's tap —
- * asks before a large send over mobile data, then hands it to the upload job and calls [onDone]. The share sheet
- * always asks for the PC: another app can open it with any file, and only a tap should send that to a PC.
+ * asks before a large send over mobile data, then hands it to the upload job and calls [onDone]. For a PC card's
+ * "파일 보내기" and the quick settings tile; the share sheet opens the share center ([ShareCenterFlow]) instead.
  */
 @Composable
 internal fun FileSendFlow(uris: List<Uri>, presetPcId: String?, pickAlways: Boolean, onDone: () -> Unit) {

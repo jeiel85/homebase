@@ -25,18 +25,25 @@ import io.github.jeiel85.homebase.clip.ClipActionActivity
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.ClipCrypto
 import io.github.jeiel85.homebase.net.ClipPush
+import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.FileSendProtocol
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.ShareNotice
+import io.github.jeiel85.homebase.net.ShareRelay
 import io.github.jeiel85.homebase.net.TransferProtocol
+import io.github.jeiel85.homebase.push.FileHistory
+import io.github.jeiel85.homebase.push.PushHistory
 import io.github.jeiel85.homebase.push.RecentPushIds
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
 import java.util.concurrent.ConcurrentHashMap
 
-/** What a download job carries: the PC, the transfer, and what the push said (for the notification). */
+/**
+ * What a download job carries: the PC, the transfer, and what the push said (for the notification). [from]: the phone
+ * that sent the files through the PC (docs/SHARE_CONVENIENCE.md §4.8), null when the PC sent them.
+ */
 internal data class DownloadSpec(
     val pcId: String,
     val pcName: String,
@@ -45,6 +52,7 @@ internal data class DownloadSpec(
     val count: Int,
     val total: Long,
     val name: String?,
+    val from: String? = null,
 ) {
     fun toExtras(): PersistableBundle = PersistableBundle().apply {
         putString(EXTRA_PC_ID, pcId)
@@ -54,6 +62,7 @@ internal data class DownloadSpec(
         putInt(EXTRA_COUNT, count)
         putLong(EXTRA_TOTAL, total)
         name?.let { putString(EXTRA_NAME, it) }
+        from?.let { putString(EXTRA_FROM, it) }
     }
 
     /** The same for the [받기] tap's intent (an activity intent carries a Bundle). */
@@ -65,10 +74,14 @@ internal data class DownloadSpec(
         putInt(EXTRA_COUNT, count)
         putLong(EXTRA_TOTAL, total)
         name?.let { putString(EXTRA_NAME, it) }
+        from?.let { putString(EXTRA_FROM, it) }
     })
 
     /** "파일 2개 (12.4MB)"-style line parts. */
     val what: String get() = "파일 ${count}개"
+
+    /** "집 PC에서", or "Galaxy S24에서(집 PC 경유)" for files another phone sent through it. */
+    val sender: String get() = ShareRelay.fromLine(pcName, from)
 
     companion object {
         private const val EXTRA_PC_ID = "io.github.jeiel85.homebase.RECEIVE_PC_ID"
@@ -78,12 +91,13 @@ internal data class DownloadSpec(
         private const val EXTRA_COUNT = "io.github.jeiel85.homebase.RECEIVE_COUNT"
         private const val EXTRA_TOTAL = "io.github.jeiel85.homebase.RECEIVE_TOTAL"
         private const val EXTRA_NAME = "io.github.jeiel85.homebase.RECEIVE_NAME"
+        private const val EXTRA_FROM = "io.github.jeiel85.homebase.RECEIVE_FROM"
 
         fun from(e: PersistableBundle): DownloadSpec? {
             val pcId = e.getString(EXTRA_PC_ID) ?: return null
             val transferId = e.getString(EXTRA_TRANSFER_ID) ?: return null
             return DownloadSpec(pcId, e.getString(EXTRA_PC_NAME) ?: "PC", transferId, e.getLong(EXTRA_CREATED_AT),
-                e.getInt(EXTRA_COUNT), e.getLong(EXTRA_TOTAL), e.getString(EXTRA_NAME))
+                e.getInt(EXTRA_COUNT), e.getLong(EXTRA_TOTAL), e.getString(EXTRA_NAME), e.getString(EXTRA_FROM))
         }
 
         fun from(intent: Intent?): DownloadSpec? {
@@ -91,16 +105,18 @@ internal data class DownloadSpec(
             val pcId = e.getString(EXTRA_PC_ID) ?: return null
             val transferId = e.getString(EXTRA_TRANSFER_ID) ?: return null
             return DownloadSpec(pcId, e.getString(EXTRA_PC_NAME) ?: "PC", transferId, e.getLong(EXTRA_CREATED_AT),
-                e.getInt(EXTRA_COUNT), e.getLong(EXTRA_TOTAL), e.getString(EXTRA_NAME))
+                e.getInt(EXTRA_COUNT), e.getLong(EXTRA_TOTAL), e.getString(EXTRA_NAME), e.getString(EXTRA_FROM))
         }
     }
 }
 
 /**
- * Files a PC sends to this phone (DECISIONS M-65): the push, and the job that fetches them. A small transfer (at most
- * [FileSendProtocol.AUTO_RECEIVE_BYTES]) on a network that isn't metered is fetched at once; anything else waits for
- * the user's [받기], which starts the job from a screen of this app — on Android 14+ as a user-initiated data transfer
- * job, the same as an upload.
+ * Files a PC sends to this phone (DECISIONS M-65): the push, and the job that fetches them. They are fetched as soon as
+ * the push comes, whatever their size (docs/SHARE_CONVENIENCE.md §9.3) — except more than
+ * [FileSendProtocol.AUTO_RECEIVE_BYTES] over mobile data, which waits for the user's [받기] unless the setting
+ * "모바일 데이터에서도 자동으로 받기" is on ([SharePrefs.receiveOnMetered]). [받기] starts the job from a screen of this
+ * app — on Android 14+ as a user-initiated data transfer job, the same as an upload; a fetch that started by itself is a
+ * normal job, which goes on from the next file when Android stops it.
  */
 internal object FileReceive {
     private const val TAG = "HomebaseShare"
@@ -141,28 +157,32 @@ internal object FileReceive {
             return
         }
         val createdAt = runCatching { OffsetDateTime.parse(notice.ts).toInstant().toEpochMilli() }.getOrNull() ?: now
-        val spec = DownloadSpec(pc.pcId, pc.displayName, push.id, createdAt, notice.count, notice.totalBytes, notice.name)
-        val auto = FileSendProtocol.autoReceive(notice.totalBytes, FileShare.isMetered(context))
+        val spec = DownloadSpec(pc.pcId, pc.displayName, push.id, createdAt, notice.count, notice.totalBytes, notice.name, notice.from)
+        val onMetered = SharePrefs(context).receiveOnMetered()
+        val auto = FileSendProtocol.autoReceive(notice.totalBytes, FileShare.isMetered(context), onMetered)
         // Posted before the job can start, so the job's progress replaces it rather than the other way round.
         ReceiveNotifier.post(context, spec.transferId, ReceiveNotifier.offer(context, spec, receiving = auto))
-        if (auto && !schedule(context, spec, userInitiated = false)) {
+        val wifiOnly = FileSendProtocol.unmeteredOnly(notice.totalBytes, onMetered)
+        if (auto && !schedule(context, spec, userInitiated = false, unmeteredOnly = wifiOnly)) {
             ReceiveNotifier.post(context, spec.transferId, ReceiveNotifier.offer(context, spec, receiving = false))
         }
     }
 
     /**
      * Starts fetching [spec]'s files. [userInitiated] (Android 14+, from a screen of this app): no time limit, its own
-     * progress notification. True when the job is scheduled — or already is (a second tap doesn't restart it).
+     * progress notification. [unmeteredOnly]: a large fetch that started by itself waits for Wi-Fi rather than going on
+     * over mobile data unasked. True when the job is scheduled — or already is (a second tap doesn't restart it).
      */
-    fun schedule(context: Context, spec: DownloadSpec, userInitiated: Boolean): Boolean {
+    fun schedule(context: Context, spec: DownloadSpec, userInitiated: Boolean, unmeteredOnly: Boolean = false): Boolean {
         val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
         val id = jobId(spec.transferId)
         if (scheduler.getPendingJob(id) != null) return true
         cancelled -= spec.transferId
 
         fun build(asUser: Boolean): JobInfo {
+            val network = if (unmeteredOnly && !asUser) JobInfo.NETWORK_TYPE_UNMETERED else JobInfo.NETWORK_TYPE_ANY
             val builder = JobInfo.Builder(id, ComponentName(context, DownloadJobService::class.java))
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setRequiredNetworkType(network)
                 .setExtras(spec.toExtras())
                 .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             if (Build.VERSION.SDK_INT >= 28) builder.setEstimatedNetworkBytes(spec.total + 64 * 1024L, 64 * 1024L)
@@ -207,12 +227,15 @@ class DownloadJobService : JobService() {
                 DownloadOutcome.Failed("PC에서 더 이상 받을 수 없습니다(24시간 지남)")
             } else {
                 var lastShown = 0L
-                Downloader(app, HomebaseApi(networks = NetworkProbe(app)::current), spec.pcId, spec.transferId) { got, total ->
+                var lastVia: Endpoint? = null
+                Downloader(app, HomebaseApi(networks = NetworkProbe(app)::current), spec.pcId, spec.transferId) { got, total, via ->
                     val now = System.currentTimeMillis()
-                    if (now - lastShown >= PROGRESS_EVERY_MS || got >= total) {
+                    // A path change (Wi-Fi ↔ mobile data) shows at once: the subtitle says which path it is.
+                    if (now - lastShown >= PROGRESS_EVERY_MS || got >= total || via != lastVia) {
                         lastShown = now
+                        lastVia = via
                         if (spec.transferId !in FileReceive.cancelled) {
-                            ReceiveNotifier.post(app, spec.transferId, ReceiveNotifier.progress(app, spec.copy(total = total), got))
+                            ReceiveNotifier.post(app, spec.transferId, ReceiveNotifier.progress(app, spec.copy(total = total), got, via))
                         }
                     }
                 }.run()
@@ -222,6 +245,7 @@ class DownloadJobService : JobService() {
             when (outcome) {
                 is DownloadOutcome.Done -> {
                     ReceiveNotifier.post(app, spec.transferId, ReceiveNotifier.done(app, spec, outcome.files))
+                    record(app, spec, outcome.files)
                     jobFinished(params, false)
                 }
                 is DownloadOutcome.Failed -> {
@@ -246,9 +270,32 @@ class DownloadJobService : JobService() {
         return transferId != null && transferId !in FileReceive.cancelled
     }
 
+    /**
+     * "받은 파일" in the notification center (docs/SHARE_CONVENIENCE.md §4.5): from whom, the names and sizes, and where
+     * they were saved (a tap opens them) — never their contents. Waits briefly for the write.
+     */
+    private fun record(context: Context, spec: DownloadSpec, files: List<SavedFile>) {
+        if (files.isEmpty()) return
+        try {
+            val color = PcStore(context).get(spec.pcId)?.color
+            val entry = FileHistory.received(
+                spec.transferId, spec.pcId, spec.pcName, spec.from,
+                files.map { FileHistory.Item(it.name, it.size, it.mime) },
+                files.map { it.uri.toString() },
+                color,
+                System.currentTimeMillis(),
+            )
+            PushHistory.record(context, entry)
+            PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
+        } catch (e: Exception) {
+            Log.w(TAG, "received files not recorded: ${e.javaClass.simpleName}")
+        }
+    }
+
     private companion object {
         const val TAG = "HomebaseShare"
         const val PROGRESS_EVERY_MS = 1_000L
+        const val HISTORY_WRITE_WAIT_MS = 2_000L
     }
 }
 
@@ -261,12 +308,15 @@ internal object ReceiveNotifier {
 
     fun id(transferId: String): Int = "download:$transferId".hashCode()
 
-    /** "집 PC에서 파일 2개 (12.4MB)" — the first name and how many more; [받기] unless it is [receiving] already. */
+    /**
+     * "집 PC에서 파일 2개 (12.4MB)" — or "Galaxy S24에서(집 PC 경유) 파일 2개 (12.4MB)" — the first name and how many
+     * more; [받기] unless it is [receiving] already.
+     */
     fun offer(context: Context, spec: DownloadSpec, receiving: Boolean): Notification {
         val first = spec.name ?: "파일"
         val more = if (spec.count > 1) " 외 ${spec.count - 1}개" else ""
         val builder = builder(context)
-            .setContentTitle("${spec.pcName}에서 ${spec.what} (${FileShare.bytes(spec.total)})")
+            .setContentTitle("${spec.sender} ${spec.what} (${FileShare.bytes(spec.total)})")
             .setContentText(first + more + if (receiving) " — 받는 중" else "")
             .setOnlyAlertOnce(true)
         if (!receiving) {
@@ -284,28 +334,31 @@ internal object ReceiveNotifier {
         return builder.build()
     }
 
-    fun progress(context: Context, spec: DownloadSpec, got: Long): Notification {
+    /** [via]: the path in use, shown as the subtitle — "Cloudflare 경로 — 느릴 수 있음" there (§4.7). */
+    fun progress(context: Context, spec: DownloadSpec, got: Long, via: Endpoint? = null): Notification {
         val total = spec.total
         val permille = if (total <= 0) 0 else (got * 1000 / total).toInt().coerceIn(0, 1000)
-        return builder(context)
-            .setContentTitle("${spec.pcName}에서 받는 중")
+        val shown = builder(context)
+            .setContentTitle("${spec.sender} 받는 중")
             .setContentText("${spec.what} · ${FileShare.progress(got, total)}")
             .setProgress(1000, permille, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(0, "취소", cancelIntent(context, spec))
-            .build()
+        FileShare.pathLabel(via)?.let { shown.setSubText(it) }
+        return shown.build()
     }
 
     fun waiting(context: Context, spec: DownloadSpec, reason: String): Notification = builder(context)
-        .setContentTitle("${spec.pcName}에서 받기를 기다리는 중")
+        .setContentTitle("${spec.sender} 받기를 기다리는 중")
         .setContentText("$reason — 연결되면 이어서 받습니다")
         .setOnlyAlertOnce(true)
         .addAction(0, "취소", cancelIntent(context, spec))
         .build()
 
     fun done(context: Context, spec: DownloadSpec, files: List<SavedFile>): Notification {
-        val text = "${spec.pcName}에서 파일 ${files.size}개를 받았습니다"
+        val what = if (files.isEmpty()) "파일" else FileHistory.what(files.map { FileHistory.Item(it.name, it.size, it.mime) })
+        val text = "${spec.sender} $what${FileShare.objectParticle(what)} 받았습니다"
         val names = files.joinToString(", ") { it.name }
         val builder = builder(context)
             .setContentTitle(text)
@@ -324,7 +377,7 @@ internal object ReceiveNotifier {
     }
 
     fun failed(context: Context, spec: DownloadSpec, reason: String): Notification = builder(context)
-        .setContentTitle("${spec.pcName}에서 받지 못했습니다")
+        .setContentTitle("${spec.sender} 받지 못했습니다")
         .setContentText(reason)
         .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
         .setAutoCancel(true)

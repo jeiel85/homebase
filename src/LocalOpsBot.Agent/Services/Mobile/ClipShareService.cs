@@ -91,17 +91,34 @@ public sealed class ClipShareService
     }
 
     /// <summary>Text a paired device sent (<c>POST /api/v1/clip</c>), sealed with the key agreed with it.</summary>
-    public async Task<ClipAcceptOutcome> AcceptAsync(MobileDeviceInfo device, ClipEnvelope? envelope, CancellationToken ct)
+    public async Task<ClipAcceptOutcome> AcceptAsync(MobileDeviceInfo device, ClipEnvelope? envelope, CancellationToken ct) =>
+        (await ReceiveAsync(device, envelope, ct)).Outcome;
+
+    /// <summary>
+    /// Text a paired device sent (<c>POST /api/v1/clip</c>): onto this PC's clipboard, or — with <see cref="ClipContent.To"/>
+    /// (M-67) — on to those phones instead, sealed with each one's key and carrying the sender's name. Then
+    /// <c>Forwarded</c> has one outcome per phone asked.
+    /// </summary>
+    public async Task<(ClipAcceptOutcome Outcome, IReadOnlyList<ClipForwardOutcome>? Forwarded)> ReceiveAsync(MobileDeviceInfo device,
+        ClipEnvelope? envelope, CancellationToken ct)
     {
-        if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return ClipAcceptOutcome.KeyNeeded;
+        if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return (ClipAcceptOutcome.KeyNeeded, null);
         var content = ClipMessages.Open(key, envelope);
-        if (content?.Text is not { } text) return ClipAcceptOutcome.Invalid;
+        if (content?.Text is not { } text) return (ClipAcceptOutcome.Invalid, null);
 
         var seenKey = device.DeviceId + ":" + envelope!.Id;
         lock (_gate)
         {
             Prune(_time.GetUtcNow());
-            if (_seen.ContainsKey(seenKey)) return ClipAcceptOutcome.Accepted;
+            if (_seen.ContainsKey(seenKey)) return (ClipAcceptOutcome.Accepted, content.To is null ? null : Array.Empty<ClipForwardOutcome>());
+        }
+
+        if (content.To is { Count: > 0 } to)
+        {
+            var forwarded = await ForwardAsync(device, content, to, ct);
+            // Remembered only when it reached someone: a sender trying again after a total failure tries again here too.
+            if (forwarded.Any(f => f.Ok)) Seen(seenKey);
+            return (ClipAcceptOutcome.Accepted, forwarded);
         }
 
         var sensitive = content.Sensitive == true;
@@ -109,23 +126,73 @@ public sealed class ClipShareService
         if (written is null)
         {
             _logger.LogInformation("Clipboard text from {Name} not taken: no Tray is connected (nobody signed in).", device.Name);
-            return ClipAcceptOutcome.NoUserSession;
+            return (ClipAcceptOutcome.NoUserSession, null);
         }
         if (written == false)
         {
             // Not remembered: the sender may try the same message again.
             _logger.LogWarning("Clipboard text from {Name} could not be put on the clipboard (busy or no answer).", device.Name);
-            return ClipAcceptOutcome.ClipboardBusy;
+            return (ClipAcceptOutcome.ClipboardBusy, null);
         }
+        Seen(seenKey);
+        _logger.LogInformation("Clipboard text from {Name} ({Chars} chars{Sensitive}) put on the clipboard.",
+            device.Name, text.Length, sensitive ? ", sensitive" : "");
+        return (ClipAcceptOutcome.Accepted, null);
+    }
+
+    private void Seen(string seenKey)
+    {
         lock (_gate)
         {
             _seen[seenKey] = _time.GetUtcNow();
             if (_seen.Count > MaxSeen)
                 foreach (var old in _seen.OrderBy(p => p.Value).Take(_seen.Count - MaxSeen).Select(p => p.Key).ToList()) _seen.Remove(old);
         }
-        _logger.LogInformation("Clipboard text from {Name} ({Chars} chars{Sensitive}) put on the clipboard.",
-            device.Name, text.Length, sensitive ? ", sensitive" : "");
-        return ClipAcceptOutcome.Accepted;
+    }
+
+    /// <summary>Text a phone sent for other phones of this PC (M-67): this PC's own push to each, with the sender's name.</summary>
+    private async Task<IReadOnlyList<ClipForwardOutcome>> ForwardAsync(MobileDeviceInfo from, ClipContent content, IReadOnlyList<string> to,
+        CancellationToken ct)
+    {
+        var passed = content with { To = null, From = from.Name };
+        var id = ClipProtocol.NewId();
+        var outcomes = await Task.WhenAll(to.Distinct(StringComparer.Ordinal).Select(async deviceId =>
+        {
+            if (deviceId == from.DeviceId) return new ClipForwardOutcome(deviceId, false, ClipErrors.UnknownTarget);
+            try
+            {
+                var sent = await SendToPhoneAsync(ClipTargetKeys.Device(deviceId), deviceId, id, passed, ct);
+                return new ClipForwardOutcome(deviceId, sent.Ok, sent.Error);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Passing clipboard text from {Name} on to {DeviceId} failed", from.Name, deviceId);
+                return new ClipForwardOutcome(deviceId, false, ClipErrors.Failed);
+            }
+        }));
+        _logger.LogInformation("Clipboard text from {Name} ({Chars} chars) passed on: {Outcomes}.", from.Name, content.Chars,
+            string.Join(", ", outcomes.Select(o => o.Ok ? $"{o.DeviceId} ok" : $"{o.DeviceId} {o.Error}")));
+        return outcomes;
+    }
+
+    /// <summary>
+    /// <c>GET /api/v1/share/phones</c> (M-67): the other phones paired here that agreed a key with this PC, and whether each
+    /// takes clipboard text and files — what a phone may ask this PC to pass on.
+    /// </summary>
+    public SharePhones RelayPhones(MobileDeviceInfo asking)
+    {
+        if (_push is null) return new SharePhones(MobileProtocol.Schema, Array.Empty<SharePhone>());
+        var phones = _devices.PushTargets()
+            .Where(t => t.DeviceId != asking.DeviceId && _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
+            .GroupBy(t => t.DeviceId, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .Select(t => new SharePhone(t.DeviceId, t.DeviceName, t.Subscription.Supports(ClipProtocol.Feature),
+                t.Subscription.Supports(FileSendProtocol.Feature)))
+            .Where(p => p.Clip || p.Files)
+            .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        return new SharePhones(MobileProtocol.Schema, phones);
     }
 
     /// <summary>

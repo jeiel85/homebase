@@ -16,10 +16,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import io.github.jeiel85.homebase.R
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
+import io.github.jeiel85.homebase.net.ShareRelay
 import io.github.jeiel85.homebase.net.TransferFile
 import io.github.jeiel85.homebase.net.TransferProtocol
+import io.github.jeiel85.homebase.push.FileHistory
+import io.github.jeiel85.homebase.push.PushHistory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,16 +33,26 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Request
 import java.util.concurrent.ConcurrentHashMap
 
-/** What an upload job carries: the PC, the transfer, and the files with the URIs the job was granted. */
+/**
+ * What an upload job carries: the PC, the transfer, and the files with the URIs the job was granted. [to] and
+ * [toNames]: other phones the PC passes the files on to (docs/SHARE_CONVENIENCE.md §4.8); empty for the PC itself.
+ */
 internal data class UploadSpec(
     val pcId: String,
     val pcName: String,
     val transferId: String,
     val createdAt: Long,
     val files: List<OutgoingFile>,
+    val to: List<String> = emptyList(),
+    val toNames: List<String> = emptyList(),
 ) {
     val transferFiles: List<TransferFile> get() = files.map { it.toTransferFile() }
     val total: Long get() = files.sumOf { it.size }
+    val relayed: Boolean get() = to.isNotEmpty()
+
+    /** "집 PC에 [verb]", or through it to other phones "Galaxy Tab S9에 [verb](집 PC 경유)". */
+    fun line(verb: String): String =
+        if (relayed) "${ShareRelay.names(toNames)}에 $verb(${pcName} 경유)" else "${pcName}에 $verb"
 
     companion object {
         /** Null when the job's extras or ClipData don't describe a transfer (nothing to do). */
@@ -55,7 +69,14 @@ internal data class UploadSpec(
                 val uri = clip.getItemAt(i).uri ?: return null
                 OutgoingFile(uri, names[i], sizes[i], mimes[i].ifEmpty { null })
             }
-            return UploadSpec(pcId, e.getString(FileShare.EXTRA_PC_NAME) ?: "PC", transferId, e.getLong(FileShare.EXTRA_CREATED_AT), files)
+            val to = e.getStringArray(FileShare.EXTRA_TO)?.toList().orEmpty()
+            val toNames = e.getStringArray(FileShare.EXTRA_TO_NAMES)?.toList().orEmpty()
+            return UploadSpec(
+                pcId, e.getString(FileShare.EXTRA_PC_NAME) ?: "PC", transferId, e.getLong(FileShare.EXTRA_CREATED_AT), files,
+                to = to,
+                // One name per phone; a missing one is still a phone.
+                toNames = to.indices.map { toNames.getOrNull(it)?.ifBlank { null } ?: "휴대폰" },
+            )
         }
     }
 }
@@ -92,11 +113,14 @@ class UploadJobService : JobService() {
                 UploadOutcome.Failed("하루가 지나 보내지 못했습니다. 다시 보내세요.")
             } else {
                 var lastShown = 0L
-                Uploader(app, HomebaseApi(networks = NetworkProbe(app)::current), spec.pcId, spec.transferId, spec.files) { sent, total ->
+                var lastVia: Endpoint? = null
+                Uploader(app, HomebaseApi(networks = NetworkProbe(app)::current), spec.pcId, spec.transferId, spec.files, spec.to) { sent, total, via ->
                     val now = System.currentTimeMillis()
-                    if (now - lastShown >= PROGRESS_EVERY_MS || sent >= total) {
+                    // A path change (Wi-Fi ↔ mobile data) shows at once: the subtitle says which path it is.
+                    if (now - lastShown >= PROGRESS_EVERY_MS || sent >= total || via != lastVia) {
                         lastShown = now
-                        if (spec.transferId !in UploadJobs.cancelled) UploadNotifier.post(app, spec.transferId, UploadNotifier.progress(app, spec, sent))
+                        lastVia = via
+                        if (spec.transferId !in UploadJobs.cancelled) UploadNotifier.post(app, spec.transferId, UploadNotifier.progress(app, spec, sent, via))
                     }
                 }.run()
             }
@@ -105,10 +129,12 @@ class UploadJobService : JobService() {
             when (outcome) {
                 is UploadOutcome.Done -> {
                     UploadNotifier.post(app, spec.transferId, UploadNotifier.done(app, spec, outcome.saved))
+                    record(app, spec, UploadNotifier.outcomeLine(spec, outcome.saved))
                     jobFinished(params, false)
                 }
                 is UploadOutcome.Failed -> {
                     UploadNotifier.post(app, spec.transferId, UploadNotifier.failed(app, spec, outcome.reason))
+                    record(app, spec, "실패: ${outcome.reason}")
                     jobFinished(params, false)
                 }
                 is UploadOutcome.Retry -> {
@@ -128,9 +154,28 @@ class UploadJobService : JobService() {
         return transferId == null || transferId !in UploadJobs.cancelled
     }
 
+    /**
+     * "보낸 파일" in the notification center (docs/SHARE_CONVENIENCE.md §4.5): to whom, what and how it went — names
+     * and sizes only. Waits briefly for the write so the process isn't let go before it.
+     */
+    private fun record(context: Context, spec: UploadSpec, outcome: String) {
+        try {
+            val color = PcStore(context).get(spec.pcId)?.color
+            val entry = FileHistory.sent(
+                spec.transferId, spec.pcId, spec.pcName, spec.toNames, FileShare.items(spec.transferFiles), outcome, color,
+                System.currentTimeMillis(),
+            )
+            PushHistory.record(context, entry)
+            PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
+        } catch (e: Exception) {
+            Log.w(TAG, "sent files not recorded: ${e.javaClass.simpleName}")
+        }
+    }
+
     private companion object {
         const val TAG = "HomebaseShare"
         const val PROGRESS_EVERY_MS = 1_000L
+        const val HISTORY_WRITE_WAIT_MS = 2_000L
     }
 }
 
@@ -143,21 +188,23 @@ internal object UploadNotifier {
 
     fun id(transferId: String): Int = "upload:$transferId".hashCode()
 
-    fun progress(context: Context, spec: UploadSpec, sent: Long): Notification {
+    /** [via]: the path in use, shown as the subtitle — "Cloudflare 경로 — 느릴 수 있음" there (§4.7). */
+    fun progress(context: Context, spec: UploadSpec, sent: Long, via: Endpoint? = null): Notification {
         val total = spec.total
         val permille = if (total <= 0) 0 else (sent * 1000 / total).toInt().coerceIn(0, 1000)
-        return builder(context)
-            .setContentTitle("${spec.pcName}에 보내는 중")
+        val shown = builder(context)
+            .setContentTitle(spec.line("보내는 중"))
             .setContentText("${FileShare.what(spec.transferFiles)} · ${FileShare.progress(sent, total)}")
             .setProgress(1000, permille, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(0, "취소", cancelIntent(context, spec))
-            .build()
+        FileShare.pathLabel(via)?.let { shown.setSubText(it) }
+        return shown.build()
     }
 
     fun waiting(context: Context, spec: UploadSpec, reason: String): Notification = builder(context)
-        .setContentTitle("${spec.pcName}에 보내기를 기다리는 중")
+        .setContentTitle(spec.line("보내기를 기다리는 중"))
         .setContentText("$reason — 연결되면 이어서 보냅니다")
         .setOngoing(false)
         .setOnlyAlertOnce(true)
@@ -166,8 +213,13 @@ internal object UploadNotifier {
 
     fun done(context: Context, spec: UploadSpec, saved: String): Notification {
         val what = FileShare.what(spec.transferFiles)
-        val text = "${spec.pcName}에 $what${FileShare.objectParticle(what)} 보냈습니다" +
-            if (saved == "waiting") " — PC에 로그인하면 저장됩니다" else ""
+        val text = when {
+            // The PC pushed them on to the phones, which fetch them themselves; whether they did is not reported back.
+            spec.relayed && saved == ShareRelay.SAVED_FORWARDED -> spec.line("$what${FileShare.objectParticle(what)} 알렸습니다")
+            spec.relayed -> "${spec.pcName}에 $what${FileShare.objectParticle(what)} 보냈지만, 그 PC가 다른 휴대폰에 넘기지 않아 PC에 저장됩니다"
+            else -> "${spec.pcName}에 $what${FileShare.objectParticle(what)} 보냈습니다" +
+                if (saved == "waiting") " — PC에 로그인하면 저장됩니다" else ""
+        }
         return builder(context)
             .setContentTitle("보냈습니다")
             .setContentText(text)
@@ -176,8 +228,16 @@ internal object UploadNotifier {
             .build()
     }
 
+    /** How a finished upload went, in a line for the notification center's "보낸 파일". */
+    fun outcomeLine(spec: UploadSpec, saved: String): String = when {
+        spec.relayed && saved == ShareRelay.SAVED_FORWARDED -> "보냄 — ${spec.pcName}이(가) 휴대폰에 알림"
+        spec.relayed -> "보냄 — ${spec.pcName}에 저장(넘기지 못함)"
+        saved == "waiting" -> "보냄 — PC에 로그인하면 저장"
+        else -> "보냄 — PC에 저장됨"
+    }
+
     fun failed(context: Context, spec: UploadSpec, reason: String): Notification = builder(context)
-        .setContentTitle("${spec.pcName}에 보내지 못했습니다")
+        .setContentTitle(spec.line("보내지 못했습니다"))
         .setContentText(reason)
         .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
         .setAutoCancel(true)

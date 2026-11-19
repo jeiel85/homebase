@@ -1,6 +1,7 @@
 package io.github.jeiel85.homebase.net
 
 import io.github.jeiel85.homebase.push.WebPush
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyPair
 import java.security.PrivateKey
@@ -135,22 +136,37 @@ object ClipCrypto {
 /**
  * The sealed part. [text] is null in a push whose text didn't fit (fetch it); [chars] is its length
  * either way. [sensitive]: a password manager put it on the clipboard, so keep it out of previews.
+ * [to]: phone → PC only — the device ids (the PC's) of other phones the PC passes it on to instead of taking
+ * it (docs/SHARE_CONVENIENCE.md §4.8, [ShareRelay]). [from]: PC → phone only — the name of the phone that
+ * sent it through the PC. Both are left out when empty; an older PC sends neither.
  */
-data class ClipContent(val text: String?, val chars: Int, val ts: String, val sensitive: Boolean = false) {
+data class ClipContent(
+    val text: String?,
+    val chars: Int,
+    val ts: String,
+    val sensitive: Boolean = false,
+    val to: List<String> = emptyList(),
+    val from: String? = null,
+) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
         .apply { text?.let { put("text", it) } }
         .put("chars", chars)
         .put("ts", ts)
         .apply { if (sensitive) put("sensitive", true) }
+        .apply { if (to.isNotEmpty()) put("to", JSONArray(to)) }
+        .apply { from?.let { put("from", it) } }
 
     companion object {
-        fun of(text: String, sensitive: Boolean, nowMillis: Long = System.currentTimeMillis()) =
-            ClipContent(text, text.length, Instant.ofEpochMilli(nowMillis).toString(), sensitive)
+        fun of(text: String, sensitive: Boolean, nowMillis: Long = System.currentTimeMillis(), to: List<String> = emptyList()) =
+            ClipContent(text, text.length, Instant.ofEpochMilli(nowMillis).toString(), sensitive, to)
 
         /** Null for another schema or a malformed payload — never a half-filled one. */
-        fun parse(plain: ByteArray): ClipContent? = try {
-            val o = JSONObject(plain.toString(Charsets.UTF_8))
+        fun parse(plain: ByteArray): ClipContent? = parse(plain.toString(Charsets.UTF_8))
+
+        /** [parse] of the JSON text itself; fields this version doesn't know are ignored. */
+        fun parse(json: String): ClipContent? = try {
+            val o = JSONObject(json)
             if (o.optInt("schema") != SCHEMA) {
                 null
             } else {
@@ -160,6 +176,8 @@ data class ClipContent(val text: String?, val chars: Int, val ts: String, val se
                     chars = o.optInt("chars", text?.length ?: 0),
                     ts = o.getString("ts"),
                     sensitive = o.optBoolean("sensitive", false),
+                    to = o.optJSONArray("to")?.strings()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
+                    from = if (o.isNull("from")) null else o.optString("from").trim().ifEmpty { null },
                 )
             }
         } catch (_: Exception) {
@@ -208,6 +226,9 @@ sealed interface ClipSendResult {
     /** It is on that PC's clipboard. */
     data object Sent : ClipSendResult
 
+    /** Sent with `to` (docs/SHARE_CONVENIENCE.md §4.8): the PC pushed it on to each phone in [forwarded], or not. */
+    data class Relayed(val forwarded: List<Forwarded>) : ClipSendResult
+
     /** Nobody is signed in to that PC, so there is no clipboard to put it on (409 `no_user_session`). */
     data object NoUserSession : ClipSendResult
 
@@ -230,7 +251,7 @@ sealed interface ClipSendResult {
         fun of(code: Int, body: String?): ClipSendResult {
             val error = errorCode(body)
             return when {
-                code in 200..299 -> Sent
+                code in 200..299 -> Forwarded.parseList(body)?.let { Relayed(it) } ?: Sent
                 code == 409 && error == "clip_key_needed" -> KeyNeeded
                 code == 409 -> NoUserSession
                 code == 503 && error == "clipboard_busy" -> ClipboardBusy

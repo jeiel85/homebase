@@ -106,14 +106,54 @@ object TransferCrypto {
         Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key, "HmacSHA256")) }.doFinal(data)
 }
 
+/**
+ * The sealed metadata of an upload. [to]: the device ids (the PC's) of other phones the PC passes the files on to
+ * instead of saving them (docs/SHARE_CONVENIENCE.md §4.8, [ShareRelay]); left out when empty.
+ */
+data class TransferMeta(val files: List<TransferFile>, val ts: String, val to: List<String> = emptyList()) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("schema", SCHEMA)
+        .put("files", JSONArray().apply { files.forEach { put(it.toJson()) } })
+        .put("ts", ts)
+        .apply { if (to.isNotEmpty()) put("to", JSONArray(to)) }
+
+    companion object {
+        /** Null when [o] is not metadata of this schema (or malformed); fields this version doesn't know are ignored. */
+        fun parse(o: JSONObject): TransferMeta? = try {
+            val files = o.optJSONArray("files")
+            if (o.optInt("schema") != SCHEMA || files == null) {
+                null
+            } else {
+                TransferMeta(
+                    files = files.objects().map { f ->
+                        TransferFile(f.getString("name"), f.getLong("size"), if (f.isNull("mime")) null else f.optString("mime").ifEmpty { null })
+                    },
+                    ts = o.optString("ts"),
+                    to = o.optJSONArray("to")?.strings()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
 /** Metadata and hashes travel as a [ClipEnvelope] (id = transfer id) sealed with the agreed clipboard key. */
 object TransferMessages {
-    fun sealMeta(clipKey: ByteArray, transferId: String, files: List<TransferFile>, ts: String = Instant.now().toString(), nonce: ByteArray? = null): ClipEnvelope {
-        val meta = JSONObject()
-            .put("schema", SCHEMA)
-            .put("files", JSONArray().apply { files.forEach { put(it.toJson()) } })
-            .put("ts", ts)
-        return seal(clipKey, transferId, meta, nonce)
+    fun sealMeta(
+        clipKey: ByteArray,
+        transferId: String,
+        files: List<TransferFile>,
+        ts: String = Instant.now().toString(),
+        nonce: ByteArray? = null,
+        to: List<String> = emptyList(),
+    ): ClipEnvelope = seal(clipKey, transferId, TransferMeta(files, ts, to).toJson(), nonce)
+
+    /** The whole metadata of a sealed envelope (with [TransferMeta.to]), or null like [openMeta]. */
+    fun openMetadata(clipKey: ByteArray, envelope: ClipEnvelope): TransferMeta? = try {
+        open(clipKey, envelope)?.let { TransferMeta.parse(it) }
+    } catch (_: Exception) {
+        null
     }
 
     /** [sha256] is the lowercase hex SHA-256 of each file, in order. */

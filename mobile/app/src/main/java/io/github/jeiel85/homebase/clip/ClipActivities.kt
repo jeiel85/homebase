@@ -12,7 +12,9 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +43,8 @@ import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.share.DownloadSpec
 import io.github.jeiel85.homebase.share.FileReceive
 import io.github.jeiel85.homebase.share.FileSendFlow
+import io.github.jeiel85.homebase.share.ShareCenterFlow
+import io.github.jeiel85.homebase.share.ShareShortcuts
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
@@ -51,19 +55,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * "Homebase" in the share sheet: text goes onto a PC's clipboard (DECISIONS M-62), files and pictures are sent to
- * it (M-64). Always one tap on a PC, even with only one paired: any app can open this with any text or file, and
- * only the user should decide that it lands on a PC.
+ * "Homebase" in the share sheet: the share center (docs/SHARE_CONVENIENCE.md §9) — text onto PCs' clipboards
+ * (DECISIONS M-62), files and pictures to PCs (M-64), either also to other phones through a PC (§4.8). A share sheet
+ * PC shortcut (Direct Share, Android 10+, §4.6) only checks that PC beforehand. Always the user's [공유 시작], even with
+ * one PC: any app can open this with any text, file or shortcut id, and only the user should decide where it lands.
  */
 class ClipShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeSetting.load(this)
+        // A whole screen now, drawn under the bars like the app's own: its console bar and buttons keep clear of them.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
+        val presetPcId = ShareShortcuts.pcIdOf(if (Build.VERSION.SDK_INT >= 29) intent?.getStringExtra(Intent.EXTRA_SHORTCUT_ID) else null)
         val streams = sharedStreams(intent)
         if (streams.isNotEmpty()) {
             setContent {
                 HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
-                    FileSendFlow(streams, presetPcId = null, pickAlways = true, onDone = { finish() })
+                    ShareCenterFlow(streams, text = null, presetPcId = presetPcId, onDone = { finish() })
                 }
             }
             return
@@ -76,7 +84,7 @@ class ClipShareActivity : ComponentActivity() {
         }
         setContent {
             HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
-                ClipSendFlow(text, sensitive = false, pickAlways = true, onDone = { finish() })
+                ShareCenterFlow(emptyList(), text = text, presetPcId = presetPcId, onDone = { finish() })
             }
         }
     }

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import io.github.jeiel85.homebase.BuildConfig
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.share.SharePrefs
 import io.github.jeiel85.homebase.update.UpdateSurface
 
 /** Project links. One place, so a moved repository is a one-line change. */
@@ -89,6 +90,10 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit, onOpenP
             item {
                 SectionLabel("다른 기기")
                 SettingsPlate { DeviceSharingSettings() }
+            }
+            item {
+                SectionLabel("파일 받기")
+                SettingsPlate { FileReceiveSettings() }
             }
             item {
                 SectionLabel("화면")
@@ -139,6 +144,36 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit, onOpenP
     }
 
     if (showLicenses) LicensesDialog(onDismiss = { showLicenses = false })
+}
+
+/**
+ * Files a PC (or another phone through it) sends are fetched as soon as they come (docs/SHARE_CONVENIENCE.md §9.3);
+ * over mobile data, more than 25 MB waits for [받기] unless this is on.
+ */
+@Composable
+private fun FileReceiveSettings() {
+    val hb = Hb.colors
+    val context = LocalContext.current
+    val prefs = remember { SharePrefs(context) }
+    var onMetered by remember { mutableStateOf(prefs.receiveOnMetered()) }
+    Column(Modifier.padding(vertical = 6.dp)) {
+        SettingsSwitchRow(
+            title = "모바일 데이터에서도 자동으로 받기",
+            description = "PC가 보낸 파일은 알림이 오면 바로 받습니다. 끄면 모바일 데이터에서 25MB가 넘는 파일은 [받기]를 눌러야 받습니다.",
+            checked = onMetered,
+            onCheckedChange = {
+                onMetered = it
+                prefs.setReceiveOnMetered(it)
+            },
+        )
+        Text(
+            "사진·동영상은 Pictures/Homebase(갤러리), 그 밖의 파일은 Download/Homebase에 저장합니다(Android 10 이상). " +
+                "받은 파일과 보낸 파일은 알림 센터에 이름·크기만 남습니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = hb.inkSoft,
+            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+        )
+    }
 }
 
 @Composable

@@ -69,6 +69,9 @@ Name: "{group}\Uninstall Homebase"; Filename: "{uninstallexe}"
 [Registry]
 ; Tray auto-start for current user
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Homebase.Tray"; ValueData: """{app}\Tray\Homebase.Tray.exe"""; Components: tray; Flags: uninsdeletevalue
+; The tray registers these for its "files received" toast (DECISIONS M-67); removed on uninstall, never created here.
+Root: HKCU; Subkey: "Software\Classes\homebase"; Flags: uninsdeletekey dontcreatekey; Components: tray
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Homebase.Tray"; Flags: uninsdeletekey dontcreatekey; Components: tray
 
 [Run]
 ; setup.ps1 installs the service and Tray but leaves Telegram unconfigured

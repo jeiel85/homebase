@@ -205,8 +205,11 @@ public sealed record ClipPushEnvelope(int Schema, string Kind, string PcId, stri
 /// The sealed part. <see cref="Text"/> is left out of a push when it does not fit (the phone then fetches it);
 /// <see cref="Chars"/> is its length either way. <see cref="Sensitive"/>: a password manager put it on the
 /// clipboard, so the receiver keeps it out of clipboard history and previews.
+/// <see cref="To"/> (phone → PC only, M-67): other phones of that PC to pass it on to, instead of this PC's clipboard.
+/// <see cref="From"/> (PC → phone only): the phone it came from, when this PC passed it on.
 /// </summary>
-public sealed record ClipContent(int Schema, string? Text, int Chars, DateTimeOffset Ts, bool? Sensitive = null);
+public sealed record ClipContent(int Schema, string? Text, int Chars, DateTimeOffset Ts, bool? Sensitive = null,
+    IReadOnlyList<string>? To = null, string? From = null);
 
 public static class ClipMessages
 {
@@ -230,6 +233,7 @@ public static class ClipMessages
         try { content = JsonSerializer.Deserialize<ClipContent>(plain, ClipProtocol.ContentJson); }
         catch (JsonException) { return null; }
         if (content is not { Schema: MobileProtocol.Schema, Text.Length: > 0 } || content.Text.Length > ClipProtocol.MaxChars) return null;
+        if (!ShareRelay.IsValidTargets(content.To)) return null;
         return content;
     }
 
