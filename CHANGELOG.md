@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.45.0 — A linked PC that moved is reached again; Refresh on the Devices page
+
+### Fixed
+- **A PC could stay "connecting…" for good on one side of a two-way link.** Each PC keeps the paths of the
+  PCs it links to and re-reads them every 10 minutes, but only from that PC itself. When the other PC's
+  Tailscale happened to be down at one of those reads, its Tailscale paths were dropped from the copy; once
+  its Quick Tunnel then restarted under a new name (Cloudflare HTTP 530) and its LAN address was out of
+  reach, nothing was left — and no way to learn the new paths either, short of linking again by hand. The
+  other direction kept working, so one PC saw the other and not the reverse.
+  - A linked PC now names its current paths in the status report it sends every 30 seconds. A PC whose own
+    link back to it can't get through takes the usable ones (private LAN with its certificate pin, tailnet
+    addresses and `*.ts.net` names, Cloudflare host names; never loopback) and tries them at once. A link
+    that works is left alone.
+  - Re-reading a PC's paths keeps its Tailscale paths when the new list has none: tailnet addresses don't
+    change, so a list read while its Tailscale was briefly down no longer loses them.
+  - Cloudflare answering that the tunnel behind a name is gone (502, 504, 520–530) now moves on to the next
+    path instead of counting as the PC's answer.
+  - Both PCs need v0.45.0 for the first point. A link that already lost its Tailscale path comes back by
+    itself once the other PC is updated too.
+
+### Added
+- **Refresh on the Devices page** — the button next to "+ Connect a phone or PC", or F5. Like pulling the
+  phone app's list down: the service tries every linked PC now instead of at its next turn (up to 30 s, or
+  5 minutes after a refusal), syncs the group at once (including PCs it gave up on for 10 minutes), waits up
+  to 8 seconds for the answers and reads the list again. The icon turns while it runs. An older service just
+  re-reads the list.
+
 ## v0.44.0 — AI advice (Ollama) in Settings: set it up and change the model
 
 ### Fixed

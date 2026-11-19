@@ -21,6 +21,12 @@ internal interface IDashboardSource
 
     /// <summary>The live view of <paramref name="target"/>; null when the bridge is down or the Agent is too old.</summary>
     Task<LiveView?> LiveAsync(string target);
+
+    /// <summary>
+    /// The list's refresh (M-59): the Agent tries every linked PC now and syncs the group, answering within
+    /// seconds. Null when the bridge is down or the Agent is older than v0.45.0 (the list is re-read anyway).
+    /// </summary>
+    Task<DevicesRefreshResult?> RefreshAsync();
 }
 
 /// <summary>The real source: <c>devices.overview</c> and <c>live.get</c> over the mobile bridge (M-46).</summary>
@@ -71,6 +77,18 @@ internal sealed class BridgeDashboardSource : IDashboardSource
             }
             LiveUnsupported = MobileBridge.StringOf(r["error"]) == MobileBridge.ErrorUnsupported;
             return null;
+        }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { return null; }
+    }
+
+    public async Task<DevicesRefreshResult?> RefreshAsync()
+    {
+        if (MobileHost.Client is not { IsConnected: true } client) return null;
+        try
+        {
+            // The Agent waits up to 8 s for the linked PCs.
+            var r = await client.RequestAsync(MobileBridge.OpDevicesRefresh, timeout: TimeSpan.FromSeconds(15));
+            return (bool?)r["ok"] == true ? r["payload"]?.Deserialize<DevicesRefreshResult>(MobileProtocol.Json) : null;
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { return null; }
     }

@@ -194,6 +194,26 @@ public sealed class DeviceGroupService : BackgroundService
     /// <summary>Runs a sync soon (after a link or a removal).</summary>
     public void Nudge() => Interlocked.Exchange(ref _wake, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
 
+    /// <summary>The Tray's refresh (M-59): sync now, and try again what failed lately instead of waiting out its 10 minutes.</summary>
+    public void Refresh()
+    {
+        _failedAt.Clear();
+        Nudge();
+    }
+
+    /// <summary>
+    /// A PC paired here reported its own paths (<c>POST /api/v1/presence</c>, M-59). When this PC holds a
+    /// link to that PC which can't reach it now, the usable ones replace the link's stale paths. The
+    /// sender is a member that reaches this PC with its own token; a PC taken out of the group is ignored.
+    /// </summary>
+    public bool AdoptPaths(MobileDeviceInfo device, PresenceReport report)
+    {
+        if (device.Kind != DeviceKind.Pc || report.PcId is not { } pcId || pcId == _devices.PcId) return false;
+        if (_removed.IsRemoved(GroupKeys.Pc(pcId))) return false;
+        var paths = HubPaths.Usable(report.Endpoints, _links.AllowsLoopback);
+        return paths.Count > 0 && _links.AdoptPaths(pcId, paths);
+    }
+
     private void OnLinked(LinkedHub hub) => _ = Task.Run(async () =>
     {
         // The other side links back with this PC's offer, so both hold a token (live view, relays, group).

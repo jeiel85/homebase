@@ -346,6 +346,10 @@ public static class L
 
     // ── Device page (dashboard, DECISIONS M-46) ──────────────────────────────
     public static string DashAddDevice => T("+  Connect a phone or PC", "+  휴대폰·PC 연결");
+    public static string DashRefreshTip => T(
+        "Refresh (F5): try the linked PCs again now and read the list again",
+        "새로고침 (F5): 연결된 PC에 지금 다시 연결해 보고 목록을 새로 읽습니다");
+    public static string DashRefreshing => T("Refreshing…", "새로고침 중…");
     public static string RailThisPc => T("THIS PC", "이 PC");
     public static string RailPcs => T("PCS", "PC");
     public static string RailPhones => T("PHONES", "휴대폰");
@@ -444,8 +448,8 @@ public static class L
         "This PC's Homebase service is older than the tray, so other PCs can't be shown live. Install the update.",
         "이 PC의 Homebase 서비스가 트레이보다 오래된 버전이라 실시간 화면을 볼 수 없습니다. 업데이트를 설치하세요.");
     public static string DetPcOffline => T(
-        "That PC doesn't answer: it is off, asleep or out of reach. Its last report is shown.",
-        "그 PC가 응답하지 않습니다. 꺼져 있거나 절전 중이거나 네트워크에 닿지 않습니다. 마지막 보고를 보여 줍니다.");
+        "That PC doesn't answer: it is off, asleep or out of reach. Its last report is shown. Refresh (F5) tries again at once.",
+        "그 PC가 응답하지 않습니다. 꺼져 있거나 절전 중이거나 네트워크에 닿지 않습니다. 마지막 보고를 보여 줍니다. 새로고침(F5)으로 바로 다시 시도할 수 있습니다.");
     public static string DetPcTooOld(string version) => T(
         $"That PC runs Homebase v{version}. Update it to v0.34.0 or later to see it live here.",
         $"그 PC는 Homebase v{version}입니다. v0.34.0 이상으로 업데이트하면 여기서 실시간으로 볼 수 있습니다.");

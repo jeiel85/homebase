@@ -72,6 +72,8 @@ public static class MobileServiceCollectionExtensions
         services.AddSingleton(sp =>
         {
             var probe = sp.GetRequiredService<SystemStatusProbe>();
+            // Read when a presence goes out, long after both are built (the API server needs the group, which needs this).
+            var api = new Lazy<MobileApiServer>(() => sp.GetRequiredService<MobileApiServer>());
             return new HubLinkService(
                 sp.GetRequiredService<HubStore>(), sp.GetRequiredService<IMobileDeviceStore>(),
                 new SystemStatusProbeAdapter(probe.Report), sp.GetRequiredService<TimeProvider>(),
@@ -79,7 +81,8 @@ public static class MobileServiceCollectionExtensions
                 finder: new HubFinder(
                     HubFinder.NetworkCandidates(sp.GetRequiredService<TailscaleAddressResolver>(), sp.GetRequiredService<LanAddressResolver>()),
                     sp.GetRequiredService<ILogger<HubFinder>>()),
-                live: sp.GetRequiredService<LiveSnapshotHub>());
+                live: sp.GetRequiredService<LiveSnapshotHub>(),
+                ownPaths: () => api.Value.Endpoints());
         });
         // The device group (M-47): links both ways, introductions, removals that reach every member.
         services.AddSingleton(sp => GroupTombstoneFile.Open(MobileDeviceStore.DefaultDirectory,
