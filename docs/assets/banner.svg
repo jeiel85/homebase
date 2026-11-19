@@ -1,158 +1,200 @@
-<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Homebase</title>
+  <desc id="desc">자리를 비워도 PC는 손 안에 — Windows PC를 휴대폰에서 1초마다 보고, AI 세션 권한 요청에 알림으로 답하는 개인용 모니터링</desc>
+  <!--
+    Homebase "console" identity — the same palette as the phone app (mobile/.../ui/Theme.kt) and the tray
+    (src/LocalOpsBot.Tray/Themes/HomebaseTheme.xaml): periwinkle canvas, carbon command slabs, amber/signal
+    for wayfinding only. Depth is a hard chrome-indigo offset, not a soft shadow.
+    Also the source of docs/assets/og.png (rendered 1:1 at 1200x630). Keep assets/ and docs/assets/ copies identical.
+  -->
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0a0a1a"/>
-      <stop offset="50%" stop-color="#0f1a2e"/>
-      <stop offset="100%" stop-color="#1a1a3a"/>
+    <pattern id="dots" width="13" height="13" patternUnits="userSpaceOnUse">
+      <circle cx="6.5" cy="6.5" r="1.2" fill="#3D4F97" fill-opacity="0.32"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0.18">
+      <stop offset="0.38" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.82" stop-color="#fff" stop-opacity="1"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#2b9af3"/>
-      <stop offset="100%" stop-color="#6c5ce7"/>
-    </linearGradient>
-    <linearGradient id="accentGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2b9af3" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="#6c5ce7" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.03"/>
-    </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="8" flood-color="#000" flood-opacity="0.4"/>
-    </filter>
+    <mask id="dotMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="630">
+      <rect width="1200" height="630" fill="url(#fade)"/>
+    </mask>
+    <clipPath id="bayClip">
+      <rect x="700" y="128" width="444" height="244" rx="10"/>
+    </clipPath>
+    <!-- launcher icon house, mobile/app/src/main/res/drawable/ic_launcher_foreground.xml (108 viewport) -->
+    <g id="house">
+      <path d="M54,30 L30,52 L78,52 Z"/>
+      <path d="M36,52 L72,52 L72,78 L36,78 Z"/>
+    </g>
   </defs>
 
-  <!-- Background -->
-  <rect width="1280" height="640" fill="url(#bg)"/>
+  <!-- Faceplate: periwinkle canvas with the dot field fading in to the right -->
+  <rect width="1200" height="630" fill="#7A8ABA"/>
+  <rect width="1200" height="630" fill="url(#dots)" mask="url(#dotMask)"/>
 
-  <!-- Grid pattern overlay -->
-  <g opacity="0.04">
-    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#fff" stroke-width="0.5"/>
-    </pattern>
-    <rect width="1280" height="640" fill="url(#grid)"/>
+  <!-- Circuit traces behind the instruments -->
+  <g fill="none" stroke="#3D4F97" stroke-opacity="0.5" stroke-width="2" stroke-linecap="round">
+    <path d="M622 150 H662 L682 130 H700"/>
+    <path d="M1200 404 H1172 L1158 390 H1150"/>
+    <path d="M600 600 H858 L874 584 H1060 L1076 600 H1200"/>
+    <path d="M1170 128 V96 L1186 88"/>
+  </g>
+  <g fill="#3D4F97" fill-opacity="0.6">
+    <circle cx="622" cy="150" r="4"/>
+    <circle cx="600" cy="600" r="4"/>
   </g>
 
-  <!-- Glowing accent blobs -->
-  <circle cx="900" cy="200" r="250" fill="url(#accentGlow)"/>
-  <circle cx="200" cy="480" r="200" fill="url(#accentGlow)"/>
+  <!-- Masthead: carbon slab closed by the amber stripe -->
+  <rect width="1200" height="84" fill="#21242E"/>
+  <rect y="84" width="1200" height="4" fill="#ECAB37"/>
+  <rect x="56" y="18" width="48" height="48" rx="11" fill="#2E3240" stroke="#3A3F52" stroke-width="1.5"/>
+  <use href="#house" fill="#ECAB37" transform="translate(80 42) scale(0.62) translate(-54 -54)"/>
+  <g transform="translate(80 42) scale(0.62) translate(-54 -54)"><path d="M49,62 L59,62 L59,78 L49,78 Z" fill="#2E3240"/></g>
+  <text x="122" y="53" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="29" letter-spacing="0.6" fill="#FFFFFF">HOMEBASE</text>
 
-  <!-- Floating tech circles -->
-  <g opacity="0.15">
-    <circle cx="1100" cy="120" r="60" fill="none" stroke="#2b9af3" stroke-width="1">
-      <animate attributeName="r" values="60;65;60" dur="4s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="1120" cy="140" r="30" fill="none" stroke="#6c5ce7" stroke-width="1">
-      <animate attributeName="r" values="30;35;30" dur="3s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="180" cy="150" r="40" fill="none" stroke="#2b9af3" stroke-width="1">
-      <animate attributeName="r" values="40;44;40" dur="5s" repeatCount="indefinite"/>
-    </circle>
+  <g transform="translate(990 24)">
+    <rect width="154" height="36" rx="5" fill="#2E3240"/>
+    <circle cx="20" cy="18" r="8" fill="#43C463" fill-opacity="0.22"/>
+    <circle cx="20" cy="18" r="4.5" fill="#43C463"/>
+    <text x="34" y="23.5" font-family="'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-weight="700" font-size="14" fill="#B4BEE2">PC 온라인</text>
+    <text x="136" y="25" text-anchor="end" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="18" fill="#FFFFFF">3/3</text>
   </g>
 
-  <!-- Homebase app icon (right side) — the launcher icon's house, mobile/app/src/main/res/drawable/ic_launcher_foreground.xml -->
-  <g transform="translate(990, 240)" filter="url(#shadow)">
-    <rect x="-60" y="-60" width="120" height="120" rx="26" fill="#21242E" stroke="#ECAB37" stroke-width="1.5" stroke-opacity="0.4"/>
-    <g transform="scale(1.45) translate(-54, -54)">
-      <path fill="#ECAB37" d="M54,30 L30,52 L78,52 Z"/>
-      <path fill="#ECAB37" d="M36,52 L72,52 L72,78 L36,78 Z"/>
-      <path fill="#21242E" d="M49,62 L59,62 L59,78 L49,78 Z"/>
+  <!-- Left: the pitch -->
+  <g font-family="'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" fill="#21242E">
+    <rect x="56" y="141" width="18" height="4" fill="#ECAB37"/>
+    <text x="84" y="150" font-size="18" font-weight="700" letter-spacing="0.3">개인용 Windows PC 모니터링</text>
+
+    <text x="52" y="238" font-size="70" font-weight="800" letter-spacing="-2">자리를 비워도</text>
+    <text x="52" y="320" font-size="70" font-weight="800" letter-spacing="-2">PC는 <tspan fill="#FFFFFF">손 안에</tspan></text>
+
+    <text x="56" y="376" font-size="21" font-weight="600">CPU·GPU·온도를 휴대폰에서 1초마다 보고,</text>
+    <text x="56" y="406" font-size="21" font-weight="600">AI 세션이 부르면 알림에서 바로 답합니다.</text>
+  </g>
+
+  <!-- Feature chips: carbon slabs, amber LED -->
+  <g font-family="'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" font-weight="700" font-size="16" fill="#FFFFFF">
+    <g transform="translate(56 444)">
+      <rect width="164" height="40" rx="5" fill="#21242E"/>
+      <circle cx="18" cy="20" r="4" fill="#ECAB37"/>
+      <text x="32" y="26">종단 암호화 푸시</text>
+    </g>
+    <g transform="translate(232 444)">
+      <rect width="150" height="40" rx="5" fill="#21242E"/>
+      <circle cx="18" cy="20" r="4" fill="#ECAB37"/>
+      <text x="32" y="26">열린 포트 없음</text>
+    </g>
+    <g transform="translate(394 444)">
+      <rect width="208" height="40" rx="5" fill="#21242E"/>
+      <circle cx="18" cy="20" r="4" fill="#ECAB37"/>
+      <text x="32" y="26">Claude Code · Codex</text>
     </g>
   </g>
 
-  <!-- Windows icon (middle right) -->
-  <g transform="translate(810, 400)" filter="url(#shadow)">
-    <rect x="-55" y="-55" width="110" height="110" rx="20" fill="url(#cardBg)" stroke="#6c5ce7" stroke-width="1.5" stroke-opacity="0.3"/>
-    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="44" fill="#6c5ce7">⊞</text>
-  </g>
+  <text x="56" y="566" font-family="Consolas, 'SF Mono', 'Cascadia Mono', ui-monospace, monospace" font-size="15" font-weight="700" fill="#21242E">jeiel85.github.io/homebase</text>
 
-  <!-- Terminal icon (middle) -->
-  <g transform="translate(810, 120)" filter="url(#shadow)">
-    <rect x="-55" y="-55" width="110" height="110" rx="20" fill="url(#cardBg)" stroke="#00b894" stroke-width="1.5" stroke-opacity="0.3"/>
-    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="44" fill="#00b894">&gt;_</text>
-  </g>
+  <!-- Right: a PC bay, as on the phone's PC list -->
+  <rect x="712" y="140" width="444" height="244" rx="10" fill="#3D4F97"/>
+  <g clip-path="url(#bayClip)">
+    <rect x="700" y="128" width="444" height="244" fill="#FFFFFF"/>
+    <rect x="700" y="128" width="444" height="174" fill="#21242E"/>
 
-  <!-- Bell icon (left) -->
-  <g transform="translate(1150, 420)" filter="url(#shadow)">
-    <rect x="-50" y="-50" width="100" height="100" rx="20" fill="url(#cardBg)" stroke="#fdcb6e" stroke-width="1.5" stroke-opacity="0.3"/>
-    <text x="0" y="5" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="40" fill="#fdcb6e">🔔</text>
-  </g>
+    <g font-family="'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">
+      <circle cx="735" cy="162" r="14" fill="#1E63C6"/>
+      <text x="735" y="167.5" text-anchor="middle" font-size="15" font-weight="800" fill="#FFFFFF">작</text>
+      <text x="758" y="171" font-size="24" font-weight="800" fill="#FFFFFF" letter-spacing="-0.5">작업실</text>
+      <circle cx="1060" cy="162" r="8" fill="#43C463" fill-opacity="0.22"/>
+      <circle cx="1060" cy="162" r="4.5" fill="#43C463"/>
+      <text x="1074" y="167" font-family="'Arial Black', 'Arial', sans-serif" font-size="13" font-weight="900" fill="#B4BEE2" letter-spacing="1">LAN</text>
+    </g>
 
-  <!-- Connection lines between icons -->
-  <g stroke="url(#accent)" stroke-width="1" opacity="0.15" fill="none">
-    <path d="M 865 140 Q 910 170 930 200"/>
-    <path d="M 865 380 Q 910 330 930 290"/>
-    <path d="M 1050 290 Q 1090 340 1110 375"/>
-  </g>
+    <!-- Meters: label + readout, then a 20-segment bar (periwinkle, amber from 75 %) -->
+    <g font-family="'Arial', sans-serif" font-weight="700">
+      <text x="722" y="210" font-size="12" letter-spacing="1" fill="#B4BEE2">CPU</text>
+      <text x="910" y="211" text-anchor="end" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="15" fill="#FFFFFF">42%</text>
+      <text x="934" y="210" font-size="12" letter-spacing="1" fill="#B4BEE2">MEM</text>
+      <text x="1122" y="211" text-anchor="end" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="15" fill="#FFFFFF">61%</text>
+      <text x="722" y="256" font-size="12" letter-spacing="1" fill="#B4BEE2">GPU</text>
+      <text x="910" y="257" text-anchor="end" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="15" fill="#FFFFFF">78%</text>
+      <text x="934" y="256" font-size="12" letter-spacing="1" fill="#B4BEE2">TEMP</text>
+      <text x="1122" y="257" text-anchor="end" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="15" fill="#FFFFFF">64°C</text>
+    </g>
 
-  <!-- Title area -->
-  <g transform="translate(80, 200)">
-    <text x="0" y="0" font-family="'Segoe UI', -apple-system, sans-serif" font-size="18" fill="#2b9af3" font-weight="600" letter-spacing="3">HOMEBASE</text>
-    <text x="0" y="60" font-family="'Segoe UI', -apple-system, sans-serif" font-size="56" fill="#ffffff" font-weight="700" letter-spacing="-1">
-      Your PC,<tspan fill="url(#accent)"> in your pocket</tspan>
-    </text>
-    <text x="0" y="110" font-family="'Segoe UI', -apple-system, sans-serif" font-size="20" fill="#8899aa" font-weight="400">
-      Watch your Windows PCs live from your phone
-    </text>
+    <!-- CPU 42 % → 8 of 20 -->
+    <g transform="translate(722 220)">
+      <g fill="#8BA1D4">
+        <rect x="0" width="7.5" height="8" rx="1.5"/><rect x="9.5" width="7.5" height="8" rx="1.5"/><rect x="19" width="7.5" height="8" rx="1.5"/><rect x="28.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="38" width="7.5" height="8" rx="1.5"/><rect x="47.5" width="7.5" height="8" rx="1.5"/><rect x="57" width="7.5" height="8" rx="1.5"/><rect x="66.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+      <g fill="#353A4A">
+        <rect x="76" width="7.5" height="8" rx="1.5"/><rect x="85.5" width="7.5" height="8" rx="1.5"/><rect x="95" width="7.5" height="8" rx="1.5"/><rect x="104.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="114" width="7.5" height="8" rx="1.5"/><rect x="123.5" width="7.5" height="8" rx="1.5"/><rect x="133" width="7.5" height="8" rx="1.5"/><rect x="142.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="152" width="7.5" height="8" rx="1.5"/><rect x="161.5" width="7.5" height="8" rx="1.5"/><rect x="171" width="7.5" height="8" rx="1.5"/><rect x="180.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+    </g>
+    <!-- MEM 61 % → 12 of 20 -->
+    <g transform="translate(934 220)">
+      <g fill="#8BA1D4">
+        <rect x="0" width="7.5" height="8" rx="1.5"/><rect x="9.5" width="7.5" height="8" rx="1.5"/><rect x="19" width="7.5" height="8" rx="1.5"/><rect x="28.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="38" width="7.5" height="8" rx="1.5"/><rect x="47.5" width="7.5" height="8" rx="1.5"/><rect x="57" width="7.5" height="8" rx="1.5"/><rect x="66.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="76" width="7.5" height="8" rx="1.5"/><rect x="85.5" width="7.5" height="8" rx="1.5"/><rect x="95" width="7.5" height="8" rx="1.5"/><rect x="104.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+      <g fill="#353A4A">
+        <rect x="114" width="7.5" height="8" rx="1.5"/><rect x="123.5" width="7.5" height="8" rx="1.5"/><rect x="133" width="7.5" height="8" rx="1.5"/><rect x="142.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="152" width="7.5" height="8" rx="1.5"/><rect x="161.5" width="7.5" height="8" rx="1.5"/><rect x="171" width="7.5" height="8" rx="1.5"/><rect x="180.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+    </g>
+    <!-- GPU 78 % → 16 of 20, amber (≥ 75 %) -->
+    <g transform="translate(722 266)">
+      <g fill="#ECAB37">
+        <rect x="0" width="7.5" height="8" rx="1.5"/><rect x="9.5" width="7.5" height="8" rx="1.5"/><rect x="19" width="7.5" height="8" rx="1.5"/><rect x="28.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="38" width="7.5" height="8" rx="1.5"/><rect x="47.5" width="7.5" height="8" rx="1.5"/><rect x="57" width="7.5" height="8" rx="1.5"/><rect x="66.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="76" width="7.5" height="8" rx="1.5"/><rect x="85.5" width="7.5" height="8" rx="1.5"/><rect x="95" width="7.5" height="8" rx="1.5"/><rect x="104.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="114" width="7.5" height="8" rx="1.5"/><rect x="123.5" width="7.5" height="8" rx="1.5"/><rect x="133" width="7.5" height="8" rx="1.5"/><rect x="142.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+      <g fill="#353A4A">
+        <rect x="152" width="7.5" height="8" rx="1.5"/><rect x="161.5" width="7.5" height="8" rx="1.5"/><rect x="171" width="7.5" height="8" rx="1.5"/><rect x="180.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+    </g>
+    <!-- TEMP 64 °C → 13 of 20 -->
+    <g transform="translate(934 266)">
+      <g fill="#8BA1D4">
+        <rect x="0" width="7.5" height="8" rx="1.5"/><rect x="9.5" width="7.5" height="8" rx="1.5"/><rect x="19" width="7.5" height="8" rx="1.5"/><rect x="28.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="38" width="7.5" height="8" rx="1.5"/><rect x="47.5" width="7.5" height="8" rx="1.5"/><rect x="57" width="7.5" height="8" rx="1.5"/><rect x="66.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="76" width="7.5" height="8" rx="1.5"/><rect x="85.5" width="7.5" height="8" rx="1.5"/><rect x="95" width="7.5" height="8" rx="1.5"/><rect x="104.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="114" width="7.5" height="8" rx="1.5"/>
+      </g>
+      <g fill="#353A4A">
+        <rect x="123.5" width="7.5" height="8" rx="1.5"/><rect x="133" width="7.5" height="8" rx="1.5"/><rect x="142.5" width="7.5" height="8" rx="1.5"/>
+        <rect x="152" width="7.5" height="8" rx="1.5"/><rect x="161.5" width="7.5" height="8" rx="1.5"/><rect x="171" width="7.5" height="8" rx="1.5"/><rect x="180.5" width="7.5" height="8" rx="1.5"/>
+      </g>
+    </g>
 
-    <!-- Feature pills -->
-    <g transform="translate(0, 160)">
-      <rect x="0" y="0" width="130" height="32" rx="16" fill="#2b9af3" fill-opacity="0.15" stroke="#2b9af3" stroke-width="0.5"/>
-      <text x="65" y="20" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13" fill="#2b9af3">📱 Live on phone</text>
-
-      <rect x="145" y="0" width="140" height="32" rx="16" fill="#00b894" fill-opacity="0.15" stroke="#00b894" stroke-width="0.5"/>
-      <text x="215" y="20" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13" fill="#00b894">🛡️ No open ports</text>
-
-      <rect x="300" y="0" width="150" height="32" rx="16" fill="#fdcb6e" fill-opacity="0.15" stroke="#fdcb6e" stroke-width="0.5"/>
-      <text x="375" y="20" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13" fill="#fdcb6e">🔔 Encrypted push</text>
+    <!-- AI session row on the white plate -->
+    <g font-family="'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">
+      <circle cx="727" cy="337" r="9" fill="#ECAB37" fill-opacity="0.25"/>
+      <circle cx="727" cy="337" r="5" fill="#ECAB37"/>
+      <text x="746" y="332" font-size="17" font-weight="700" fill="#21242E">Claude Code · 입력 대기</text>
+      <text x="746" y="355" font-size="14" font-weight="600" fill="#4A5180">homebase · 권한 요청 1건 · 2분째</text>
+      <text x="1122" y="346" text-anchor="end" font-family="'Arial', sans-serif" font-size="26" font-weight="700" fill="#4A5180">›</text>
     </g>
   </g>
 
-  <!-- Tech stack bar at bottom -->
-  <g transform="translate(0, 560)">
-    <rect width="1280" height="80" fill="#000" fill-opacity="0.3"/>
-    <g transform="translate(80, 25)">
-      <text x="0" y="15" font-family="monospace" font-size="13" fill="#556677">TECH STACK</text>
+  <!-- Android heads-up notification with Allow / Deny -->
+  <rect x="660" y="420" width="470" height="148" rx="20" fill="#3D4F97"/>
+  <rect x="650" y="410" width="470" height="148" rx="20" fill="#FFFFFF"/>
+  <g font-family="'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">
+    <use href="#house" fill="#ECAB37" transform="translate(680 437) scale(0.27) translate(-54 -54)"/>
+    <text x="694" y="442" font-size="13" font-weight="600" fill="#5B6178">Homebase · 작업실 · Claude Code · 지금</text>
+    <text x="674" y="474" font-size="18" font-weight="800" fill="#21242E">권한 요청 — 명령 실행</text>
+    <text x="674" y="498" font-family="Consolas, 'SF Mono', 'Cascadia Mono', ui-monospace, monospace" font-size="14" font-weight="700" fill="#4A5180">dotnet test LocalOpsBot.sln</text>
+    <circle cx="1080" cy="466" r="19" fill="#1E63C6"/>
+    <text x="1080" y="472" text-anchor="middle" font-size="17" font-weight="800" fill="#FFFFFF">작</text>
 
-      <!-- .NET 9 -->
-      <g transform="translate(0, 28)">
-        <rect x="0" y="0" width="100" height="24" rx="12" fill="#512bd4" fill-opacity="0.2"/>
-        <text x="50" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#9b7ee8" font-weight="600">.NET 9</text>
-      </g>
-      <!-- C# -->
-      <g transform="translate(115, 28)">
-        <rect x="0" y="0" width="80" height="24" rx="12" fill="#178600" fill-opacity="0.2"/>
-        <text x="40" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#4cba4c" font-weight="600">C#</text>
-      </g>
-      <!-- WPF -->
-      <g transform="translate(210, 28)">
-        <rect x="0" y="0" width="80" height="24" rx="12" fill="#2b9af3" fill-opacity="0.2"/>
-        <text x="40" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#6bb5f8" font-weight="600">WPF</text>
-      </g>
-      <!-- SQLite -->
-      <g transform="translate(305, 28)">
-        <rect x="0" y="0" width="100" height="24" rx="12" fill="#f8b800" fill-opacity="0.2"/>
-        <text x="50" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#f8d44a" font-weight="600">SQLite</text>
-      </g>
-      <!-- Kotlin -->
-      <g transform="translate(420, 28)">
-        <rect x="0" y="0" width="90" height="24" rx="12" fill="#7f52ff" fill-opacity="0.2"/>
-        <text x="45" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#b49cff" font-weight="600">Kotlin</text>
-      </g>
-      <!-- Jetpack Compose -->
-      <g transform="translate(525, 28)">
-        <rect x="0" y="0" width="150" height="24" rx="12" fill="#3ddc84" fill-opacity="0.2"/>
-        <text x="75" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#7be8a8" font-weight="600">Jetpack Compose</text>
-      </g>
-      <!-- UnifiedPush -->
-      <g transform="translate(690, 28)">
-        <rect x="0" y="0" width="120" height="24" rx="12" fill="#fdcb6e" fill-opacity="0.2"/>
-        <text x="60" y="16" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12" fill="#f5d87a" font-weight="600">UnifiedPush</text>
-      </g>
-    </g>
+    <rect x="674" y="512" width="98" height="34" rx="6" fill="#B8620E"/>
+    <rect x="674" y="510" width="98" height="34" rx="6" fill="#F68D1F"/>
+    <text x="723" y="532" text-anchor="middle" font-size="15" font-weight="800" fill="#21242E">허용</text>
+    <rect x="784.75" y="510.75" width="96.5" height="32.5" rx="6" fill="none" stroke="#4A5180" stroke-width="1.5"/>
+    <text x="833" y="532" text-anchor="middle" font-size="15" font-weight="800" fill="#21242E">거부</text>
   </g>
 </svg>
