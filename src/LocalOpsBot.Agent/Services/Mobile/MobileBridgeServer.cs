@@ -54,6 +54,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly OnDemandAdvice? _advice;
     private readonly ClipShareService? _clips;
     private readonly FileShareService? _files;
+    private readonly FileSendService? _sends;
     private readonly List<Connection> _connections = new();
 
     /// <summary>
@@ -104,8 +105,11 @@ public sealed class MobileBridgeServer : BackgroundService
         ApprovalBroker? approvals = null,
         OnDemandAdvice? advice = null,
         ClipShareService? clips = null,
-        FileShareService? files = null)
+        FileShareService? files = null,
+        FileSendService? sends = null)
     {
+        _sends = sends;
+        if (_sends is not null) _sends.Progress += OnFilesProgress;
         _files = files;
         if (_files is not null) _files.Tray = DeliverFiles;
         _clips = clips;
@@ -302,6 +306,11 @@ public sealed class MobileBridgeServer : BackgroundService
         {
             // Waits for pushes and other PCs: off the read loop so live views keep flowing (M-62).
             _ = Task.Run(() => SendClipAsync(conn, id, payload, ct), CancellationToken.None);
+            return;
+        }
+        if (op is MobileBridge.OpFilesTargets or MobileBridge.OpFilesBegin or MobileBridge.OpFilesGo or MobileBridge.OpFilesCancel)
+        {
+            await SendAsync(conn, FilesRequest(op, id, payload), ct);
             return;
         }
         if (op == MobileBridge.OpClipTargets)
@@ -628,6 +637,39 @@ public sealed class MobileBridgeServer : BackgroundService
         }
     }
 
+    /// <summary>The Tray's files.* requests (M-65): where files can go, room for them, send, cancel.</summary>
+    private JsonObject FilesRequest(string op, string id, JsonNode? payload)
+    {
+        if (_sends is null) return MobileBridge.Response(id, false, error: MobileBridge.ErrorUnsupported);
+        try
+        {
+            return op switch
+            {
+                MobileBridge.OpFilesTargets => MobileBridge.Response(id, true, new ClipTargetList(_sends.Targets())),
+                MobileBridge.OpFilesBegin => MobileBridge.Response(id, true, _sends.Begin(payload?.Deserialize<FilesBeginRequest>(MobileProtocol.Json))),
+                MobileBridge.OpFilesGo => MobileBridge.Response(id, _sends.Go(payload?.Deserialize<FilesIdRequest>(MobileProtocol.Json)?.Id)),
+                _ => MobileBridge.Response(id, _sends.Cancel(payload?.Deserialize<FilesIdRequest>(MobileProtocol.Json)?.Id)),
+            };
+        }
+        catch (JsonException)
+        {
+            return MobileBridge.Response(id, false, error: "bad_request");
+        }
+    }
+
+    /// <summary>Where files this PC sends stand (M-65), to every Tray that takes files.</summary>
+    private void OnFilesProgress(FilesProgress progress)
+    {
+        List<Connection> conns;
+        lock (_gate) conns = _connections.Where(c => c.FilesReady && !c.Closed).ToList();
+        foreach (var c in conns)
+        {
+            _ = SendAsync(c, MobileBridge.Message(MobileBridge.OpFilesProgress, progress), CancellationToken.None)
+                .ContinueWith(t => _logger.LogDebug("Files progress to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
+                    TaskContinuationOptions.OnlyOnFaulted);
+        }
+    }
+
     /// <summary>
     /// Finished files (M-64) go to one connected Tray that saves files — normally the signed-in user's. False when there
     /// is none: they wait (24 h) and are offered when one connects.
@@ -727,6 +769,7 @@ public sealed class MobileBridgeServer : BackgroundService
         if (_toasts is not null) _toasts.Requested -= OnToastRequested;
         if (_clips is not null) _clips.Tray = null;
         if (_files is not null) _files.Tray = null;
+        if (_sends is not null) _sends.Progress -= OnFilesProgress;
         base.Dispose();
     }
 }

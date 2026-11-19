@@ -125,7 +125,20 @@ public static class MobileServiceCollectionExtensions
             sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(), sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<FileShareService>>(), sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>()));
         services.AddHostedService(sp => sp.GetRequiredService<FileShareService>());
-        services.AddHostedService<TransferPipeServer>();
+        // Files this PC sends (M-65): a push to phones (they fetch), an upload to linked PCs.
+        services.AddSingleton(sp =>
+        {
+            var push = sp.GetRequiredService<UnifiedPushOutboundChannel>();
+            return new FileSendService(Path.Combine(MobileDeviceStore.DefaultDirectory, "outgoing"),
+                sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(), sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILogger<FileSendService>>(),
+                (target, plaintext, ct) => push.SendDirectAsync(target, plaintext, FileSendProtocol.PushTtlSeconds, "high", ct),
+                sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<ClipShareService>());
+        });
+        services.AddHostedService(sp => sp.GetRequiredService<FileSendService>());
+        services.AddHostedService(sp => new TransferPipeServer(sp.GetRequiredService<FileShareService>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(), sp.GetRequiredService<ILogger<TransferPipeServer>>(),
+            sends: sp.GetRequiredService<FileSendService>()));
         services.AddSingleton(sp =>
         {
             var api = new MobileApiServer(
@@ -134,7 +147,8 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
                 sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
                 deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>(),
-                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>(), clips: sp.GetRequiredService<ClipShareService>(), files: sp.GetRequiredService<FileShareService>());
+                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>(), clips: sp.GetRequiredService<ClipShareService>(), files: sp.GetRequiredService<FileShareService>(),
+                sends: sp.GetRequiredService<FileSendService>());
             api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
             return api;
         });

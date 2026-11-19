@@ -223,25 +223,24 @@ public sealed class ClipShareService
         var hub = _hubs?.Hub(pcId);
         if (hub is null) return new ClipSendOutcome(key, key, false, ClipErrors.UnknownTarget);
 
-        var keyName = ClipTargetKeys.Pc(pcId);
-        var clipKey = _keys.Get(keyName);
+        byte[]? stale = null;
         string? error = null;
         int status = 0;
         // Twice at most: a stored key the other PC no longer knows (it was set up again) is agreed afresh once.
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            var (clipKey, keyError, keyStatus) = await KeyForPcAsync(pcId, stale, ct);
             if (clipKey is null)
             {
-                (clipKey, error, status) = await AgreeWithPcAsync(pcId, ct);
-                if (clipKey is null) break;
-                _keys.Set(keyName, clipKey);
+                (error, status) = (keyError, keyStatus);
+                break;
             }
             var reply = await _hubs!.CallAsync(pcId, HttpMethod.Post, ClipProtocol.Path, ClipMessages.Seal(clipKey, id, content), PcTimeout, ct);
             status = reply?.Status ?? 0;
             error = ErrorOf(reply);
             if (error is ClipErrors.KeyNeeded or ClipErrors.Invalid && attempt == 0)
             {
-                clipKey = null;
+                stale = clipKey;
                 continue;
             }
             break;
@@ -249,6 +248,32 @@ public sealed class ClipShareService
         if (error is not null)
             _logger.LogWarning("Clipboard text to {Pc} failed: {Error} (HTTP {Status})", hub.PcName, error, status);
         return new ClipSendOutcome(key, hub.PcName, error is null, error);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _agreeing = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The clipboard key agreed with linked PC <paramref name="pcId"/> (M-62), for clipboard text and files (M-65) alike:
+    /// the stored one unless it is <paramref name="stale"/> (that PC no longer knows it), else a newly agreed one. One
+    /// exchange per PC at a time — the other PC keeps the key of the exchange it answered last, so two at once could
+    /// leave this PC holding the other one; a flow that waited finds the key the first one agreed.
+    /// </summary>
+    public async Task<(byte[]? Key, string? Error, int Status)> KeyForPcAsync(string pcId, byte[]? stale, CancellationToken ct)
+    {
+        var name = ClipTargetKeys.Pc(pcId);
+        var gate = _agreeing.GetOrAdd(pcId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (_keys.Get(name) is { } stored && (stale is null || !stored.AsSpan().SequenceEqual(stale))) return (stored, null, 200);
+            var (key, error, status) = await AgreeWithPcAsync(pcId, ct);
+            if (key is not null) _keys.Set(name, key);
+            return (key, error, status);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>This PC's side of the exchange with a PC it is linked to: the key, or why there is none.</summary>
@@ -267,7 +292,7 @@ public sealed class ClipShareService
     }
 
     /// <summary>The <see cref="ClipErrors"/> code for a linked PC's answer; null when it took the text.</summary>
-    private static string? ErrorOf(HubReply? reply) => reply switch
+    internal static string? ErrorOf(HubReply? reply) => reply switch
     {
         null => ClipErrors.UnknownTarget,
         { Ok: true } => null,

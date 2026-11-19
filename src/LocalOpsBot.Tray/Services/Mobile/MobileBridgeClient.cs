@@ -78,6 +78,9 @@ internal sealed class MobileBridgeClient : IDisposable
     /// </summary>
     public Func<TrayTransfer, Task<TrayTransferSaved>>? FilesHandler { get; set; }
 
+    /// <summary>Where files this PC sends stand, per target (M-65). Background thread.</summary>
+    public event Action<FilesProgress>? FilesProgressReceived;
+
     /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>
     public IReadOnlyList<DeviceAlias>? LastAliases { get; private set; }
 
@@ -234,6 +237,9 @@ internal sealed class MobileBridgeClient : IDisposable
             case MobileBridge.OpClipSet:
                 if (msg["payload"]?.Deserialize<TrayClip>(MobileProtocol.Json) is { Text.Length: > 0 } clip)
                     _ = Task.Run(() => PutClipAsync(pipe, MobileBridge.StringOf(msg["id"]), clip));
+                break;
+            case MobileBridge.OpFilesProgress:
+                if (msg["payload"]?.Deserialize<FilesProgress>(MobileProtocol.Json) is { Id.Length: > 0 } progress) FilesProgressReceived?.Invoke(progress);
                 break;
             case MobileBridge.OpTransferReady:
                 if (msg["payload"]?.Deserialize<TrayTransfer>(MobileProtocol.Json) is { Id.Length: > 0, Files.Count: > 0 } transfer)

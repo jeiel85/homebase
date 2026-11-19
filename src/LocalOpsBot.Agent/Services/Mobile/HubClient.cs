@@ -57,14 +57,23 @@ public sealed class HubClient : IDisposable
     public Task<HubReply> DeleteAsync(IReadOnlyList<MobileEndpoint> endpoints, string path, string? token, TimeSpan timeout, CancellationToken ct) =>
         SendAsync(endpoints, HttpMethod.Delete, path, null, token, timeout, ct);
 
+    /// <summary>A raw body (a sealed file chunk, M-65) as <c>application/octet-stream</c>.</summary>
+    public Task<HubReply> PostBytesAsync(IReadOnlyList<MobileEndpoint> endpoints, string path, byte[] body, string? token, TimeSpan timeout, CancellationToken ct) =>
+        SendAsync(endpoints, HttpMethod.Post, path, null, token, timeout, ct, body);
+
     private async Task<HubReply> SendAsync(IReadOnlyList<MobileEndpoint> endpoints, HttpMethod method, string path, string? json,
-        string? token, TimeSpan timeout, CancellationToken ct)
+        string? token, TimeSpan timeout, CancellationToken ct, byte[]? bytes = null)
     {
         string? lastError = null;
         foreach (var ep in Order(endpoints))
         {
             using var request = new HttpRequestMessage(method, Url(ep, path));
             if (json is not null) request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            if (bytes is not null)
+            {
+                request.Content = new ByteArrayContent(bytes);
+                request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            }
             if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeout);

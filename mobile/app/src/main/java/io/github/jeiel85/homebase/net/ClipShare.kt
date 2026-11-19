@@ -294,10 +294,13 @@ data class ClipPush(val pcId: String, val id: String, val nonce: String, val dat
     }
 
     companion object {
-        /** Null when [json] is not a clip push of this schema. */
-        fun parse(json: String): ClipPush? = try {
+        /**
+         * Null when [json] is not a push of [kind] and this schema. The same envelope also carries the `share` push of
+         * files a PC sends (DECISIONS M-65, [FileSendProtocol.PUSH_KIND]).
+         */
+        fun parse(json: String, kind: String = ClipProtocol.PUSH_KIND): ClipPush? = try {
             val o = JSONObject(json)
-            if (o.optInt("schema") != SCHEMA || o.optString("kind") != ClipProtocol.PUSH_KIND) {
+            if (o.optInt("schema") != SCHEMA || o.optString("kind") != kind) {
                 null
             } else {
                 ClipPush(o.getString("pcId"), o.getString("id"), o.getString("nonce"), o.getString("data"))

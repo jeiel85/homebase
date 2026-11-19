@@ -27,8 +27,14 @@ internal static class ClipboardShare
     private const int BusyRetries = 5;
     private static readonly TimeSpan BusyPause = TimeSpan.FromMilliseconds(60);
 
-    /// <summary>What the clipboard holds: its text (null when none) and whether a password manager marked it.</summary>
-    public sealed record Snapshot(string? Text, bool Sensitive);
+    /// <summary>
+    /// What the clipboard holds: its text (null when none) and whether a password manager marked it; files copied in
+    /// Explorer (M-65); a picture as PNG when there is neither (a screenshot, a copied image).
+    /// </summary>
+    public sealed record Snapshot(string? Text, bool Sensitive, IReadOnlyList<string>? Files = null, byte[]? Png = null);
+
+    /// <summary>A copied picture bigger than this (as PNG) is not sent.</summary>
+    private const int MaxPngBytes = 50 * 1024 * 1024;
 
     /// <summary>
     /// Whether the clipboard's formats mark the content as private (a password manager copied it):
@@ -51,7 +57,10 @@ internal static class ClipboardShare
                 if (data is null) return new Snapshot(null, false);
                 var formats = data.GetFormats(false);
                 var text = data.GetDataPresent(WpfDataFormats.UnicodeText, true) ? data.GetData(WpfDataFormats.UnicodeText, true) as string : null;
-                return new Snapshot(string.IsNullOrEmpty(text) ? null : text, IsSensitive(formats, f => Dword(data, f)));
+                var files = data.GetDataPresent(WpfDataFormats.FileDrop) ? data.GetData(WpfDataFormats.FileDrop) as string[] : null;
+                text = string.IsNullOrEmpty(text) ? null : text;
+                var png = text is null && files is not { Length: > 0 } ? Png(data) : null;
+                return new Snapshot(text, IsSensitive(formats, f => Dword(data, f)), files is { Length: > 0 } ? files : null, png);
             }
             catch (ExternalException) when (attempt < BusyRetries)
             {
@@ -170,6 +179,28 @@ internal static class ClipboardShare
             return reply["payload"]?.Deserialize<ClipSendResult>(MobileProtocol.Json);
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>A copied picture as PNG: the PNG format when there is one (keeps transparency), else the bitmap encoded.</summary>
+    private static byte[]? Png(System.Windows.IDataObject data)
+    {
+        try
+        {
+            if (data.GetDataPresent("PNG") && data.GetData("PNG") is MemoryStream stream && stream.Length is > 0 and <= MaxPngBytes)
+                return stream.ToArray();
+            if (!data.GetDataPresent(WpfDataFormats.Bitmap)) return null;
+            var image = WpfClipboard.GetImage();
+            if (image is null) return null;
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+            using var buffer = new MemoryStream();
+            encoder.Save(buffer);
+            return buffer.Length <= MaxPngBytes ? buffer.ToArray() : null;
+        }
+        catch (Exception ex) when (ex is ExternalException or InvalidOperationException or NotSupportedException or ArgumentException)
         {
             return null;
         }

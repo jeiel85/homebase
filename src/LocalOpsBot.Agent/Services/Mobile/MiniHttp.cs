@@ -133,6 +133,19 @@ public static class MiniHttp
         await stream.FlushAsync(ct);
     }
 
+    /// <summary>A binary 200 (<c>application/octet-stream</c>): a sealed file chunk (M-65).</summary>
+    public static async Task WriteBytesAsync(Stream stream, byte[] body, CancellationToken ct)
+    {
+        var head = "HTTP/1.1 200 OK\r\n" +
+                   "Content-Length: " + body.Length + "\r\n" +
+                   "Content-Type: application/octet-stream\r\n" +
+                   "Cache-Control: no-store\r\n" +
+                   "Connection: close\r\n\r\n";
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(head), ct);
+        await stream.WriteAsync(body, ct);
+        await stream.FlushAsync(ct);
+    }
+
     public static async Task WriteUpgradeAsync(Stream stream, string secWebSocketKey, CancellationToken ct)
     {
         var response =

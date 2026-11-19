@@ -339,6 +339,14 @@ public static class TransferPipe
     public const string PipeName = "Homebase.Transfer";
 }
 
-public sealed record TransferPipeRequest(string Id, int File);
+/// <summary>
+/// One connection's request. <see cref="Mode"/> <c>read</c> (default): the Agent sends a received file to the Tray.
+/// <c>write</c> (M-65): the Tray sends a file it is sending — the Agent answers a header, reads exactly
+/// <see cref="Size"/> raw bytes, then answers a second header with what it stored.
+/// </summary>
+public sealed record TransferPipeRequest(string Id, int File, string? Mode = null, long Size = 0)
+{
+    public const string Write = "write";
+}
 
 public sealed record TransferPipeHeader(bool Ok, long Size, string? Error = null);

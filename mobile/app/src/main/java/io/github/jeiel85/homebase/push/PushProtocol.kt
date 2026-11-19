@@ -2,6 +2,7 @@ package io.github.jeiel85.homebase.push
 
 import io.github.jeiel85.homebase.net.ClipProtocol
 import io.github.jeiel85.homebase.net.Endpoint
+import io.github.jeiel85.homebase.net.FileSendProtocol
 import io.github.jeiel85.homebase.net.ProtocolException
 import io.github.jeiel85.homebase.net.SCHEMA
 import org.json.JSONArray
@@ -38,7 +39,8 @@ data class PushSubscription(
         .put("features", JSONArray(features.sorted()))
 
     companion object {
-        val FEATURES: List<String> = listOf(ClipProtocol.FEATURE)
+        /** Clipboard text (M-62) and files a PC sends (M-65). */
+        val FEATURES: List<String> = listOf(ClipProtocol.FEATURE, FileSendProtocol.FEATURE)
     }
 }
 

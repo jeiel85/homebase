@@ -70,6 +70,37 @@ public static class L
         if (!all) text += T(" Some files could not be saved.", " 일부 파일은 저장하지 못했습니다.");
         return text + T(" Click to show.", " 누르면 폴더가 열립니다.");
     }
+    // ── Sending files (DECISIONS M-65) ───────────────────────────────────────
+    public static string MenuSendFiles => T("Send files to", "파일 보내기");
+    public static string FilesPickTitle => T("Files to send", "보낼 파일 고르기");
+    public static string FilesNoTargets => T("No device takes files yet — update the phone app, or connect another PC",
+        "파일을 받을 수 있는 기기가 없습니다 — 휴대폰 앱을 업데이트하거나 다른 PC를 연결하세요");
+    public static string FilesNothing => T("No files to send (folders can't be sent).", "보낼 파일이 없습니다 (폴더는 보낼 수 없습니다).");
+    public static string FilesSendingTitle(int count, long bytes) => T($"Sending {count} file{(count == 1 ? "" : "s")} ({Size(bytes)})",
+        $"파일 {count}개 ({Size(bytes)}) 보내는 중");
+    public static string FilesSendingBody(string names) => T($"To {names}.", $"{names}(으)로 보냅니다.");
+    public static string FilesSentTitle(int count, long bytes) => T($"{count} file{(count == 1 ? "" : "s")} sent ({Size(bytes)})",
+        $"파일 {count}개를 보냈습니다 ({Size(bytes)})");
+    public static string FilesPartlySentTitle => T("Files sent to some devices only", "일부 기기에만 파일을 보냈습니다");
+    public static string FilesNotSentTitle => T("Files not sent", "파일을 보내지 못했습니다");
+    public static string FilesSentTo(string name) => T($"{name}: has them", $"{name}: 보냈습니다");
+    public static string FilesNotified(string name) => T($"{name}: told — the phone fetches them (within a day)",
+        $"{name}: 알렸습니다 — 휴대폰에서 받습니다 (하루 안에)");
+    public static string FilesReceivedLine(string name) => T($"{name}: received", $"{name}: 받았습니다");
+    public static string FilesReceivedByTitle(string name) => T($"{name} received the files", $"{name}에서 파일을 받았습니다");
+    public static string FilesReceivedByBody(int count, long bytes) => T($"{count} file{(count == 1 ? "" : "s")}, {Size(bytes)}.",
+        $"파일 {count}개, {Size(bytes)}.");
+    public static string FileSendError(string? code) => code switch
+    {
+        "too_large" => T("too large (up to 20 files, 2 GB each, 4 GB together)", "너무 큽니다 (한 번에 20개, 파일당 2GB, 합계 4GB)"),
+        "insufficient_storage" => T("not enough room on the PC", "PC에 저장 공간이 부족합니다"),
+        "unreadable" => T("a file can't be read (in use, or no access)", "파일을 읽을 수 없습니다 (사용 중이거나 권한 없음)"),
+        "agent" => ClipAgentUnavailable,
+        "expired" => T("not fetched within a day", "하루 안에 받지 않았습니다"),
+        "invalid_transfer" => T("the device can't take these files", "그 기기가 이 파일을 받을 수 없습니다"),
+        _ => ClipError(code),
+    };
+
     public static string FilesFailedTitle(string from) => T($"Files from {from} not saved", $"{from}에서 받은 파일을 저장하지 못했습니다");
     public static string FilesFailedBody => T("Check the free space in Downloads. They are kept on this PC for a day and saved at the next sign-in.",
         "다운로드 폴더의 여유 공간을 확인하세요. 이 PC에 하루 동안 보관했다가 다음 로그인 때 다시 저장합니다.");

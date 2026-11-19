@@ -183,7 +183,7 @@ data class TransferStatus(val id: String, val state: String, val chunkBytes: Int
 }
 
 /** What a PC answered to one transfer call, and the path it answered on (tried first next time). */
-data class TransferAnswer(val code: Int, val body: String?, val via: Endpoint) {
+data class TransferAnswer(val code: Int, val body: String?, val via: Endpoint, val bytes: ByteArray? = null) {
     val ok: Boolean get() = code in 200..299
 
     /** The `error` code of a `{schema, error, message}` body. */

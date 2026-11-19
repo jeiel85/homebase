@@ -316,7 +316,14 @@ class HomebaseApi(
      * Returns what the PC answered and the path it came over. Throws [UnauthorizedException] on 401 and
      * [IOException] when no path answered.
      */
-    suspend fun transfer(pc: PcEntry, path: String, builder: Request.Builder, prefer: Endpoint? = null): TransferAnswer =
+    suspend fun transfer(
+        pc: PcEntry,
+        path: String,
+        builder: Request.Builder,
+        prefer: Endpoint? = null,
+        // A chunk a PC sends (2b, DECISIONS M-65): a 2xx body is kept as bytes in [TransferAnswer.bytes].
+        binary: Boolean = false,
+    ): TransferAnswer =
         withContext(Dispatchers.IO) {
             val ordered = pc.orderedEndpoints(networks())
             val paths = if (prefer != null && prefer in ordered) listOf(prefer) + ordered.filter { it != prefer } else ordered
@@ -331,6 +338,7 @@ class HomebaseApi(
                 }
                 res.use {
                     if (it.code == 401) throw UnauthorizedException()
+                    if (binary && it.isSuccessful) return@withContext TransferAnswer(it.code, null, e, it.body?.bytes())
                     return@withContext TransferAnswer(it.code, it.body?.string(), e)
                 }
             }
