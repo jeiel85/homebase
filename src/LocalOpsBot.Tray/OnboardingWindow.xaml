@@ -5,14 +5,15 @@
         Style="{StaticResource Window.Chrome}"
         Title="{x:Static local:L.SetupTitle}"
         Icon="pack://application:,,,/Homebase.Tray;component/Resources/homebase.ico"
-        Width="460" Height="620"
+        Width="460" Height="680"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Brush.Canvas}"
         FontFamily="{StaticResource Font.Sans}"
         TextOptions.TextFormattingMode="Display">
   <!-- A checklist only: each row is state + what to do next. Inputs live in Settings so there is
-       exactly one place to enter or change the Telegram connection. -->
+       exactly one place to enter or change each connection. The phone (Homebase app push) is the
+       main channel and sits under REQUIRED; Telegram is the optional fallback. -->
   <Grid Margin="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -62,20 +63,20 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
-              <Border x:Name="TelegramChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
-                <TextBlock x:Name="TelegramChipText" Style="{StaticResource ChipText}" Text="…"/>
+              <Border x:Name="PhoneChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
+                <TextBlock x:Name="PhoneChipText" Style="{StaticResource ChipText}" Text="…"/>
               </Border>
               <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupTelegram}"/>
-                <TextBlock x:Name="TelegramStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupPhone}"/>
+                <TextBlock x:Name="PhoneStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
                            Text="{x:Static local:L.BadgeChecking}"/>
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                  <Button x:Name="ConnectTelegramButton" Style="{StaticResource Button.Signal}"
-                          Content="{x:Static local:L.SetupConnectTelegram}" Click="ConnectTelegram_Click"/>
-                  <Button x:Name="TestButton" Style="{StaticResource Button.Carbon}" Margin="6,0,0,0"
-                          Content="{x:Static local:L.SendTest}" Click="TestMessage_Click" Visibility="Collapsed"/>
+                  <Button x:Name="ConnectPhoneButton" Style="{StaticResource Button.Signal}"
+                          Content="{x:Static local:L.SetupConnectPhone}" Click="ConnectPhone_Click"/>
+                  <Button x:Name="PhoneTestButton" Style="{StaticResource Button.Signal}" Margin="6,0,0,0"
+                          Content="{x:Static local:L.SetupSendTest}" Click="TestMessage_Click" Visibility="Collapsed"/>
                 </StackPanel>
-                <TextBlock x:Name="TestResultText" Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                <TextBlock x:Name="PhoneTestResultText" Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap" Margin="0,6,0,0"/>
               </StackPanel>
             </Grid>
           </StackPanel>
@@ -88,6 +89,28 @@
         <Border Style="{StaticResource Card}">
           <StackPanel>
             <Grid Margin="0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="TelegramChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
+                <TextBlock x:Name="TelegramChipText" Style="{StaticResource ChipText}" Text="…"/>
+              </Border>
+              <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupTelegram}"/>
+                <TextBlock x:Name="TelegramStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                           Text="{x:Static local:L.BadgeChecking}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                  <Button x:Name="ConnectTelegramButton" Style="{StaticResource Button.Carbon}"
+                          Content="{x:Static local:L.SetupConnectTelegram}" Click="ConnectTelegram_Click"/>
+                  <Button x:Name="TelegramTestButton" Style="{StaticResource Button.Carbon}" Margin="6,0,0,0"
+                          Content="{x:Static local:L.SetupSendTest}" Click="TestMessage_Click" Visibility="Collapsed"/>
+                </StackPanel>
+                <TextBlock x:Name="TelegramTestResultText" Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,12,0,4">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>

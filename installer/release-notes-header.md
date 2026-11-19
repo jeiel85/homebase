@@ -1,13 +1,13 @@
 ## 📥 어느 파일을 받아야 하나요?
 
 **처음 설치라면 → `Homebase-Setup.exe` 하나만 받아 더블클릭하세요.**
-설치 마법사가 Telegram 봇 토큰과 chat ID를 물어보고, Windows 서비스 등록과 트레이 자동 시작까지 끝냅니다.
+설치 마법사가 Windows 서비스 등록과 트레이 자동 시작까지 끝냅니다. Telegram은 묻지 않습니다 — 알림은 휴대폰 Homebase 앱(종단 암호화 푸시)으로 받고, Telegram은 원할 때 트레이에서 더하는 대체 채널입니다.
 
 | 파일 | 이럴 때 받으세요 |
 |---|---|
 | **`Homebase-Setup.exe`** | ⭐ 대부분 이것 하나면 됩니다. 더블클릭하면 설치 마법사가 실행됩니다 |
-| `Homebase-Setup.zip` | 마법사 없이 수동 설치 — 압축을 풀고 **관리자 권한** PowerShell에서 `.\setup.ps1` 실행 |
-| `bootstrap.ps1` | 명령 한 줄 설치 — 관리자 권한 PowerShell에서 `irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 \| iex` |
+| `Homebase-Setup.zip` | 마법사 없이 수동 설치 — 압축을 풀고 **관리자 권한** PowerShell에서 `.\setup.ps1` 실행 (Telegram 봇 토큰을 물으면 Enter로 건너뜀) |
+| `bootstrap.ps1` | 명령 한 줄 설치 — 관리자 권한 PowerShell에서 `irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 \| iex` (Telegram은 Enter로 건너뜀) |
 | `appsettings.example.json` | 설정 항목 참고용 (설치 시 자동 생성되므로 보통 받을 필요 없음) |
 | `*.sha256` | 다운로드 무결성 검증용 (선택) |
 

@@ -183,21 +183,45 @@ public static class L
         "Checks GitHub Releases for a newer version. Installing asks for administrator approval.",
         "GitHub Releases에서 새 버전을 찾습니다. 설치할 때 관리자 승인이 필요합니다.");
     public static string AboutHeader => T("ABOUT", "정보");
-    public static string AboutLine => T("Personal Windows PC monitoring over Telegram and your phone.", "텔레그램과 휴대폰으로 보는 개인 Windows PC 모니터링");
+    public static string AboutLine => T(
+        "Personal Windows PC monitoring on your phone — live view and end-to-end encrypted alerts. Telegram is optional.",
+        "휴대폰으로 보는 개인 Windows PC 모니터링 — 실시간 화면과 종단 암호화 알림. 텔레그램은 선택입니다.");
 
     // ── Setup checklist (onboarding) ─────────────────────────────────────────
     public static string SetupTitle => T("Homebase — Setup", "Homebase — 처음 설정");
     public static string SetupEyebrow => T("SETUP", "처음 설정");
     public static string SetupIntro => T(
-        "Here's what's ready on this PC and what still needs a step. Each item says what to do next.",
-        "이 PC에서 준비된 것과 아직 남은 것을 확인합니다. 항목마다 다음에 할 일을 알려 줍니다.");
+        "Here's what's ready on this PC and what still needs a step. Alerts go to the Homebase app on your phone; Telegram is an optional fallback.",
+        "이 PC에서 준비된 것과 아직 남은 것을 확인합니다. 경보와 알림은 휴대폰의 Homebase 앱으로 받고, 텔레그램은 원하면 더하는 대체 채널입니다.");
     public static string SetupRequired => T("REQUIRED", "필수");
     public static string SetupOptional => T("OPTIONAL", "선택");
     public static string SetupService => T("Monitoring service", "감시 서비스");
     public static string SetupServiceRunning => T("Running — monitoring is active.", "실행 중 — 감시하고 있습니다.");
     public static string SetupServiceStopped => T("Installed but stopped. Start the Homebase.Agent service.", "설치됐지만 멈춰 있습니다. Homebase.Agent 서비스를 시작하세요.");
     public static string SetupServiceMissing => T("Not installed. Run the Homebase installer.", "설치되지 않았습니다. Homebase 설치 프로그램을 실행하세요.");
-    public static string SetupTelegram => T("Telegram connection", "텔레그램 연결");
+    public static string SetupPhone => T("Phone (Homebase app)", "휴대폰 (Homebase 앱)");
+    public static string SetupPhoneOff => T(
+        "Not turned on yet. Turn it on in Settings › Phone, then scan the QR code with the Homebase app.",
+        "아직 꺼져 있습니다. 설정 › 휴대폰에서 켜고 Homebase 앱으로 QR 코드를 찍으세요.");
+    public static string SetupPhoneNoBridge => T(
+        "On, but not connected to the monitoring service yet. Check that it's running, then re-check.",
+        "켜져 있지만 아직 감시 서비스와 이어지지 않았습니다. 서비스가 실행 중인지 확인하고 다시 확인을 누르세요.");
+    public static string SetupPhoneNone => T(
+        "On, but no phone is paired yet. Scan the QR code in Settings › Phone with the Homebase app.",
+        "켜져 있지만 아직 연결된 휴대폰이 없습니다. 설정 › 휴대폰의 QR 코드를 Homebase 앱으로 찍으세요.");
+    public static string SetupPhoneReady(int phones) => T(
+        phones == 1 ? "Paired with 1 phone — alerts arrive as end-to-end encrypted push." : $"Paired with {phones} phones — alerts arrive as end-to-end encrypted push.",
+        $"휴대폰 {phones}대와 연결됨 — 경보와 알림이 종단 암호화 푸시로 갑니다.");
+    public static string SetupPhoneUnknown => T(
+        "Couldn't read the paired phones. Re-check in a moment.",
+        "연결된 휴대폰을 읽지 못했습니다. 잠시 뒤 다시 확인하세요.");
+    public static string SetupConnectPhone => T("CONNECT PHONE", "휴대폰 연결하기");
+    public static string SetupManagePhone => T("MANAGE", "관리");
+    public static string SetupSendTest => T("SEND TEST ALERT", "테스트 알림 보내기");
+    public static string SetupTelegram => T("Telegram (fallback)", "텔레그램 (대체 채널)");
+    public static string SetupTelegramOff => T(
+        "Not set up — that's fine. Add it to get alerts on Telegram when phone push can't get through, and to use bot commands.",
+        "설정하지 않았습니다 — 없어도 됩니다. 휴대폰 푸시가 닿지 않을 때 텔레그램으로 대신 받거나 봇 명령을 쓰고 싶을 때만 더하세요.");
     public static string SetupConnectTelegram => T("CONNECT TELEGRAM", "텔레그램 연결하기");
     public static string SetupChangeTelegram => T("CHANGE", "바꾸기");
     public static string SetupAi => T("AI advice (Ollama)", "AI 조언 (Ollama)");

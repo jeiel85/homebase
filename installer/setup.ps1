@@ -3,27 +3,31 @@
     Installs Homebase (Agent + Tray) with interactive configuration.
 .DESCRIPTION
     One-command installer that handles everything:
-      - Prompts for Telegram bot token and allowed chat IDs
       - Copies binaries to Program Files
       - Creates config/data/log directories
       - Creates Windows service with auto-recovery
       - Registers Tray for auto-start
-      - Sets machine-level environment variable for the token
+      - Optionally sets up Telegram (bot token + chat ID). Alerts go to the Homebase phone app as
+        end-to-end encrypted push; Telegram is only a fallback, so pressing Enter at the token
+        prompt skips it. It can be added later from the tray (Settings > Telegram).
 
     Run as Administrator.
 .PARAMETER Token
-    Telegram bot token (skips prompt).
+    Telegram bot token (skips prompt). Optional.
 .PARAMETER ChatId
-    Allowed Telegram chat ID (skips prompt).
+    Allowed Telegram chat ID (skips prompt). Optional; needed together with a token.
 .PARAMETER NoInteractive
-    Do not prompt — use defaults/環境変数 where possible.
+    Do not prompt. Telegram is set up only when -Token (or the machine token variable) and
+    -ChatId are given; otherwise it is skipped.
+.PARAMETER SkipTelegram
+    Do not set up Telegram and keep an existing config as it is (what Setup.exe uses).
 .PARAMETER AgentSource
     Path to Agent binaries (auto-detected from script location).
 .PARAMETER TraySource
     Path to Tray binaries (auto-detected from script location).
 .EXAMPLE
     .\setup.ps1
-    Fully interactive install.
+    Interactive install; press Enter at the Telegram prompt to skip it.
 .EXAMPLE
     .\setup.ps1 -Token "123:ABC" -ChatId "98765"
     Unattended install with known values.
@@ -179,6 +183,8 @@ function Test-ChatId($c) {
     return $c -match '^-?\d{4,}$'
 }
 
+# Both prompts return "" when the user presses Enter: Telegram is optional (the phone app is the
+# main channel), so an empty answer skips it instead of asking again.
 function Read-Token {
     $existing = [Environment]::GetEnvironmentVariable($EnvVarName, 'Machine')
     if ($existing) {
@@ -187,8 +193,8 @@ function Read-Token {
         if ($ans -ne 'y' -and $ans -ne 'Y') { return $existing }
     }
     do {
-        $t = Read-Host "`nEnter your Telegram bot token (from @BotFather)"
-        if (-not $t) { continue }
+        $t = Read-Host "`nTelegram bot token from @BotFather (press Enter to skip Telegram)"
+        if (-not $t) { return "" }
         if (Test-BotToken $t) { return $t }
         Write-Warn "Invalid format. Should look like: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
     } while ($true)
@@ -196,8 +202,8 @@ function Read-Token {
 
 function Read-ChatId {
     do {
-        $c = Read-Host "`nEnter your Telegram chat ID (numeric, e.g. 123456789)"
-        if (-not $c) { continue }
+        $c = Read-Host "`nTelegram chat ID, numeric, e.g. 123456789 (press Enter to skip Telegram)"
+        if (-not $c) { return "" }
         if (Test-ChatId $c) { return $c }
         Write-Warn "Invalid. Send any message to your bot, then visit:"
         Write-Warn "  https://api.telegram.org/bot$Token/getUpdates"
@@ -296,8 +302,11 @@ if ($HasTrayBinaries) {
     Write-Warn "Tray binaries not found — Tray install will be skipped"
 }
 
-# --- Step 1: Collect configuration ---
-Write-Step "Step 1/7: Telegram configuration"
+# --- Step 1: Telegram (optional fallback) ---
+# Alerts go to the Homebase phone app as end-to-end encrypted push; Telegram is only the fallback
+# channel, so the install never depends on it. It is set up only when both a bot token and a chat ID
+# end up known; otherwise both stay empty and the tray's setup checklist offers it later.
+Write-Step "Step 1/7: Telegram (optional)"
 
 if ($SkipTelegram) {
     Write-Ok "Skipping Telegram setup — configure it on first run from the Homebase tray."
@@ -305,21 +314,28 @@ if ($SkipTelegram) {
     $ChatId = ""
 } else {
     if ($NoInteractive) {
-        if (-not $Token) { $Token = [Environment]::GetEnvironmentVariable($EnvVarName, 'Machine') }
-        if (-not $Token) { $Token = Read-Host "Bot token (--Token)" }
-        if (-not $ChatId) { $ChatId = Read-Host "Chat ID (--ChatId)" }
+        # Unattended: never prompt. A chat ID passed without a token reuses this machine's token.
+        if ($ChatId -and -not $Token) { $Token = [Environment]::GetEnvironmentVariable($EnvVarName, 'Machine') }
     } else {
+        Write-Host "  Alerts go to the Homebase phone app (end-to-end encrypted push). Telegram is an optional"
+        Write-Host "  fallback: press Enter to skip it, or add it later in the tray (Settings > Telegram)."
         if (-not $Token) { $Token = Read-Token }
-        if (-not $ChatId) { $ChatId = Read-ChatId }
+        if ($Token -and -not $ChatId) { $ChatId = Read-ChatId }
     }
 
-    if (-not $Token) { Write-ErrorExit "Telegram bot token is required." }
-    if (-not (Test-BotToken $Token)) { Write-ErrorExit "Invalid bot token format." }
-    if (-not $ChatId) { Write-ErrorExit "Chat ID is required." }
-    if (-not (Test-ChatId $ChatId)) { Write-ErrorExit "Invalid chat ID format." }
+    # Values passed as parameters are not checked by the prompts above.
+    if ($Token -and -not (Test-BotToken $Token)) { Write-ErrorExit "Invalid bot token format." }
+    if ($ChatId -and -not (Test-ChatId $ChatId)) { Write-ErrorExit "Invalid chat ID format." }
 
-    Write-Ok "Token: $($Token.Substring(0, [Math]::Min(8, $Token.Length)))..."
-    Write-Ok "Chat ID: $ChatId"
+    if ($Token -and $ChatId) {
+        Write-Ok "Token: $($Token.Substring(0, [Math]::Min(8, $Token.Length)))..."
+        Write-Ok "Chat ID: $ChatId"
+    } else {
+        if ($Token -or $ChatId) { Write-Warn "Telegram needs both a bot token and a chat ID — leaving Telegram as it is." }
+        Write-Ok "Telegram skipped — connect your phone after install; Telegram can be added later from the tray."
+        $Token = ""
+        $ChatId = ""
+    }
 }
 
 # --- Step 2: Create directories ---
@@ -360,8 +376,8 @@ if ((Test-Path $ConfigFile) -and -not (Test-TrustedOwner $ConfigFile)) {
     Write-Warn "Existing config was not created by an administrator; moved to $aside and starting fresh"
 }
 if (Test-Path $ConfigFile) {
-    if ($SkipTelegram) {
-        # Keep a prior onboarding-set config on reinstall; never prompt in this unattended path.
+    if ($SkipTelegram -or ($NoInteractive -and -not $ChatId)) {
+        # Keep a prior onboarding-set config on reinstall; never prompt in these unattended paths.
         Write-Warn "Existing config preserved (configure Telegram from the tray)"
     } else {
         $ans = Read-Host "Config already exists. Overwrite? (y/N)"
@@ -385,7 +401,7 @@ if ($Token) {
     [Environment]::SetEnvironmentVariable($EnvVarName, $Token, 'Machine')
     Write-Ok "$EnvVarName set at machine level"
 } else {
-    Write-Warn "No token yet — skipping env var (onboarding sets it on first run)."
+    Write-Ok "No Telegram token — skipping env var (Telegram can be added from the tray)."
 }
 
 # --- Step 6: Create service ---
@@ -398,7 +414,7 @@ if ($existingService) {
     Start-Sleep -Seconds 2
 }
 sc.exe create $ServiceName binPath= "`"$AgentExe`"" start= auto DisplayName= "`"$DisplayName`"" | Out-Null
-sc.exe description $ServiceName "Personal Windows PC monitoring bot for Telegram." | Out-Null
+sc.exe description $ServiceName "Personal Windows PC monitoring with live view and encrypted alerts on your phone." | Out-Null
 sc.exe failure $ServiceName reset= 86400 actions= restart/60000/restart/60000/restart/300000 | Out-Null
 Start-Service $ServiceName
 Write-Ok "Service '$ServiceName' created and started"
@@ -423,8 +439,19 @@ Write-Host "  Tray      : $TrayDir"
 Write-Host "  Config    : $ConfigFile"
 Write-Host "  Data      : $DataDir"
 Write-Host "  Logs      : $LogDir"
-Write-Host "`n  Test your bot: send /ping on Telegram"
-Write-Host "  View logs    : Get-Content '$LogDir\*.log' -Tail 50 -Wait"
+Write-Host "`n  Next steps:"
+if (Test-Path $TrayExe) {
+    # Not started from here: this console is elevated, and the tray should run as the signed-in user.
+    Write-Host "    - Start the tray: open $TrayExe from File Explorer"
+    Write-Host "      (it also starts at every sign-in). Its setup checklist shows what is ready."
+}
+Write-Host "    - Connect your phone: tray > Settings > Phone, then scan the QR code with the Homebase app."
+if ($Token) {
+    Write-Host "    - Telegram fallback: send /ping to your bot to check it answers."
+} else {
+    Write-Host "    - Telegram (optional fallback): add it any time in tray > Settings > Telegram."
+}
+Write-Host "`n  View logs    : Get-Content '$LogDir\*.log' -Tail 50 -Wait"
 Write-Host "  Uninstall    : $(Join-Path $ScriptRoot 'uninstall.ps1')`n"
 
 Get-Service $ServiceName

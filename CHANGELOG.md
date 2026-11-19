@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.42.4 — Install without Telegram; the setup checklist puts the phone first
+
+### Fixed
+- **The one-line install (`irm …/bootstrap.ps1 | iex`) and `setup.ps1` from `Homebase-Setup.zip` no longer
+  require Telegram.** They asked for a Telegram bot token and chat ID and stopped with "Telegram bot token is
+  required." when left empty, although alerts go to the Homebase phone app (end-to-end encrypted push) and
+  Telegram has been only the fallback since v0.16. Pressing Enter at the token (or chat ID) prompt now skips
+  Telegram and the install carries on; it can be added later from the tray (Settings › Telegram). Run with
+  `-NoInteractive`, setup no longer prompts at all and sets up Telegram only when `-Token` (or the token
+  already on the PC) and `-ChatId` are given. `Homebase-Setup.exe` already installed without Telegram.
+- The end of setup now says what to do next — start the tray, connect your phone (Settings › Phone, scan the
+  QR code), and Telegram only as an option — instead of "send /ping on Telegram". The service description
+  no longer calls Homebase "a bot for Telegram".
+
+### Changed
+- **The first-run setup checklist lists the phone as required and Telegram as optional.** REQUIRED now holds
+  the monitoring service and the phone connection: whether it is turned on, reaches the service and has a
+  paired phone, with a button to Settings › Phone and, once a phone is paired, a test alert. Telegram moved
+  to OPTIONAL as "Telegram (fallback)"; not set up, it shows a grey "optional" chip instead of "set up".
+- The About line in Settings describes Homebase as phone-first ("휴대폰으로 보는 개인 Windows PC
+  모니터링"), with Telegram optional. The release download guide no longer says the setup wizard asks for
+  Telegram.
+
 ## v0.42.3 — A linked PC shows once, and its live view opens whichever way gets through
 
 ### Fixed
