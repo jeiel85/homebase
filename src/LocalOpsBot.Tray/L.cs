@@ -328,10 +328,12 @@ public static class L
     public static string RailPhones => T("PHONES", "휴대폰");
     public static string RoleHub => T("linked from this PC", "이 PC가 연결함");
     public static string RoleLinkedHere => T("linked to this PC", "이 PC에 연결함");
+    public static string RoleBoth => T("linked both ways", "서로 연결됨");
     public static string ListBattery(int pct, bool charging) => T($"battery {pct}%{(charging ? " ⚡" : "")}", $"배터리 {pct}%{(charging ? " ⚡" : "")}");
     public static string HeadSelf => T("this PC", "이 PC");
     public static string HeadHub => T("a PC this one linked to", "이 PC가 연결한 PC");
     public static string HeadLinkedHere => T("a PC linked to this one", "이 PC에 연결한 PC");
+    public static string HeadBoth => T("a PC linked both ways", "서로 연결된 PC");
     public static string HeadPhone => T("paired with this PC", "이 PC에 연결된 휴대폰");
     public static string ChipPhoneLink => T("Phone connection", "휴대폰 연결");
     public static string ChipOpensSettings => T("Change it in Settings", "설정에서 바꿀 수 있습니다");

@@ -1,4 +1,5 @@
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Tray.Services.Mobile;
 
 namespace LocalOpsBot.Tray.Dashboard;
 
@@ -21,6 +22,7 @@ internal enum DeviceRole
 /// One entry of the dashboard's device list (DECISIONS M-46). <c>Name</c> is what the device reports;
 /// <c>Alias</c> the group's name for it (M-51), shown in its place (<see cref="Shown"/>). <c>AliasKey</c>
 /// is its group key, to set that alias — null while a PC linked here has not said its id yet.
+/// <c>TwoWay</c>: a PC linked both ways (M-47); <c>Role</c> is then the way its live view comes now.
 /// </summary>
 internal sealed record DeviceItem(
     string Key,
@@ -38,7 +40,8 @@ internal sealed record DeviceItem(
     int Phones = 0,
     string? Alias = null,
     string? AliasKey = null,
-    string? ViaKey = null)
+    string? ViaKey = null,
+    bool TwoWay = false)
 {
     public bool IsPc => Kind == DeviceKind.Pc;
 
@@ -53,9 +56,9 @@ internal static class DeviceList
 
     /// <summary>
     /// This PC first, then PCs (linked either way), then phones; online before offline, then by the name
-    /// shown. A device paired here and also listed by a linked PC appears once (the copy that can show
-    /// more). With <paramref name="aliases"/>, each device and the PC it is seen through carry the group's
-    /// alias for them (M-51).
+    /// shown. A PC linked both ways is one entry (M-47), and a device paired here and also listed by a linked
+    /// PC appears once (the copy that can show more). With <paramref name="aliases"/>, each device and the PC
+    /// it is seen through carry the group's alias for them (M-51).
     /// </summary>
     public static IReadOnlyList<DeviceItem> Build(DeviceOverview? overview, string selfName, DeviceAliasTable? aliases = null)
     {
@@ -91,22 +94,20 @@ internal static class DeviceList
         var local = (overview.Local ?? Array.Empty<LocalDeviceInfo>()).ToDictionary(l => l.DeviceId, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Seen(DeviceKind.Pc, selfName) };
 
-        // PCs this one linked to come first among the PCs: they open a real live view.
-        foreach (var h in overview.Hubs)
+        // A group links PCs both ways (M-47): one entry per PC, whichever way it is linked.
+        foreach (var link in LinkedPcs.Pair(overview.Hubs, overview.Here.Devices))
         {
-            if (!seen.Add(Seen(DeviceKind.Pc, h.PcName))) continue;
-            items.Add(new DeviceItem("hub:" + h.PcId, DeviceRole.Hub, DeviceKind.Pc, h.PcName, null, h.Online, h.LastContactAt,
-                h.Status, Core.Mobile.LiveTarget.Hub(h.PcId), Error: h.Error,
-                Phones: h.Devices.Count(d => d.Kind == DeviceKind.Phone && d.DeviceId != h.SelfDeviceId),
-                AliasKey: GroupKeys.Pc(h.PcId)));
+            var names = link.Here.Select(d => d.Name).Prepend(link.Name).Select(n => Seen(DeviceKind.Pc, n)).ToList();
+            if (names.Contains(Seen(DeviceKind.Pc, selfName))) continue; // this PC itself, linked to its own code
+            seen.UnionWith(names);
+            items.Add(PcItem(link, local));
         }
-        foreach (var d in overview.Here.Devices)
+        foreach (var d in overview.Here.Devices.Where(d => d.Kind != DeviceKind.Pc))
         {
             if (!seen.Add(Seen(d.Kind, d.Name))) continue;
             local.TryGetValue(d.DeviceId, out var info);
-            var pc = d.Kind == DeviceKind.Pc;
-            items.Add(new DeviceItem("device:" + d.DeviceId, pc ? DeviceRole.LinkedHere : DeviceRole.Phone, d.Kind, d.Name, d.Model,
-                d.Online, d.LastSeenAt, d.Status, pc ? Core.Mobile.LiveTarget.Device(d.DeviceId) : null, Local: info, AliasKey: KeyOf(d)));
+            items.Add(new DeviceItem("device:" + d.DeviceId, DeviceRole.Phone, d.Kind, d.Name, d.Model,
+                d.Online, d.LastSeenAt, d.Status, null, Local: info, AliasKey: KeyOf(d)));
         }
         foreach (var h in overview.Hubs)
         {
@@ -118,6 +119,30 @@ internal static class DeviceList
             }
         }
         return items;
+    }
+
+    /// <summary>
+    /// A linked PC as one entry. Its live view comes the way that answers now: this PC's link to it (a
+    /// WebSocket) while that is online or it isn't reporting here either, else it shares its view here. The
+    /// key stays the same either way, so the selection and the traces under the gauges survive a switch.
+    /// </summary>
+    private static DeviceItem PcItem(PcLink link, IReadOnlyDictionary<string, LocalDeviceInfo> local)
+    {
+        var pc = LinkedPcs.Summarize(link);
+        var h = link.Hub;
+        var here = link.Here.FirstOrDefault(d => d.Online) ?? link.Here.FirstOrDefault();
+        var viaHub = h is not null && (h.Online || here is not { Online: true });
+        LocalDeviceInfo? info = null;
+        if (here is not null) local.TryGetValue(here.DeviceId, out info);
+        // Keyed by pcId once known, so the entry keeps its key when this PC's link to it comes up later.
+        return new DeviceItem(
+            pc.PcId is { } key ? "hub:" + key : "device:" + here!.DeviceId,
+            viaHub ? DeviceRole.Hub : DeviceRole.LinkedHere,
+            DeviceKind.Pc, pc.Name, null, pc.Online, pc.LastSeen, pc.Status,
+            viaHub ? Core.Mobile.LiveTarget.Hub(h!.PcId) : Core.Mobile.LiveTarget.Device(here!.DeviceId),
+            Local: info, Error: h?.Error, Phones: pc.Phones,
+            AliasKey: pc.PcId is { } pcId ? GroupKeys.Pc(pcId) : null,
+            TwoWay: h is not null && here is not null);
     }
 
     private static string Seen(string kind, string name) => kind + "|" + name.Trim();
