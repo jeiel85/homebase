@@ -1,0 +1,67 @@
+{
+  "list": {
+    "schema": 1,
+    "commands": [
+      {
+        "name": "lock",
+        "label": "잠그기",
+        "kind": "session",
+        "confirm": false
+      },
+      {
+        "name": "media_play_pause",
+        "label": "재생/일시정지",
+        "kind": "session",
+        "confirm": false
+      },
+      {
+        "name": "restart",
+        "label": "다시 시작",
+        "kind": "system",
+        "confirm": true
+      },
+      {
+        "name": "custom:backup01",
+        "label": "백업",
+        "kind": "custom",
+        "confirm": true
+      }
+    ],
+    "wake": {
+      "macs": [
+        "00:1a:2b:3c:4d:5e"
+      ]
+    },
+    "pending": {
+      "name": "restart",
+      "at": "2026-11-20T01:01:00+00:00"
+    }
+  },
+  "request": {
+    "schema": 1,
+    "command": "lock",
+    "ts": "2026-11-20T01:00:00+00:00"
+  },
+  "envelope": {
+    "schema": 1,
+    "id": "5b2c8d1e0f3a4b6c9d7e1f2a3b4c5d6e",
+    "nonce": "AAECAwQFBgcICQoL",
+    "data": "xvmpgvRuPjhJhwdymykSG2E_4ZXg4piu2wUkP23ZitPnStNZIms9aaKUanjmACBhnjWzk5abRp_oM8RdCA2DIt1cob5oJM46xQYlnwt1"
+  },
+  "resultDone": {
+    "schema": 1,
+    "ok": true,
+    "state": "done"
+  },
+  "resultScheduled": {
+    "schema": 1,
+    "ok": true,
+    "state": "scheduled",
+    "at": "2026-11-20T01:01:00+00:00"
+  },
+  "resultError": {
+    "schema": 1,
+    "ok": false,
+    "error": "not_allowed"
+  }
+}

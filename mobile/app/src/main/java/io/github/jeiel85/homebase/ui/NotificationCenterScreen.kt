@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.jeiel85.homebase.data.PcMark
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.push.CommandHistory
 import io.github.jeiel85.homebase.push.FileHistory
 import io.github.jeiel85.homebase.push.HistoryEntry
 import io.github.jeiel85.homebase.push.NotificationGroups
@@ -133,8 +134,8 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     val now = remember(entries) { System.currentTimeMillis() }
     val byDay = remember(shown, now) {
         shown.groupBy { PushHistoryRules.dayOf(it.receivedAt, zone) }.toList().map { (day, dayEntries) ->
-            // Each transfer is a card of its own: files are not bundled like notifications of one source.
-            Triple(day, dayEntries, PushHistoryRules.stack(dayEntries) { !FileHistory.isFile(it.category) && rules.resolve(it.category, it.source).bundle })
+            // Each transfer and each command sent is a card of its own: they are not bundled like notifications of one source.
+            Triple(day, dayEntries, PushHistoryRules.stack(dayEntries) { !isOwnRecord(it.category) && rules.resolve(it.category, it.source).bundle })
         }
     }
     val scope = rememberCoroutineScope()
@@ -341,7 +342,8 @@ private fun HistoryCard(
     val hb = Hb.colors
     val time = remember(entry.receivedAt) { TIME.format(Instant.ofEpochMilli(entry.receivedAt).atZone(zone)) }
     val kind = PushHistoryRules.categoryLabel(entry.category)
-    val file = FileHistory.isFile(entry.category)
+    // A file transfer or a command this phone sent: no push, so nothing about the shade applies.
+    val file = isOwnRecord(entry.category)
     // The header line already names the source; the PC sends titles as "카카오톡: 홍길동", so drop the repeat.
     val title = if (expanded) entry.title else entry.title.removePrefix("${entry.source}: ").ifBlank { entry.title }
     Plate(
@@ -420,7 +422,7 @@ private fun HistoryCard(
                     Text(
                         when (entry.category) {
                             FileHistory.RECEIVED -> "받음 $at"
-                            FileHistory.SENT -> "보냄 $at"
+                            FileHistory.SENT, CommandHistory.SENT -> "보냄 $at"
                             else -> "PC 발송 $at"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -447,6 +449,7 @@ private fun HistoryCard(
  */
 private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): String {
     if (FileHistory.isFile(entry.category)) return FileHistory.header(entry, pcName)
+    if (CommandHistory.isCommand(entry.category)) return pcName
     val source = sourceLabel(entry)
     return when {
         entry.category == NotificationGroups.DEVICE -> "${entry.source} · $pcName 경유"
@@ -454,6 +457,9 @@ private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): Strin
         else -> "$pcName · $source"
     }
 }
+
+/** Entries this phone made itself — files received and sent, commands sent — rather than pushes it was sent. */
+private fun isOwnRecord(category: String): Boolean = FileHistory.isFile(category) || CommandHistory.isCommand(category)
 
 /** An app for forwarded notifications, a Korean label for alert kinds. */
 private fun sourceLabel(entry: HistoryEntry): String =

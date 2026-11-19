@@ -186,6 +186,16 @@ PC의 트레이가 보낸 파일(2b). 다른 PC로는 Agent가 위 "파일"(2a) 
 - **조각** `GET /api/v1/transfer/fetch?id=&f=&n=`: 2a와 같은 전송 키(그 휴대폰의 합의 키 + 전송 id)와 위치 nonce로 봉인한 조각, 본문은 원시 바이트(`application/octet-stream`). 휴대폰은 해시가 맞아야 저장한다.
 - **받음** `POST /api/v1/transfer/received?id=`: PC의 트레이에 "받았습니다"가 뜬다. 모든 대상이 끝나면 PC가 파일을 지우고, 아니면 24시간 뒤 지운다.
 
+### 원격 명령 (M-69)
+
+휴대폰이 PC가 켠 고정 명령을 요청한다. 설계는 [`REMOTE_COMMANDS.md`](REMOTE_COMMANDS.md), 견본 [`commands.v1.json`](mobile-protocol/commands.v1.json)(목록, 요청 평문과 클립보드 픽스처 키로 봉인한 봉투, 답).
+
+- **목록** `GET /api/v1/commands` → `{schema, commands: [{name, label, kind, confirm}], wake?: {macs: ["aa:bb:…"]}, pending?: {name: "restart", at}}`. `kind`는 `session`·`system`·`custom`, `confirm`이면 앱이 확인과 잠금 해제를 거친다. 이름: `lock`, `screen_off`, `mute`, `volume_up`, `volume_down`, `media_play_pause`, `media_next`, `media_previous`, `restart`, `sleep`, `custom:<id>`. 404면 옛 PC다.
+- **요청** `POST /api/v1/commands`: 클립보드 봉투(M-62 합의 키, 새 id) 안에 `{schema, command, ts}`. 답 `{schema, ok, state?, at?, error?}` — `state`는 `done`·`scheduled`(다시 시작, `at`에)·`cancelled`. 오류는 403 `not_allowed`(꺼짐, 또는 PC가 요청), 400 `invalid_command`, 409 `replayed`(같은 id, `ts` ±2분 밖), 429 `busy`(1분 10번), 409 `no_user_session`, 409 `clip_key_needed`(다시 합의하고 새 id로), 500 `failed`.
+- **취소** `POST /api/v1/commands/cancel`: 같은 봉투에 `command: "restart"` → `cancelled` 또는 409 `nothing_pending`.
+- **다시 켜짐**: 다시 시작을 요청한 휴대폰에 PC가 일반 푸시("다시 시작을 마쳤습니다", 범주 `commands`)를 보낸다. PC에서 취소되면 "다시 시작이 취소됐습니다".
+- **깨우기**: `wake.macs`로 휴대폰이 같은 LAN에 매직 패킷(0xFF×6 + MAC×16, UDP 9·7, 브로드캐스트)을 보낸다.
+
 ### 휴대폰 ↔ 휴대폰 (M-67)
 
 같은 PC에 연결된 다른 휴대폰으로 그 PC를 거쳐 보낸다. 견본 [`share-relay.v1.json`](mobile-protocol/share-relay.v1.json)(봉인 전 평문)을 .NET과 Kotlin이 함께 읽는다.

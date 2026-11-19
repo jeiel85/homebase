@@ -179,6 +179,12 @@
             android:name=".push.ApprovalActionReceiver"
             android:exported="false" />
 
+        <!-- [취소] on a restart counting down on a PC (DECISIONS M-69). Only this app's own notification
+             action reaches it. -->
+        <receiver
+            android:name=".command.RestartCancelReceiver"
+            android:exported="false" />
+
         <service
             android:name=".push.RaiseToForegroundService"
             android:exported="true">

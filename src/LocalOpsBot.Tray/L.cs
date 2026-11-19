@@ -141,7 +141,35 @@ public static class L
     public static string CenterFilesSent => T("Sent files", "보낸 파일");
     public static string CenterFilesHead => T("FILES", "파일");
     public static string CenterOpenFolder => T("Open folder", "폴더 열기");
+    public static string CenterCommands => T("Remote commands", "원격 명령");
     public static string ToastOpen => T("Open", "열기");
+
+    // ── Remote commands (DECISIONS M-69) ──
+    public static string MenuCancelRestart => T("Cancel the restart", "다시 시작 취소");
+    public static string MenuCancelRestartAt(DateTimeOffset at) => T($"Cancel the restart ({at:HH:mm:ss})", $"다시 시작 취소 ({at:HH:mm:ss})");
+    public static string RestartToastTitle(DateTimeOffset at) => T($"This PC restarts at {at:HH:mm:ss}", $"{at:HH:mm:ss}에 다시 시작합니다");
+    public static string RestartToastBody(string by) => T($"{by} asked for it. Save your work, or cancel.", $"{by}에서 요청했습니다. 작업을 저장하거나 취소하세요.");
+    public static string RestartCancelledTitle => T("Restart cancelled", "다시 시작을 취소했습니다");
+    public static string RestartCancelledBody(string by) => T($"Called off by {by}.", $"{by}에서 취소했습니다.");
+    public static string CustomCommandRanTitle(string name) => T($"Ran \"{name}\"", $"\"{name}\" 실행함");
+    public static string CustomCommandRanBody(string from) => T($"{from} asked for it.", $"{from}에서 요청했습니다.");
+    public static string CommandsSection => T("REMOTE COMMANDS", "원격 명령");
+    public static string CommandsHelp => T(
+        "What phones paired with this PC may ask it to do. Restart and sleep need APPLY (and an administrator's approval); a restart counts down 60 seconds here first, with Cancel.",
+        "이 PC와 연결된 휴대폰이 요청할 수 있는 것입니다. 바꾼 뒤 APPLY를 눌러야 적용됩니다(관리자 승인). 다시 시작은 이 PC에 60초 카운트다운과 취소가 먼저 뜹니다.");
+    public static string CommandLock => T("Lock and turn off the screen", "잠그기·화면 끄기");
+    public static string CommandMedia => T("Media and volume", "미디어·볼륨");
+    public static string CommandRestart => T("Restart", "다시 시작");
+    public static string CommandSleep => T("Sleep", "절전");
+    public static string CommandWake => T("Let phones wake this PC (Wake-on-LAN: also turn it on in the BIOS)", "휴대폰에서 깨우기 허용 (Wake-on-LAN — BIOS에서도 켜야 함)");
+    public static string CustomCommandsHead => T("Custom commands (run with your rights)", "사용자 정의 명령 (이 Windows 사용자 권한으로 실행)");
+    public static string CustomCommandsNone => T("None yet.", "아직 없습니다.");
+    public static string CustomCommandAdd => T("Add…", "추가…");
+    public static string CustomCommandRemove => T("Remove", "삭제");
+    public static string CustomCommandName => T("Name shown on the phone", "휴대폰에 보일 이름");
+    public static string CustomCommandProgram => T("Program", "프로그램");
+    public static string CustomCommandArguments => T("Arguments (fixed)", "인자 (고정)");
+    public static string CustomCommandFull => T($"Up to {Services.Mobile.CustomCommands.Max} custom commands.", $"사용자 정의 명령은 {Services.Mobile.CustomCommands.Max}개까지입니다.");
 
     public static string FilesFailedTitle(string from) => T($"Files from {from} not saved", $"{from}에서 받은 파일을 저장하지 못했습니다");
     public static string FilesFailedBody => T("Check the free space in Downloads. They are kept on this PC for a day and saved at the next sign-in.",

@@ -124,7 +124,7 @@ public partial class PhoneConnectPanel : UserControl
             StatusText.Text = "휴대폰 연결이 꺼져 있습니다. 쓸 경로를 고른 뒤 ENABLE을 누르세요.";
             IntroCard.Visibility = Visibility.Visible;
             PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = ApprovalPanel.Visibility
-                = SendToPanel.Visibility = Visibility.Collapsed;
+                = SendToPanel.Visibility = CommandsPanel.Visibility = Visibility.Collapsed;
             ApplyButtonText.Text = "ENABLE";
             return;
         }
@@ -456,6 +456,65 @@ public partial class PhoneConnectPanel : UserControl
         _approvalLoading = false;
         ApprovalPanel.Visibility = Visibility.Visible;
         SendToPanel.Visibility = Visibility.Visible;
+        CommandsPanel.Visibility = Visibility.Visible;
+        RenderCustomCommands();
+    }
+
+    /// <summary>The custom commands this user registered (M-69), each with [Remove].</summary>
+    private void RenderCustomCommands()
+    {
+        CustomCommandsList.Children.Clear();
+        var list = CustomCommands.List();
+        if (list.Count == 0)
+        {
+            CustomCommandsList.Children.Add(new TextBlock { Text = L.CustomCommandsNone, Style = (Style)FindResource("Type.Micro") });
+            return;
+        }
+        foreach (var command in list)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+            var remove = new Button { Content = L.CustomCommandRemove, Style = (Style)FindResource("Button.Carbon"), Margin = new Thickness(8, 0, 0, 0) };
+            var id = command.Id;
+            remove.Click += (_, _) =>
+            {
+                CustomCommands.Remove(id);
+                RenderCustomCommands();
+            };
+            DockPanel.SetDock(remove, Dock.Right);
+            row.Children.Add(remove);
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = command.Name, Style = (Style)FindResource("Type.Body") });
+            text.Children.Add(new TextBlock
+            {
+                Text = (command.Program + " " + command.Arguments).Trim(),
+                Style = (Style)FindResource("Type.Micro"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            row.Children.Add(text);
+            CustomCommandsList.Children.Add(row);
+        }
+    }
+
+    private void BrowseCustom_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { CheckFileExists = true, Filter = "Programs|*.exe;*.bat;*.cmd;*.ps1;*.lnk|All files|*.*" };
+        if (dialog.ShowDialog(Window.GetWindow(this)) == true) CustomProgramBox.Text = dialog.FileName;
+    }
+
+    private void AddCustom_Click(object sender, RoutedEventArgs e)
+    {
+        var name = CustomNameBox.Text.Trim();
+        var program = CustomProgramBox.Text.Trim();
+        if (name.Length == 0 || program.Length == 0) return;
+        if (!CustomCommands.Add(name, program, CustomArgsBox.Text, null))
+        {
+            MessageDialog.Show("Homebase", L.CustomCommandFull, owner: Window.GetWindow(this));
+            return;
+        }
+        CustomNameBox.Clear();
+        CustomProgramBox.Clear();
+        CustomArgsBox.Clear();
+        RenderCustomCommands();
     }
 
     /// <summary>Explorer's "Send to › Homebase" for this Windows user (M-66).</summary>
@@ -574,6 +633,13 @@ public partial class PhoneConnectPanel : UserControl
             var cf = mobile?["cloudflare"] as JsonObject;
             CloudflareCheck.IsChecked = enabled ? (bool?)cf?["enabled"] == true : true;
             TunnelHostBox.Text = (string?)cf?["hostname"] ?? "";
+            // Remote commands (M-69): lock, media and wake on unless turned off; restart and sleep off unless turned on.
+            var commands = mobile?["commands"] as JsonObject;
+            CmdLockCheck.IsChecked = (bool?)commands?["lock"] ?? true;
+            CmdMediaCheck.IsChecked = (bool?)commands?["media"] ?? true;
+            CmdRestartCheck.IsChecked = (bool?)commands?["restart"] ?? false;
+            CmdSleepCheck.IsChecked = (bool?)commands?["sleep"] ?? false;
+            CmdWakeCheck.IsChecked = (bool?)commands?["wake"] ?? true;
             _hasSavedToken = !string.IsNullOrWhiteSpace((string?)cf?["token"]);
             TokenSavedText.Visibility = _hasSavedToken ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -619,6 +685,15 @@ public partial class PhoneConnectPanel : UserControl
             else if (host.Length == 0) cf.Remove("token"); // both empty → Quick Tunnel
             if (host.Length > 0) cf["hostname"] = host; else cf.Remove("hostname");
             mobile["cloudflare"] = cf;
+            mobile["commands"] = new JsonObject
+            {
+                ["lock"] = CmdLockCheck.IsChecked == true,
+                ["screenOff"] = CmdLockCheck.IsChecked == true,
+                ["media"] = CmdMediaCheck.IsChecked == true,
+                ["restart"] = CmdRestartCheck.IsChecked == true,
+                ["sleep"] = CmdSleepCheck.IsChecked == true,
+                ["wake"] = CmdWakeCheck.IsChecked == true,
+            };
             root["mobile"] = mobile;
 
             StatusText.Text = "설정을 적용하고 Agent를 다시 시작하는 중…";

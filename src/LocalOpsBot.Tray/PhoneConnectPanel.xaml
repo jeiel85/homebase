@@ -159,6 +159,58 @@
       </Border>
     </StackPanel>
 
+    <!-- Remote commands phones may ask for (DECISIONS M-69): switches applied with APPLY; custom ones per user, at once. -->
+    <StackPanel x:Name="CommandsPanel" Visibility="Collapsed">
+      <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.CommandsSection}"/>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,0,0,8" Text="{x:Static local:L.CommandsHelp}"/>
+          <CheckBox x:Name="CmdLockCheck" Margin="0,0,0,4">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.CommandLock}"/>
+          </CheckBox>
+          <CheckBox x:Name="CmdMediaCheck" Margin="0,0,0,4">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.CommandMedia}"/>
+          </CheckBox>
+          <CheckBox x:Name="CmdRestartCheck" Margin="0,0,0,4">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.CommandRestart}"/>
+          </CheckBox>
+          <CheckBox x:Name="CmdSleepCheck" Margin="0,0,0,4">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.CommandSleep}"/>
+          </CheckBox>
+          <CheckBox x:Name="CmdWakeCheck" Margin="0,0,0,4">
+            <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.CommandWake}"/>
+          </CheckBox>
+
+          <TextBlock Style="{StaticResource Type.BodyStrong}" Margin="0,12,0,4" Text="{x:Static local:L.CustomCommandsHead}"/>
+          <StackPanel x:Name="CustomCommandsList"/>
+          <Grid Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Type.Micro}" VerticalAlignment="Center" Margin="0,0,8,4" Text="{x:Static local:L.CustomCommandName}"/>
+            <TextBox x:Name="CustomNameBox" Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,4" MaxLength="40"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Type.Micro}" VerticalAlignment="Center" Margin="0,0,8,4" Text="{x:Static local:L.CustomCommandProgram}"/>
+            <TextBox x:Name="CustomProgramBox" Grid.Row="1" Grid.Column="1" Margin="0,0,6,4"/>
+            <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource Button.Carbon}" Margin="0,0,0,4" Content="…" Click="BrowseCustom_Click"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Type.Micro}" VerticalAlignment="Center" Margin="0,0,8,4" Text="{x:Static local:L.CustomCommandArguments}"/>
+            <TextBox x:Name="CustomArgsBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,4"/>
+            <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" HorizontalAlignment="Left" Style="{StaticResource Button.Carbon}"
+                    Content="{x:Static local:L.CustomCommandAdd}" Click="AddCustom_Click"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
     <!-- Which paths to open; shown in both states (ENABLE when off, APPLY when on) -->
     <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
       <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePathSettings}"/>

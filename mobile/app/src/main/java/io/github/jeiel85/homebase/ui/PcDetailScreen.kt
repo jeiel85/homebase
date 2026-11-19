@@ -122,6 +122,15 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
     val advice = AdviceRequests.state(pc.pcId)
     val askAdvice: () -> Unit = { AdviceRequests.ask(context, api, store, pc.pcId) }
     val processOrder = remember(pc.pcId) { AppOrders.processes(pc.pcId) }
+    // Remote commands (DECISIONS M-69): the list is asked for on every (re)connect. "Unreachable" holds from a failed
+    // attempt until the next snapshot, so [깨우기] doesn't flicker while each retry is "connecting".
+    val connected = state is LiveState.Live
+    val retrying = state is LiveState.Retrying
+    var unreachable by remember(pc.pcId) { mutableStateOf(false) }
+    LaunchedEffect(connected, retrying) {
+        if (connected) unreachable = false else if (retrying) unreachable = true
+    }
+    val commands = rememberCommandPanel(pc, api, connected)
 
     LaunchedEffect(last?.ts) {
         last?.let {
@@ -150,6 +159,8 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
         val snapshot = last
         if (snapshot == null) {
             if (state is LiveState.Connecting || state is LiveState.Retrying) Waiting(state, pc.endpoints.any { it.isQuickTunnel })
+            // A PC put to sleep (or off) answers nothing; one that listed its MAC addresses can be woken from here.
+            if (unreachable && commands.macs.isNotEmpty()) WakeBlock(commands, Modifier.padding(horizontal = 12.dp, vertical = 12.dp))
             return@Column
         }
         // Keyed on the snapshot's time (not the whole snapshot, compared field by field on every
@@ -163,6 +174,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
         ) {
             item(key = "panel") { InstrumentPanel(snapshot, history) }
             item(key = "advice") { AdviceCard(advice, askAdvice) { AdviceRequests.close(pc.pcId) } }
+            item(key = "commands") { RemoteCommandCard(commands, unreachable) }
             stickyHeader(key = "tabs") {
                 TabSelector(
                     tab,
@@ -184,6 +196,8 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
             item(key = "pad") { Spacer(Modifier.navigationBarsPadding()) }
         }
     }
+    // Outside the list, so the question stays up while the card scrolls out of view.
+    CommandConfirmDialog(commands, pc.alias ?: pcName)
 }
 
 /** Rolling 60-sample buffers for the panel; kept per screen, nothing persisted. */

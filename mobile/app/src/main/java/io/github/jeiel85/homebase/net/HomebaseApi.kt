@@ -299,6 +299,36 @@ class HomebaseApi(
     }
 
     /**
+     * What [pc] lets this phone ask it to do (`GET /api/v1/commands`, DECISIONS M-69), in the order to show. Null when
+     * the PC is older than remote commands (404/405). Throws [UnauthorizedException] on 401 and [IOException] when no
+     * path answered or the answer is unreadable.
+     */
+    suspend fun commands(pc: PcEntry): CommandList? =
+        authedCall(pc, RemoteCommandProtocol.PATH, Request.Builder().get()) { code, text ->
+            when {
+                code in 200..299 -> CommandList.parse(text) ?: throw IOException("PC의 원격 명령 목록을 읽지 못했습니다.")
+                code == 404 || code == 405 -> null
+                else -> throw IOException(errorMessage(text) ?: "원격 명령 목록 확인 실패 (HTTP $code)")
+            }
+        }
+
+    /**
+     * Asks [pc] to carry out [command] (DECISIONS M-69) — or, with [cancel], to call it off (a restart counting down) —
+     * sealed with [key] (agreed with that PC) under a fresh id and this phone's clock, so the Cloudflare edge can't make
+     * or replay one. With [budgetMillis] the call ends in [UnconfirmedException] once that is spent (see [authedCall]).
+     * Throws [UnauthorizedException] on 401 and [IOException] when no path answered; everything the PC said is a
+     * [CommandOutcome].
+     */
+    suspend fun sendCommand(pc: PcEntry, key: ByteArray, command: String, cancel: Boolean = false, budgetMillis: Long? = null): CommandOutcome {
+        val envelope = CommandRequest.of(command).seal(key, ClipProtocol.newId())
+        val body = envelope.toJson().toString().toRequestBody(JSON)
+        val path = if (cancel) RemoteCommandProtocol.CANCEL_PATH else RemoteCommandProtocol.PATH
+        return authedCall(pc, path, Request.Builder().post(body), budgetMillis, base = clipClient) { code, answer ->
+            CommandOutcome.of(code, answer)
+        }
+    }
+
+    /**
      * The other phones [pc] can pass text and files on to (`GET /api/v1/share/phones`, docs/SHARE_CONVENIENCE.md §4.8),
      * this phone not among them. Null when the PC is too old to relay (404/405) or its answer is unreadable — nothing
      * is relayed through it then. Throws [UnauthorizedException] on 401 and [IOException] when no path answered.

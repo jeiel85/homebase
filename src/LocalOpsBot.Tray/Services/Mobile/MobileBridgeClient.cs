@@ -81,6 +81,24 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>Where files this PC sends stand, per target (M-65). Background thread.</summary>
     public event Action<FilesProgress>? FilesProgressReceived;
 
+    /// <summary>Carries out a remote command a phone asked for (M-69) and says whether it did. Background thread.</summary>
+    public Func<TrayCommand, Task<bool>>? CommandHandler { get; set; }
+
+    /// <summary>A restart scheduled (its time) or called off (null), and by whom (M-69). Background thread.</summary>
+    public event Action<DateTimeOffset?, string>? RestartNotice;
+
+    /// <summary>Tells the Agent which custom commands this user registered (M-69): on connect and when they change.</summary>
+    public async Task PublishCommandsAsync()
+    {
+        var pipe = _pipe;
+        if (pipe is null || !pipe.IsConnected) return;
+        try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpCommandsReady, CustomCommandsPayload()), _cts.Token); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+    }
+
+    private static TrayCustomCommands CustomCommandsPayload() =>
+        new(CustomCommands.List().Select(c => new TrayCustomCommand(c.Id, c.Name)).ToList());
+
     /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>
     public IReadOnlyList<DeviceAlias>? LastAliases { get; private set; }
 
@@ -151,6 +169,8 @@ internal sealed class MobileBridgeClient : IDisposable
                 await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipReady), ct);
                 // …and saves received files (M-64); the Agent then offers what waited for a signed-in user.
                 await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpFilesReady), ct);
+                // …and carries out remote commands, with this user's custom ones (M-69).
+                await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpCommandsReady, CustomCommandsPayload()), ct);
                 using var watchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 var watcher = Task.Run(() => WatchSessionsAsync(pipe, watchCts.Token));
                 try { await ReadLoopAsync(pipe, ct); }
@@ -238,6 +258,17 @@ internal sealed class MobileBridgeClient : IDisposable
                 if (msg["payload"]?.Deserialize<TrayClip>(MobileProtocol.Json) is { Text.Length: > 0 } clip)
                     _ = Task.Run(() => PutClipAsync(pipe, MobileBridge.StringOf(msg["id"]), clip));
                 break;
+            case MobileBridge.OpCommandRun:
+                if (msg["payload"]?.Deserialize<TrayCommand>(MobileProtocol.Json) is { Name.Length: > 0 } command)
+                    _ = Task.Run(() => RunCommandAsync(pipe, MobileBridge.StringOf(msg["id"]) ?? command.Id, command));
+                break;
+            case MobileBridge.OpCommandNotice:
+                if (msg["payload"] is JsonObject notice && (string?)notice["name"] == RemoteCommandNames.Restart)
+                    RestartNotice?.Invoke(
+                        DateTimeOffset.TryParse((string?)notice["at"], System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.RoundtripKind, out var at) ? at : null,
+                        (string?)notice["by"] ?? "");
+                break;
             case MobileBridge.OpFilesProgress:
                 if (msg["payload"]?.Deserialize<FilesProgress>(MobileProtocol.Json) is { Id.Length: > 0 } progress) FilesProgressReceived?.Invoke(progress);
                 break;
@@ -270,6 +301,16 @@ internal sealed class MobileBridgeClient : IDisposable
         catch (Exception ex) { TrayLog.Warn("Clipboard", $"Received text was not put on the clipboard: {ex.GetType().Name}"); }
         if (id is null) return;
         try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipDone, new TrayClipDone(id, ok)), _cts.Token); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+    }
+
+    /// <summary>Runs <see cref="CommandHandler"/> off the read loop and tells the Agent how it went (<c>command.done</c>).</summary>
+    private async Task RunCommandAsync(NamedPipeClientStream pipe, string id, TrayCommand command)
+    {
+        var ok = false;
+        try { ok = CommandHandler is { } handler && await handler(command); }
+        catch (Exception ex) { TrayLog.Warn("Commands", $"Remote command {command.Name} failed: {ex.GetType().Name}"); }
+        try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpCommandDone, new TrayCommandDone(id, ok)), _cts.Token); }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
     }
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.54.0 — Remote commands: lock, media, restart and more from the phone
+
+### Added
+- **Remote commands.** A PC's screen in the app has a **원격 명령** card: lock, screen off, media (play/pause,
+  next, previous), volume (mute, up, down), restart and sleep — whatever that PC allows. Restart shows a 60-second
+  countdown on the PC with **Cancel** (in a Windows notification and the tray menu), and the phone has **취소** too;
+  the phone that asked hears when the PC is back.
+- **Allowed per PC.** Settings › Phone › **원격 명령**: lock and screen off, media and volume are on; restart and sleep
+  are off until turned on (APPLY, administrator approval).
+- **Custom commands.** Register programs on the PC (name, program, fixed arguments) for phones to run, like KDE
+  Connect's "Run command". They run with your own rights; the phone can only pick one.
+- **Wake-on-LAN.** The app remembers each PC's network adapters and offers **깨우기** when the PC is asleep or off
+  (same Wi-Fi; Wake-on-LAN must be on in the PC's BIOS).
+- Every command is kept in the PC's notification center (**원격 명령**) and the app's (**보낸 명령**).
+
+### Security
+- Phones only (not other PCs). Each request is sealed with the key the phone agreed with that PC, carries a fresh id
+  and the time, and runs at most once; at most ten a minute. Restart, sleep and custom commands ask the phone's
+  owner to unlock the phone first. There is still no way to run arbitrary commands.
+
 ## v0.53.0 — Quick share: the share center, several devices at once, phone to phone
 
 ### Added

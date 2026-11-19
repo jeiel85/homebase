@@ -33,6 +33,8 @@ public sealed class TrayIconManager : IDisposable
     private readonly ToolStripMenuItem _centerItem;
     private readonly ToolStripMenuItem _clipItem;
     private readonly ToolStripMenuItem _filesItem;
+    /// <summary>Shown while a restart a phone asked for counts down (M-69).</summary>
+    private readonly ToolStripMenuItem _cancelRestartItem;
     /// <summary>Sends under way (M-65): what was sent to whom, and which targets were already reported.</summary>
     private readonly Dictionary<string, SendTracking> _sends = new(StringComparer.Ordinal);
 
@@ -75,6 +77,9 @@ public sealed class TrayIconManager : IDisposable
         _watchingSeparator = new ToolStripSeparator { Visible = false };
         menu.Items.Add(_watchingItem);
         menu.Items.Add(_watchingSeparator);
+        _cancelRestartItem = new ToolStripMenuItem(L.MenuCancelRestart) { Visible = false, Font = new Font(menu.Font, FontStyle.Bold) };
+        _cancelRestartItem.Click += async (_, _) => await CancelRestartAsync();
+        menu.Items.Insert(0, _cancelRestartItem);
 
         // Look (dashboard) → change (settings, phone included), then housekeeping. Labels follow the UI
         // language (see L); "Open Homebase" is bold as the left-click default.
@@ -135,6 +140,9 @@ public sealed class TrayIconManager : IDisposable
         MobileHost.ClipHandler = OnClipReceivedAsync;
         MobileHost.FilesHandler = OnFilesReceivedAsync;
         MobileHost.FilesProgress += OnFilesProgress;
+        // Remote commands a phone asks for (M-69): carried out here in the user's session; a restart shows its countdown.
+        MobileHost.CommandHandler = OnCommandAsync;
+        MobileHost.RestartNotice += OnRestartNotice;
 
         // Explorer's "Send to › Homebase" (M-66): the shortcut kept in step with this install, zips left over from the
         // last run gone, and the pipe a second "Homebase.Tray.exe --send" hands its paths to.
@@ -468,6 +476,49 @@ public sealed class TrayIconManager : IDisposable
         {
             if (tracked is not null) lock (_sends) _sends.Remove(tracked);
             ShowBalloon(L.FilesNotSentTitle, L.FileSendError(result.Error));
+        }
+    }
+
+    /// <summary>A remote command from a phone (M-69). A custom one says so in a balloon; the others show for themselves.</summary>
+    private Task<bool> OnCommandAsync(LocalOpsBot.Core.Mobile.TrayCommand command)
+    {
+        var ok = CommandRunner.Run(command.Name);
+        TrayLog.Info("Commands", $"Remote command {command.Name} from {command.From}: {(ok ? "done" : "failed")}");
+        if (ok && LocalOpsBot.Core.Mobile.RemoteCommandNames.IsCustom(command.Name)
+            && CustomCommands.Find(command.Name[LocalOpsBot.Core.Mobile.RemoteCommandNames.CustomPrefix.Length..]) is { } custom)
+            Application.Current?.Dispatcher.BeginInvoke(new Action(() => ShowBalloon(L.CustomCommandRanTitle(custom.Name), L.CustomCommandRanBody(command.From))));
+        return Task.FromResult(ok);
+    }
+
+    private void OnRestartNotice(DateTimeOffset? at, string by) =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_disposed) return;
+            if (at is { } when)
+            {
+                _cancelRestartItem.Text = L.MenuCancelRestartAt(when.ToLocalTime());
+                _cancelRestartItem.Visible = true;
+                if (!ReceivedToast.ShowRestart(when, by)) ShowBalloon(L.RestartToastTitle(when.ToLocalTime()), L.RestartToastBody(by));
+                return;
+            }
+            _cancelRestartItem.Visible = false;
+            ReceivedToast.HideRestart();
+            ShowBalloon(L.RestartCancelledTitle, L.RestartCancelledBody(by));
+        }));
+
+    private async Task CancelRestartAsync()
+    {
+        if (!await MobileHost.CancelRestartAsync())
+        {
+            // The Agent didn't take it (not reachable): Windows' own way still works for this user.
+            try
+            {
+                using var abort = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    System.IO.Path.Combine(Environment.SystemDirectory, "shutdown.exe"), "/a") { UseShellExecute = false, CreateNoWindow = true });
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException) { }
+            _cancelRestartItem.Visible = false;
+            ReceivedToast.HideRestart();
         }
     }
 
@@ -949,6 +1000,8 @@ public sealed class TrayIconManager : IDisposable
         _disposed = true;
         if (Current == this) Current = null;
         _sendRequests.Cancel();
+        MobileHost.CommandHandler = null;
+        MobileHost.RestartNotice -= OnRestartNotice;
         _unreadTimer.Stop();
         _updateTimer.Stop();
         MobileHost.WatchingChanged -= OnWatchingChanged;

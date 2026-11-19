@@ -68,6 +68,8 @@ public sealed class MobileBridgeServer : BackgroundService
 
     /// <summary><c>clip.set</c> ids waiting for their Tray's <c>clip.done</c>.</summary>
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _clipAcks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _commandAcks = new(StringComparer.Ordinal);
+    private readonly RemoteCommandService? _commands;
 
     private sealed class Connection(Stream stream)
     {
@@ -84,6 +86,9 @@ public sealed class MobileBridgeServer : BackgroundService
 
         /// <summary>The Tray said it saves received files (M-64).</summary>
         public volatile bool FilesReady;
+        /// <summary>This Tray carries out remote commands (M-69); the custom ones its user registered.</summary>
+        public volatile bool CommandsReady;
+        public volatile IReadOnlyList<TrayCustomCommand> CustomCommands = Array.Empty<TrayCustomCommand>();
 
         /// <summary>Transfers handed to this Tray and not answered yet; offered again elsewhere if it goes away.</summary>
         public ConcurrentDictionary<string, byte> Transfers { get; } = new(StringComparer.Ordinal);
@@ -106,8 +111,16 @@ public sealed class MobileBridgeServer : BackgroundService
         OnDemandAdvice? advice = null,
         ClipShareService? clips = null,
         FileShareService? files = null,
-        FileSendService? sends = null)
+        FileSendService? sends = null,
+        RemoteCommandService? commands = null)
     {
+        _commands = commands;
+        if (_commands is not null)
+        {
+            _commands.Tray = DeliverCommandAsync;
+            _commands.Custom = ConnectedCustomCommands;
+            _commands.Notice = OnCommandNotice;
+        }
         _sends = sends;
         if (_sends is not null) _sends.Progress += OnFilesProgress;
         _files = files;
@@ -279,6 +292,24 @@ public sealed class MobileBridgeServer : BackgroundService
             _files?.Saved(saved);
             return;
         }
+        if (op == MobileBridge.OpCommandsReady)
+        {
+            TrayCustomCommands? custom;
+            try { custom = payload?.Deserialize<TrayCustomCommands>(MobileProtocol.Json); }
+            catch (JsonException) { custom = null; }
+            conn.CustomCommands = custom?.Commands?.Where(c => c is { Id.Length: > 0, Name.Length: > 0 }).Take(20).ToList()
+                ?? (IReadOnlyList<TrayCustomCommand>)Array.Empty<TrayCustomCommand>();
+            conn.CommandsReady = true;
+            return;
+        }
+        if (op == MobileBridge.OpCommandDone)
+        {
+            TrayCommandDone? done;
+            try { done = payload?.Deserialize<TrayCommandDone>(MobileProtocol.Json); }
+            catch (JsonException) { done = null; }
+            if (done is { Id.Length: > 0 } && _commandAcks.TryGetValue(done.Id, out var ack)) ack.TrySetResult(done.Ok);
+            return;
+        }
         if (op == MobileBridge.OpClipDone)
         {
             TrayClipDone? done;
@@ -311,6 +342,12 @@ public sealed class MobileBridgeServer : BackgroundService
         if (op is MobileBridge.OpFilesTargets or MobileBridge.OpFilesBegin or MobileBridge.OpFilesGo or MobileBridge.OpFilesCancel)
         {
             await SendAsync(conn, FilesRequest(op, id, payload), ct);
+            return;
+        }
+        if (op == MobileBridge.OpCommandCancel)
+        {
+            // [Cancel] on the restart countdown toast or the tray menu (M-69).
+            await SendAsync(conn, MobileBridge.Response(id, true, _commands?.CancelFromTray() == true), ct);
             return;
         }
         if (op == MobileBridge.OpClipTargets)
@@ -637,6 +674,78 @@ public sealed class MobileBridgeServer : BackgroundService
         }
     }
 
+    /// <summary>
+    /// A remote command (M-69) for the signed-in user's Tray: sent to every Tray that runs them (for a custom one, those that
+    /// registered it); true once one carried it out. Null when no Tray takes it (nobody signed in).
+    /// </summary>
+    private async Task<bool?> DeliverCommandAsync(TrayCommand command, CancellationToken ct)
+    {
+        List<Connection> conns;
+        lock (_gate)
+            conns = _connections.Where(c => c.CommandsReady && !c.Closed
+                && (!RemoteCommandNames.IsCustom(command.Name)
+                    || c.CustomCommands.Any(x => RemoteCommandNames.CustomPrefix + x.Id == command.Name))).ToList();
+        if (conns.Count == 0) return null;
+
+        var acks = new List<(string Id, TaskCompletionSource<bool> Ack)>();
+        foreach (var c in conns)
+        {
+            var id = Guid.NewGuid().ToString("N");
+            var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _commandAcks[id] = ack;
+            acks.Add((id, ack));
+            try { await SendAsync(c, MobileBridge.Message(MobileBridge.OpCommandRun, command with { Id = id }, id), ct); }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidDataException)
+            {
+                _logger.LogDebug("Remote command to Tray failed: {Message}", ex.Message);
+                ack.TrySetResult(false);
+            }
+        }
+        try
+        {
+            var pending = acks.Select(a => a.Ack.Task).ToList();
+            while (pending.Count > 0)
+            {
+                var finished = await Task.WhenAny(pending).WaitAsync(ct);
+                if (await finished) return true;
+                pending.Remove(finished);
+            }
+            return false;
+        }
+        finally
+        {
+            foreach (var (id, _) in acks) _commandAcks.TryRemove(id, out _);
+        }
+    }
+
+    private IReadOnlyList<TrayCustomCommand> ConnectedCustomCommands()
+    {
+        lock (_gate)
+            return _connections.Where(c => c.CommandsReady && !c.Closed).SelectMany(c => c.CustomCommands)
+                .GroupBy(c => c.Id, StringComparer.Ordinal).Select(g => g.First()).ToList();
+    }
+
+    /// <summary>A restart scheduled (with its time) or called off: every Tray shows it (M-69).</summary>
+    private void OnCommandNotice(string name, DateTimeOffset? at, string by)
+    {
+        List<Connection> conns;
+        lock (_gate) conns = _connections.Where(c => c.CommandsReady && !c.Closed).ToList();
+        var message = MobileBridge.Message(MobileBridge.OpCommandNotice, new JsonObject
+        {
+            ["name"] = name,
+            ["at"] = at?.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            ["by"] = by,
+        });
+        _ = Task.Run(async () =>
+        {
+            foreach (var c in conns)
+            {
+                try { await SendAsync(c, message, CancellationToken.None); }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+            }
+        });
+    }
+
     /// <summary>The Tray's files.* requests (M-65): where files can go, room for them, send, cancel.</summary>
     private JsonObject FilesRequest(string op, string id, JsonNode? payload)
     {
@@ -769,6 +878,12 @@ public sealed class MobileBridgeServer : BackgroundService
         if (_toasts is not null) _toasts.Requested -= OnToastRequested;
         if (_clips is not null) _clips.Tray = null;
         if (_files is not null) _files.Tray = null;
+        if (_commands is not null)
+        {
+            _commands.Tray = null;
+            _commands.Custom = null;
+            _commands.Notice = null;
+        }
         if (_sends is not null) _sends.Progress -= OnFilesProgress;
         base.Dispose();
     }

@@ -62,6 +62,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly ClipShareService? _clips;
     private readonly FileShareService? _files;
     private readonly FileSendService? _sends;
+    private readonly RemoteCommandService? _commands;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -87,8 +88,10 @@ public sealed class MobileApiServer : BackgroundService
         OnDemandAdvice? advice = null,
         ClipShareService? clips = null,
         FileShareService? files = null,
-        FileSendService? sends = null)
+        FileSendService? sends = null,
+        RemoteCommandService? commands = null)
     {
+        _commands = commands;
         _clips = clips;
         _files = files;
         _sends = sends;
@@ -736,6 +739,29 @@ public sealed class MobileApiServer : BackgroundService
                     ClipAcceptOutcome.ClipboardBusy => (503, Error(ClipErrors.ClipboardBusy, "The clipboard was busy; nothing was pasted. Send it again.")),
                     _ => (400, Error(ClipErrors.Invalid, "Invalid clipboard text.")),
                 };
+            }
+
+            case ("GET", RemoteCommandProtocol.Path):
+            {
+                // What this PC lets phones ask for (M-69).
+                if (_commands is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return (200, Json(_commands.List(device)));
+            }
+
+            case ("POST", RemoteCommandProtocol.Path):
+            case ("POST", RemoteCommandProtocol.CancelPath):
+            {
+                // A remote command, sealed with the agreed key (M-69).
+                if (_commands is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                var envelope = Read<ClipEnvelope>(body);
+                var (status, result) = head.Path == RemoteCommandProtocol.CancelPath
+                    ? await _commands.CancelAsync(device, envelope)
+                    : await _commands.RunAsync(device, envelope, ct);
+                return (status, Json(result));
             }
 
             case ("GET", ShareRelay.PhonesPath):

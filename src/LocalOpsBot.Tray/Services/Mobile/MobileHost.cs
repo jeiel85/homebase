@@ -36,6 +36,20 @@ internal static class MobileHost
     /// <summary>Where files this PC sends stand (DECISIONS M-65). Background thread.</summary>
     public static event Action<LocalOpsBot.Core.Mobile.FilesProgress>? FilesProgress;
 
+    /// <summary>Carries out a remote command (M-69); set by the tray icon.</summary>
+    public static Func<LocalOpsBot.Core.Mobile.TrayCommand, Task<bool>>? CommandHandler { get; set; }
+
+    /// <summary>A restart a phone asked for was scheduled (its time) or called off (null), and by whom (M-69).</summary>
+    public static event Action<DateTimeOffset?, string>? RestartNotice;
+
+    /// <summary>Calls off a restart under way (M-69); false when the Agent isn't reachable or nothing was pending.</summary>
+    public static async Task<bool> CancelRestartAsync()
+    {
+        if (_client is not { IsConnected: true } client) return false;
+        try { return (bool?)(await client.RequestAsync(LocalOpsBot.Core.Mobile.MobileBridge.OpCommandCancel))["payload"] == true; }
+        catch (Exception ex) when (ex is System.IO.IOException or OperationCanceledException or InvalidOperationException) { return false; }
+    }
+
     public static bool IsEnabled() => TrayConfig.Load().GetSection("mobile").GetValue<bool>("enabled");
 
     public static MobileBridgeClient EnsureStarted()
@@ -47,6 +61,9 @@ internal static class MobileHost
         _client.ToastRequested += t => ToastRequested?.Invoke(t);
         _client.ClipHandler = c => ClipHandler is { } handler ? handler(c) : Task.FromResult(false);
         _client.FilesProgressReceived += p => FilesProgress?.Invoke(p);
+        _client.CommandHandler = c => CommandHandler is { } run ? run(c) : Task.FromResult(false);
+        _client.RestartNotice += (at, by) => RestartNotice?.Invoke(at, by);
+        CustomCommands.Changed += () => _ = _client?.PublishCommandsAsync();
         _client.FilesHandler = t => FilesHandler is { } handler
             ? handler(t)
             : Task.FromResult(new LocalOpsBot.Core.Mobile.TrayTransferSaved(t.Id, false, "no handler"));

@@ -57,6 +57,9 @@ public sealed class MobileOptions
     /// </summary>
     public int FilesStoreGiB { get; set; } = 10;
 
+    /// <summary>What phones may ask this PC to do (DECISIONS M-69). Lock, screen off and media are on; restart and sleep are not.</summary>
+    public CommandOptions Commands { get; set; } = new();
+
     public int ClampedIntervalMs => Math.Clamp(LiveIntervalMs, 500, 10_000);
 
     public long FilesStoreBytes => Math.Clamp(FilesStoreGiB, 1, 1024) * 1024L * 1024 * 1024;
@@ -92,4 +95,18 @@ public sealed class CloudflareOptions
         }
         return raw;
     }
+}
+
+/// <summary>
+/// <c>mobile.commands</c> (DECISIONS M-69): the remote commands phones may ask for. Custom ones are registered in the Tray by
+/// the signed-in user and need nothing here. <see cref="Wake"/>: tell phones this PC's MAC addresses (Wake-on-LAN).
+/// </summary>
+public sealed class CommandOptions
+{
+    public bool Lock { get; set; } = true;
+    public bool ScreenOff { get; set; } = true;
+    public bool Media { get; set; } = true;
+    public bool Restart { get; set; }
+    public bool Sleep { get; set; }
+    public bool Wake { get; set; } = true;
 }
