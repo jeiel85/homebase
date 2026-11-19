@@ -145,6 +145,35 @@ public class SendEntrancesTests : IDisposable
         Assert.Equal("Docs/ok.txt", Assert.Single(zip.Entries).FullName);
     }
 
+    [Fact]
+    public void A_folder_that_cant_be_listed_is_left_out_and_counted()
+    {
+        var folder = Path.Combine(_dir, "Mixed");
+        File.WriteAllText(Touch(Path.Combine(folder, "ok.txt")), "ok");
+        var closed = Path.Combine(folder, "closed");
+        File.WriteAllText(Touch(Path.Combine(closed, "secret.txt")), "x");
+        var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+        var acl = new DirectoryInfo(closed).GetAccessControl();
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(me, System.Security.AccessControl.FileSystemRights.ListDirectory,
+            System.Security.AccessControl.AccessControlType.Deny);
+        acl.AddAccessRule(deny);
+        new DirectoryInfo(closed).SetAccessControl(acl);
+        try
+        {
+            var result = SendBundle.Create(SendBundle.Classify([folder]), Path.Combine(_dir, "d.zip"));
+
+            Assert.Null(result.Error);
+            Assert.Equal(1, result.Skipped); // the closed folder: told, not silently missing
+            using var zip = ZipFile.OpenRead(result.Path!);
+            Assert.Equal("Mixed/ok.txt", Assert.Single(zip.Entries).FullName);
+        }
+        finally
+        {
+            acl.RemoveAccessRule(deny);
+            new DirectoryInfo(closed).SetAccessControl(acl);
+        }
+    }
+
     private static MemoryStream Frame(int length, byte[] body)
     {
         var stream = new MemoryStream();

@@ -126,8 +126,8 @@ public static class L
         "empty" => T("nothing in it could be read", "읽을 수 있는 파일이 없습니다"),
         _ => T("the zip couldn't be made (is there room in the temp folder?)", "zip을 만들지 못했습니다 (임시 폴더 공간을 확인하세요)"),
     };
-    public static string ZipSkipped(int count) => T($"{count} file{(count == 1 ? "" : "s")} couldn't be read and were left out.",
-        $"읽을 수 없는 파일 {count}개는 뺐습니다.");
+    public static string ZipSkipped(int count) => T($"{count} file{(count == 1 ? "" : "s")} or folder{(count == 1 ? "" : "s")} couldn't be read and were left out.",
+        $"읽을 수 없는 파일·폴더 {count}개는 뺐습니다.");
     public static string DropNotHere => T("This device can't take files from here — update its app, or connect it again",
         "이 기기로는 보낼 수 없습니다 — 앱을 업데이트하거나 다시 연결하세요");
     public static string DropHint => T("Drop files, folders or text on a phone or PC to send them",
