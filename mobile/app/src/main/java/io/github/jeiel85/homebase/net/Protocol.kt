@@ -252,6 +252,45 @@ data class Hardware(
     }
 }
 
+/**
+ * `POST /api/v1/advise` reply (DECISIONS M-60): the PC's local AI's advice about its current state, or
+ * why there is none — [error] is a code this app words itself (see the constants), [message] the PC's
+ * English detail. [summary] is what the model was shown. [text] is free-form model output: shown as
+ * plain text only, never as markup or links.
+ */
+data class AdviceReply(
+    val ok: Boolean,
+    val text: String?,
+    val summary: String?,
+    val model: String?,
+    val generatedAt: String?,
+    val cached: Boolean,
+    val error: String?,
+    val message: String?,
+) {
+    companion object {
+        const val DISABLED = "disabled"
+        const val UNREACHABLE = "unreachable"
+        const val MODEL_MISSING = "model_missing"
+        const val TIMEOUT = "timeout"
+
+        fun parse(json: String): AdviceReply {
+            val o = JSONObject(json)
+            fun str(key: String): String? = if (o.has(key) && !o.isNull(key)) o.optString(key).ifBlank { null } else null
+            return AdviceReply(
+                ok = o.optBoolean("ok"),
+                text = str("text"),
+                summary = str("summary"),
+                model = str("model"),
+                generatedAt = str("generatedAt"),
+                cached = o.optBoolean("cached"),
+                error = str("error"),
+                message = str("message"),
+            )
+        }
+    }
+}
+
 /** Server error body `{ schema, error, message }`. */
 fun errorMessage(body: String?): String? = try {
     body?.let { JSONObject(it).optString("message").ifBlank { null } }

@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Localization;
 using LocalOpsBot.Core.Mobile;
@@ -50,6 +51,7 @@ public sealed class MobileBridgeServer : BackgroundService
     /// <summary>How long the Tray's refresh waits for the linked PCs (a path that times out takes 5 s to connect).</summary>
     internal static readonly TimeSpan RefreshWait = TimeSpan.FromSeconds(8);
     private readonly ApprovalBroker? _approvals;
+    private readonly OnDemandAdvice? _advice;
     private readonly List<Connection> _connections = new();
 
     private sealed class Connection(Stream stream)
@@ -76,8 +78,10 @@ public sealed class MobileBridgeServer : BackgroundService
         INotificationHistoryStore? history = null,
         TrayLiveService? trayLive = null,
         DeviceGroupService? group = null,
-        ApprovalBroker? approvals = null)
+        ApprovalBroker? approvals = null,
+        OnDemandAdvice? advice = null)
     {
+        _advice = advice;
         _group = group;
         if (_group is not null) _group.Aliases.Changed += OnAliasesChanged;
         _approvals = approvals;
@@ -228,6 +232,13 @@ public sealed class MobileBridgeServer : BackgroundService
         {
             // Waits a few seconds for the linked PCs: off the read loop so live views keep flowing (M-59).
             _ = Task.Run(() => RefreshDevicesAsync(conn, id, ct), CancellationToken.None);
+            return;
+        }
+        if (op == MobileBridge.OpAdvise)
+        {
+            // Generating takes seconds to a minute: answered off the read loop so this connection's
+            // session reports and other requests keep flowing meanwhile (M-60).
+            _ = Task.Run(() => AdviseAsync(conn, id, ct), CancellationToken.None);
             return;
         }
         if (op == MobileBridge.OpNotifyTest)
@@ -388,6 +399,32 @@ public sealed class MobileBridgeServer : BackgroundService
     }
 
     /// <summary>A Claude Code permission prompt for the phones (M-48); answers null (ask on the PC) on any failure.</summary>
+    /// <summary>The tray's "get advice now" (M-60): the same shared generation the phone app asks for.</summary>
+    private async Task AdviseAsync(Connection conn, string id, CancellationToken ct)
+    {
+        JsonObject response;
+        if (_advice is null)
+        {
+            response = MobileBridge.Response(id, false, error: MobileBridge.ErrorUnsupported);
+        }
+        else
+        {
+            try
+            {
+                var reply = await _advice.GetAsync(ct);
+                _logger.LogInformation("AI advice for the tray: {Outcome}{Cached}.", reply.Ok ? "ok" : reply.Code, reply.Cached ? " (reused)" : "");
+                response = MobileBridge.Response(id, true, AdviceResponse.From(reply));
+            }
+            catch (OperationCanceledException) { return; }
+        }
+        if (conn.Closed) return;
+        try { await SendAsync(conn, response, ct); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            // The tray went away while the model was writing: nobody to answer.
+        }
+    }
+
     private async Task AskApprovalAsync(Connection conn, string id, JsonNode? payload, CancellationToken ct)
     {
         string? decision = null;

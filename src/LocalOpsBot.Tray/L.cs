@@ -159,11 +159,39 @@ public static class L
 
     public static string AiHeader => T("AI ADVICE (OLLAMA)", "AI 조언 (Ollama)");
     public static string AiWhat => T(
-        "Send /advise in Telegram and a local AI model on this PC (Ollama) explains the PC's state in plain words. When turned on, error alerts and automatic health advice use it too. The model must be downloaded to this PC first.",
-        "텔레그램에서 /advise를 보내면 이 PC의 로컬 AI(Ollama)가 PC 상태를 쉬운 말로 풀어 줍니다. 켜 두면 오류 알림 해석과 자동 점검 조언에도 씁니다. 모델은 이 PC에 먼저 받아 둬야 합니다.");
+        "A local AI model on this PC (Ollama) explains the PC's state in plain words — ask below, from this PC's screen in the phone app, or with /advise in Telegram. When turned on, error alerts and automatic health advice use it too. The model must be downloaded to this PC first.",
+        "이 PC의 로컬 AI(Ollama)가 PC 상태를 쉬운 말로 풀어 줍니다 — 아래 '지금 조언 받기', 휴대폰 앱의 PC 화면, 텔레그램 /advise에서 받습니다. 켜 두면 오류 알림 해석과 자동 점검 조언에도 씁니다. 모델은 이 PC에 먼저 받아 둬야 합니다.");
     public static string AiConfigHint => T(
         $"The server address comes from llmAdvisor.endpoint in the Agent config ({Services.TrayConfig.ConfigPath}). Starting Ollama here also makes it run when you sign in, without administrator approval.",
         $"서버 주소는 Agent 설정 파일({Services.TrayConfig.ConfigPath})의 llmAdvisor.endpoint에서 정합니다. 여기서 Ollama를 시작하면 로그인할 때 자동 실행도 함께 등록되며, 관리자 승인은 필요 없습니다.");
+    public static string AiAskHeader => T("GET ADVICE NOW", "지금 조언 받기");
+    public static string AiAskWhat => T(
+        "Shows this PC's current readings (CPU, memory, disks, temperature, recent alerts) to the local AI and asks what to check. The Homebase app on your phone can ask for the same advice from the PC's screen.",
+        "이 PC의 지금 상태(CPU·메모리·디스크·온도·최근 경보)를 로컬 AI에게 보여 주고 무엇을 확인할지 묻습니다. 휴대폰의 Homebase 앱에서도 PC 화면에서 같은 조언을 받을 수 있습니다.");
+    public static string AiAsk => T("GET ADVICE", "조언 받기");
+    public static string AiAskWorking => T("The AI is writing — the first answer can take a few seconds more while the model loads…",
+        "AI가 조언을 쓰는 중 — 처음에는 모델을 불러오느라 몇 초 더 걸릴 수 있습니다…");
+    public static string AiAskBasis => T("WHAT THE AI SAW", "AI가 본 값");
+    public static string AiAskNoAgent => T("The monitoring service isn't reachable, so advice can't be asked for.",
+        "감시 서비스에 연결할 수 없어 조언을 받을 수 없습니다.");
+    public static string AiAskOldAgent => T("The monitoring service is older than this tray. Update Homebase to ask for advice here.",
+        "감시 서비스가 이 트레이보다 오래된 버전입니다. 여기서 조언을 받으려면 Homebase를 업데이트하세요.");
+    public static string AiAskMeta(string model, DateTimeOffset at, bool cached) => T(
+        $"Model {model} · written at {at:HH:mm}" + (cached ? " · reused (asked again within a minute)" : ""),
+        $"모델 {model} · {at:HH:mm}에 작성" + (cached ? " · 1분 안에 다시 물어 방금 것을 보여 줌" : ""));
+    public static string AiAskError(string? code, string? message) => code switch
+    {
+        Core.Advisor.AdviceErrors.Disabled => T("AI advice is turned off (llmAdvisor.enabled in the Agent config).",
+            "AI 조언이 꺼져 있습니다(Agent 설정 파일의 llmAdvisor.enabled)."),
+        Core.Advisor.AdviceErrors.Unreachable => T("Ollama isn't answering. Start it above, then ask again.",
+            "Ollama가 응답하지 않습니다. 위에서 Ollama를 시작한 뒤 다시 받으세요."),
+        Core.Advisor.AdviceErrors.ModelMissing => T("The model isn't downloaded yet. Use RUN PULL above, then ask again.",
+            "모델을 아직 받지 않았습니다. 위에서 '모델 받기'를 누른 뒤 다시 받으세요."),
+        Core.Advisor.AdviceErrors.Timeout => T("The AI didn't answer in time. Try again in a moment — a smaller model answers faster.",
+            "AI가 제시간에 답하지 못했습니다. 잠시 뒤 다시 받으세요 — 작은 모델일수록 빨리 답합니다."),
+        _ => T($"Couldn't get advice: {message ?? code ?? "?"}", $"조언을 만들지 못했습니다: {message ?? code ?? "?"}"),
+    };
+
     public static string AiModelHeader => T("CHANGE MODEL", "모델 바꾸기");
     public static string AiModelLabel => T("Model", "모델");
     public static string AiModelHint => T(

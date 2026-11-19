@@ -133,6 +133,12 @@ public class ProtocolGoldenTests
         new DateTimeOffset(2026, 11, 17, 1, 0, 0, TimeSpan.Zero),
         new PushApproval("0f1e2d3c4b5a69788796a5b4c3d2e1f0", new DateTimeOffset(2026, 11, 17, 1, 10, 0, TimeSpan.Zero)));
 
+    /// <summary><c>POST /api/v1/advise</c> (M-60): the app shows <c>text</c> as plain text and <c>summary</c> as its basis.</summary>
+    public static AdviceResponse SampleAdvice() => new(MobileProtocol.Schema, true,
+        "- CPU가 92%로 오래 바쁩니다. 작업 관리자에서 chrome을 확인하세요.\n- C: 드라이브 여유가 5%뿐입니다. 임시 파일을 정리하세요.",
+        "Host: HOME-PC (Windows 11)\nCPU load: 92%\nRAM: 12.0/32.0 GB (38%)\nDisk C:\\: 24 GB free / 476 GB (95% used)",
+        "llama3.2:1b", new DateTimeOffset(2026, 11, 19, 1, 30, 0, TimeSpan.Zero), Cached: false);
+
     public static PushMessage SamplePushMessage() => new(MobileProtocol.Schema,
         "5b0e1c2d3f4a49b8a1c2d3e4f5a6b7c8", "6f1c0d2e9b8a4c7d", "HOME-PC", "windows-toast", PushPriority.Info,
         "KakaoTalk: 알림 3건", "엄마: 저녁 먹었니?\n팀장: 회의 10분 뒤", "KakaoTalk", 3,
@@ -150,6 +156,7 @@ public class ProtocolGoldenTests
     [InlineData("device-notification.v1.json")]
     [InlineData("group.v1.json")]
     [InlineData("push-approval.v1.json")]
+    [InlineData("advice.v1.json")]
     public void Serialized_contract_matches_the_shared_fixture(string file)
     {
         object sample = file switch
@@ -164,6 +171,7 @@ public class ProtocolGoldenTests
             "device-notification.v1.json" => SampleDeviceNotification(),
             "group.v1.json" => SampleGroup(),
             "push-approval.v1.json" => SampleApprovalPush(),
+            "advice.v1.json" => SampleAdvice(),
             _ => new EndpointsResponse(MobileProtocol.Schema, SampleEndpoints()),
         };
         var actual = JsonSerializer.SerializeToNode(sample, sample.GetType(), MobileProtocol.Json)!;

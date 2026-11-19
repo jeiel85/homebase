@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
@@ -40,6 +41,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +57,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.net.AdviceReply
 import io.github.jeiel85.homebase.net.AppEntry
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.push.PushRegistrar
@@ -70,9 +74,13 @@ import io.github.jeiel85.homebase.net.WorkItem
 import io.github.jeiel85.homebase.net.AgentInfo
 import io.github.jeiel85.homebase.net.LiveState
 import io.github.jeiel85.homebase.net.ProcessEntry
+import io.github.jeiel85.homebase.net.UnauthorizedException
 import io.github.jeiel85.homebase.net.WindowTitle
 import java.time.Duration
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 private const val HISTORY = 60
 
@@ -113,6 +121,26 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
     val history = remember(pc.pcId) { History() }
     var appSort by remember { mutableStateOf(AppSortSetting.load(context)) }
     val appOrder = remember(pc.pcId) { AppOrders.apps(pc.pcId) }
+    // The PC's local AI advice (DECISIONS M-60): asked for only on a tap, kept while this screen is open.
+    var advice by remember(pc.pcId) { mutableStateOf<AdviceUi>(AdviceUi.Idle) }
+    val scope = rememberCoroutineScope()
+    val askAdvice: () -> Unit = {
+        if (advice !is AdviceUi.Asking) {
+            advice = AdviceUi.Asking
+            scope.launch {
+                advice = try {
+                    api.advise(store.get(pc.pcId) ?: pc)?.let { AdviceUi.Done(it) }
+                        ?: AdviceUi.Failed("이 PC의 Homebase가 이 기능보다 오래된 버전입니다. PC를 v0.46.0 이상으로 업데이트하면 여기서 조언을 받을 수 있습니다.")
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e
+                } catch (e: UnauthorizedException) {
+                    AdviceUi.Failed(e.message ?: "이 PC에서 휴대폰 연결이 해제되었습니다.")
+                } catch (e: Exception) {
+                    AdviceUi.Failed("PC에 연결하지 못했습니다. (${HomebaseApi.describe(e)})")
+                }
+            }
+        }
+    }
     val processOrder = remember(pc.pcId) { AppOrders.processes(pc.pcId) }
 
     LaunchedEffect(last?.ts) {
@@ -154,6 +182,7 @@ fun PcDetailScreen(pc: PcEntry, store: PcStore, api: HomebaseApi, onBack: () -> 
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             item(key = "panel") { InstrumentPanel(snapshot, history) }
+            item(key = "advice") { AdviceCard(advice, askAdvice) { advice = AdviceUi.Idle } }
             stickyHeader(key = "tabs") {
                 TabSelector(
                     tab,
@@ -862,6 +891,102 @@ private fun EmptyNote(title: String, body: String?) {
             )
         }
     }
+}
+
+/** "AI 조언" under the panel (DECISIONS M-60): nothing asked yet, asking, the PC's answer, or why there is none. */
+private sealed interface AdviceUi {
+    data object Idle : AdviceUi
+    data object Asking : AdviceUi
+    data class Done(val reply: AdviceReply) : AdviceUi
+    data class Failed(val message: String) : AdviceUi
+}
+
+/**
+ * Under the instrument panel: one quiet button until asked (four tabs don't fit a 360 dp phone), then
+ * a card. The PC's local AI looks at its current readings and says what to check; the model's text is
+ * shown as plain, selectable text — never as markup or links — with the readings it was given below it.
+ */
+@Composable
+private fun AdviceCard(state: AdviceUi, onAsk: () -> Unit, onClose: () -> Unit) {
+    val hb = Hb.colors
+    val body = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+    val small = androidx.compose.material3.MaterialTheme.typography.bodySmall
+    if (state == AdviceUi.Idle) {
+        QuietButton("AI 조언 받기", onClick = onAsk, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        return
+    }
+    Plate(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text("AI 조언", style = HbType.label, color = hb.inkSoft, modifier = Modifier.padding(bottom = 8.dp))
+            when (state) {
+                AdviceUi.Idle -> Unit
+                AdviceUi.Asking -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Led(hb.ledOn, size = 8.dp, pulse = true)
+                    Text(
+                        "PC의 AI가 조언을 쓰는 중… 처음에는 모델을 불러오느라 몇 초 더 걸릴 수 있습니다.",
+                        style = body,
+                        color = hb.ink,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+                is AdviceUi.Failed -> Text(state.message, style = body, color = hb.danger)
+                is AdviceUi.Done -> {
+                    val r = state.reply
+                    val text = r.text
+                    if (r.ok && text != null) {
+                        SelectionContainer { Text(text, style = body, color = hb.ink) }
+                        Text(
+                            adviceMeta(r),
+                            style = small,
+                            color = hb.inkSoft,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        r.summary?.let { summary ->
+                            Text("AI가 본 값", style = HbType.label, color = hb.inkSoft, modifier = Modifier.padding(top = 12.dp))
+                            Text(
+                                summary,
+                                style = small.copy(fontFamily = FontFamily.Monospace),
+                                color = hb.inkSoft,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    } else {
+                        Text(adviceError(r), style = body, color = hb.danger)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QuietButton("다시 받기", onClick = onAsk, modifier = Modifier.weight(1f), enabled = state !is AdviceUi.Asking)
+                QuietButton("닫기", onClick = onClose, modifier = Modifier.weight(1f), enabled = state !is AdviceUi.Asking)
+            }
+        }
+    }
+}
+
+/** "모델 llama3.2:1b · 09:30에 작성" (+ reused within a minute). */
+internal fun adviceMeta(r: AdviceReply, zone: ZoneId = ZoneId.systemDefault()): String {
+    val at = r.generatedAt?.let {
+        try {
+            OffsetDateTime.parse(it).atZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("HH:mm"))
+        } catch (_: Exception) {
+            null
+        }
+    }
+    return listOfNotNull(
+        r.model?.let { "모델 $it" },
+        at?.let { "${it}에 작성" },
+        if (r.cached) "1분 안에 다시 물어 방금 것을 보여 줌" else null,
+    ).joinToString(" · ")
+}
+
+/** Why the PC has no advice, in this app's words: what to do on the PC. */
+internal fun adviceError(r: AdviceReply): String = when (r.error) {
+    AdviceReply.DISABLED -> "PC에서 AI 조언이 꺼져 있습니다(Agent 설정 파일의 llmAdvisor.enabled)."
+    AdviceReply.UNREACHABLE -> "PC의 Ollama가 응답하지 않습니다. PC의 Homebase 설정 › AI 조언에서 Ollama를 시작한 뒤 다시 받으세요."
+    AdviceReply.MODEL_MISSING -> "PC에 AI 모델을 아직 받지 않았습니다. PC의 Homebase 설정 › AI 조언에서 '모델 받기'를 누른 뒤 다시 받으세요."
+    AdviceReply.TIMEOUT -> "PC의 AI가 제시간에 답하지 못했습니다. 잠시 뒤 다시 받으세요. 작은 모델일수록 빨리 답합니다."
+    else -> "조언을 만들지 못했습니다." + ((r.message ?: r.error)?.let { " ($it)" } ?: "")
 }
 
 private fun agoSeconds(at: String, now: String): Long? = try {

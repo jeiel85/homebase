@@ -233,6 +233,31 @@
               </StackPanel>
             </Border>
 
+            <!-- Ask now (M-60): the same shared advice the phone app asks for. -->
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiAskHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiAskWhat}"/>
+                <DockPanel Margin="0,10,0,0" LastChildFill="True">
+                  <Button x:Name="AdviseButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}"
+                          Content="{x:Static local:L.AiAsk}" Click="Advise_Click"/>
+                  <TextBlock x:Name="AdviceStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                             Style="{StaticResource Type.BodyStrong}" Margin="0,0,8,0"/>
+                </DockPanel>
+                <!-- The model's words are plain text (never markup); a read-only box so they can be copied. -->
+                <StackPanel x:Name="AdviceBox" Margin="0,10,0,0" Visibility="Collapsed">
+                  <TextBox x:Name="AdviceText" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                           Background="Transparent" Padding="0" FontSize="12"/>
+                  <TextBlock x:Name="AdviceMeta" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                  <TextBlock Style="{StaticResource Type.Label}" Margin="0,10,0,0" Text="{x:Static local:L.AiAskBasis}"/>
+                  <TextBlock x:Name="AdviceBasis" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"
+                             Foreground="{StaticResource Brush.InkSoft}"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
             <Border Style="{StaticResource SectionHeaderBar}">
               <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiModelHeader}"/>
             </Border>

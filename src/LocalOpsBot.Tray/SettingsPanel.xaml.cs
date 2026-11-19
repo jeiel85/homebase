@@ -4,6 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Navigation;
+using System.Text.Json;
+using LocalOpsBot.Core.Advisor;
+using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
@@ -87,7 +90,8 @@ public partial class SettingsPanel : UserControl
         ModelInput.Clear();
         _aiModelShown = ""; // the next probe fills in the saved model again
         PhonePanel.Forget();
-        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = string.Empty;
+        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = AdviceStatusText.Text = string.Empty;
+        AdviceBox.Visibility = Visibility.Collapsed;
         _loaded = false;
     }
 
@@ -436,6 +440,66 @@ public partial class SettingsPanel : UserControl
         AiRecheckButton.IsEnabled = false;
         try { await (afterChange ? OllamaPanel.RefreshAfterChangeAsync() : OllamaPanel.RefreshAsync()); }
         finally { AiRecheckButton.IsEnabled = true; }
+    }
+
+    // "Get advice now" (M-60): the Agent's shared on-demand advice, the same the phone app asks for.
+    private async void Advise_Click(object sender, RoutedEventArgs e)
+    {
+        if (Services.Mobile.MobileHost.Client is not { IsConnected: true } bridge)
+        {
+            SetResult(AdviceStatusText, L.AiAskNoAgent, false);
+            return;
+        }
+        AdviseButton.IsEnabled = false;
+        SetResult(AdviceStatusText, L.AiAskWorking, null);
+        try
+        {
+            // The model may have to load first; the Agent gives up after llmAdvisor.timeoutSeconds (60 s).
+            var r = await bridge.RequestAsync(MobileBridge.OpAdvise, timeout: TimeSpan.FromSeconds(90));
+            if ((bool?)r["ok"] != true)
+            {
+                SetResult(AdviceStatusText, MobileBridge.StringOf(r["error"]) == MobileBridge.ErrorUnsupported
+                    ? L.AiAskOldAgent : L.Failed(MobileBridge.StringOf(r["error"]) ?? "?"), false);
+                return;
+            }
+            var advice = r["payload"]?.Deserialize<AdviceResponse>(MobileProtocol.Json);
+            if (advice is null) { SetResult(AdviceStatusText, L.Failed("?"), false); return; }
+            ShowAdvice(advice);
+        }
+        catch (OperationCanceledException)
+        {
+            // Our own 90 s limit: the Agent is there, the model is just slow.
+            SetResult(AdviceStatusText, L.AiAskError(AdviceErrors.Timeout, null), false);
+        }
+        catch (JsonException ex)
+        {
+            SetResult(AdviceStatusText, L.Failed(ex.Message), false);
+        }
+        catch (System.IO.IOException)
+        {
+            SetResult(AdviceStatusText, L.AiAskNoAgent, false);
+        }
+        finally
+        {
+            AdviseButton.IsEnabled = true;
+        }
+    }
+
+    internal void ShowAdvice(AdviceResponse advice)
+    {
+        if (!advice.Ok)
+        {
+            AdviceBox.Visibility = Visibility.Collapsed;
+            SetResult(AdviceStatusText, L.AiAskError(advice.Error, advice.Message), false);
+            // Not running or the model missing: the row above now offers Start / Run pull.
+            if (advice.Error is AdviceErrors.Unreachable or AdviceErrors.ModelMissing) _ = RefreshAiAsync();
+            return;
+        }
+        AdviceStatusText.Text = string.Empty;
+        AdviceText.Text = advice.Text ?? "";
+        AdviceMeta.Text = L.AiAskMeta(advice.Model ?? "?", advice.GeneratedAt.ToLocalTime(), advice.Cached);
+        AdviceBasis.Text = advice.Summary ?? "";
+        AdviceBox.Visibility = Visibility.Visible;
     }
 
     // Each probe re-reads the config: show the saved model in the field unless something else was typed

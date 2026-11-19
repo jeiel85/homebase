@@ -177,4 +177,28 @@ class ProtocolTest {
         assertEquals("코드 만료", errorMessage("{\"schema\":1,\"error\":\"code_expired\",\"message\":\"코드 만료\"}"))
         assertNull(errorMessage("not json"))
     }
+
+    @Test
+    fun advice_fixture_parses_as_plain_text_with_its_basis() {
+        val a = AdviceReply.parse(fixture("advice.v1.json"))
+
+        assertTrue(a.ok)
+        assertTrue(a.text!!.startsWith("- CPU가 92%로"))
+        assertTrue(a.text!!.contains("\n- C: 드라이브"))
+        assertTrue(a.summary!!.contains("CPU load: 92%"))
+        assertEquals("llama3.2:1b", a.model)
+        assertEquals("2026-11-19T01:30:00+00:00", a.generatedAt)
+        assertFalse(a.cached)
+        assertNull(a.error)
+    }
+
+    @Test
+    fun advice_failure_carries_its_code_and_no_text() {
+        val a = AdviceReply.parse("{\"schema\":1,\"ok\":false,\"model\":\"llama3.2:1b\",\"generatedAt\":\"2026-11-19T01:30:00+00:00\",\"cached\":false,\"error\":\"model_missing\",\"message\":\"not pulled\"}")
+
+        assertFalse(a.ok)
+        assertNull(a.text)
+        assertEquals(AdviceReply.MODEL_MISSING, a.error)
+        assertEquals("not pulled", a.message)
+    }
 }
