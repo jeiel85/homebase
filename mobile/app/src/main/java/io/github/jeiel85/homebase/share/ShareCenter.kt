@@ -481,9 +481,7 @@ private fun Thumb(file: OutgoingFile, onRemove: () -> Unit) {
     val context = LocalContext.current
     val visual = file.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
     val bitmap by produceState<ImageBitmap?>(null, file.uri) {
-        if (visual) {
-            value = withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap()
-        }
+        value = if (visual) withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap() else null
     }
     Column(Modifier.width(THUMB.dp)) {
         Box(Modifier.size(THUMB.dp).clip(RoundedCornerShape(6.dp)).background(hb.slabRaised)) {
