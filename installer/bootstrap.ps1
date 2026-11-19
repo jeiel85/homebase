@@ -5,6 +5,8 @@
     Run this one-liner from an elevated PowerShell prompt:
       irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 | iex
     Downloads the latest release, extracts everything, and launches interactive setup.
+    Setup asks for a Telegram bot token only as an optional fallback channel: press Enter to skip
+    it (the Homebase phone app is the main channel) and add it later from the tray if wanted.
 #>
 
 #Requires -RunAsAdministrator

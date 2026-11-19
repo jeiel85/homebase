@@ -228,6 +228,7 @@ public sealed class TrayIconManager : IDisposable
         // close avoids a focus race with the dashboard's show-near-tray activation.
         _onboarding.GetStartedRequested += () =>
             Application.Current.Dispatcher.BeginInvoke(new Action(ShowPopup));
+        _onboarding.OpenPhoneSettingsRequested += () => ShowSettings(SettingsTab.Phone);
         _onboarding.OpenTelegramSettingsRequested += () => ShowSettings(SettingsTab.Telegram);
         _onboarding.Closed += (_, _) =>
         {

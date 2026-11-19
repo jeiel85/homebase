@@ -59,15 +59,15 @@
 | 파일 | 이럴 때 받으세요 |
 |---|---|
 | **`Homebase-Setup.exe`** | ⭐ **대부분 이것 하나면 됩니다.** 더블클릭하면 마법사가 서비스와 트레이를 설치합니다(Telegram은 묻지 않음) |
-| `Homebase-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1 -SkipTelegram` 실행(`-SkipTelegram`을 빼면 Telegram 봇 토큰·chat ID를 묻습니다) |
+| `Homebase-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1` 실행(Telegram 봇 토큰을 물으면 Enter로 건너뜁니다) |
 | `bootstrap.ps1` | 명령 한 줄 설치 (아래 방법 B) |
 
 **방법 A — 설치 마법사 (권장)**
 
 1. `Homebase-Setup.exe`를 받아 더블클릭
 2. **Windows SmartScreen** 경고("Windows의 PC 보호")가 뜨면 → **추가 정보** → **실행**을 누르세요. 서명되지 않은 개인용 앱이라 표시되는 정상 경고입니다
-3. 설치가 끝나면 트레이에 Homebase 아이콘이 생기고 처음 설정 창이 열립니다. 감시 서비스가 "실행 중"이면 PC 쪽 준비는 끝입니다.
-   이 창의 "필수" 칸에 텔레그램 연결도 있지만, 휴대폰 앱으로만 받을 거라면 비워 두고 **시작하기**를 눌러도 됩니다
+3. 설치가 끝나면 트레이에 Homebase 아이콘이 생기고 처음 설정 창이 열립니다. "필수" 칸의 감시 서비스가 "실행 중"이면 PC 쪽 준비는 끝이고,
+   같은 칸의 **휴대폰 연결하기**로 아래 2단계를 이어 갈 수 있습니다. 텔레그램은 "선택" 칸에 있어 비워 둬도 됩니다
 
 **방법 B — 한 줄 설치**
 
@@ -77,7 +77,7 @@
 irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-> 한 줄 설치는 지금 Telegram 봇 토큰과 chat ID를 꼭 묻습니다. Telegram 없이 설치하려면 방법 A나 `Homebase-Setup.zip`의 `.\setup.ps1 -SkipTelegram`을 쓰세요.
+> 설치 중 Telegram 봇 토큰을 물으면 Enter로 건너뛰세요. Telegram은 나중에 트레이에서 언제든 더할 수 있습니다([아래](#telegram-대체-채널-선택)).
 
 ### 2. 휴대폰 연결
 
