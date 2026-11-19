@@ -35,6 +35,8 @@ public sealed class FileSendService : BackgroundService
     private static readonly TimeSpan ProgressEvery = TimeSpan.FromSeconds(1);
 
     private readonly string _root;
+    private readonly long _storeCap;
+    private readonly LocalOpsBot.Core.Notifications.INotificationHistoryStore? _history;
     private readonly IMobileDeviceStore _devices;
     private readonly IClipKeyStore _keys;
     private readonly ClipShareService.PushSender? _push;
@@ -83,8 +85,11 @@ public sealed class FileSendService : BackgroundService
     }
 
     public FileSendService(string root, IMobileDeviceStore devices, IClipKeyStore keys, TimeProvider time, ILogger logger,
-        ClipShareService.PushSender? push = null, HubLinkService? hubs = null, ClipShareService? clips = null, Func<string, long>? freeSpace = null)
+        ClipShareService.PushSender? push = null, HubLinkService? hubs = null, ClipShareService? clips = null, Func<string, long>? freeSpace = null,
+        LocalOpsBot.Core.Notifications.INotificationHistoryStore? history = null, long storeCapBytes = StoreCapBytes)
     {
+        _storeCap = storeCapBytes;
+        _history = history;
         _root = root;
         _devices = devices;
         _keys = keys;
@@ -136,7 +141,7 @@ public sealed class FileSendService : BackgroundService
             var inUse = _sends.Values.Sum(s => s.TotalBytes);
             // Sends still being written from the Tray will take what they haven't written yet (Codex review on #100).
             var free = FreeSpace() - _sends.Values.Sum(s => s.OutstandingBytes);
-            if (inUse + total > StoreCapBytes || free < total + FileShareService.FreeMarginBytes)
+            if (inUse + total > _storeCap || free < total + FileShareService.FreeMarginBytes)
                 return new(null, TransferErrors.NoSpace);
             var id = ClipProtocol.NewId();
             var state = new SendState
@@ -421,7 +426,49 @@ public sealed class FileSendService : BackgroundService
         // Gone before the last progress goes out: whoever sees a send end finds nothing of it left on disk.
         if (allDone) Remove(send);
         Report(send, target);
+        if (send.Final(target)) _ = RecordAsync(send, target);
     }
+
+    /// <summary>
+    /// What went to one device, once it is settled, in the notification center beside what came in (DECISIONS M-66):
+    /// names, size and how it ended — never the files.
+    /// </summary>
+    private async Task RecordAsync(Send send, TargetState target)
+    {
+        if (_history is null) return;
+        var files = send.State.Files;
+        var title = $"파일 {files.Count}개 · {FileShareService.SizeText(send.TotalBytes)}";
+        var outcome = target.State switch
+        {
+            FileSendStates.Sent => "보냄",
+            FileSendStates.Received => "받음",
+            _ => "실패: " + FailureText(target.Error),
+        };
+        var body = outcome + "\n" + string.Join("\n", files.Take(10).Select(f => TransferNames.Clean(f.Name)))
+            + (files.Count > 10 ? $"\n… 외 {files.Count - 10}개" : "");
+        var origin = ClipTargetKeys.DeviceId(target.Key) ?? ClipTargetKeys.PcId(target.Key) ?? target.Key;
+        try
+        {
+            await _history.AddAsync(new LocalOpsBot.Core.Notifications.DeviceNotificationRecord($"send-{send.State.Id}-{target.Key}", origin,
+                target.Name, target.Kind, TransferHistory.Sent, title, body, send.State.CreatedAt, _time.GetUtcNow()), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not keep send {Id} in the notification center", send.State.Id);
+        }
+    }
+
+    /// <summary>A failure in words for the notification center (the Tray's balloons have their own, translated).</summary>
+    internal static string FailureText(string? error) => error switch
+    {
+        "expired" => "24시간 안에 받아 가지 않음",
+        ClipErrors.PushFailed => "휴대폰에 알리지 못함",
+        TransferErrors.NoSpace => "받는 PC에 공간이 부족함",
+        TransferErrors.TooLarge => "너무 큼",
+        TransferErrors.HashMismatch => "받는 쪽에서 내용이 맞지 않음",
+        null or "" => "알 수 없는 오류",
+        var code => code,
+    };
 
     private DateTimeOffset _lastReport = DateTimeOffset.MinValue;
 
@@ -468,13 +515,15 @@ public sealed class FileSendService : BackgroundService
         foreach (var send in _sends.Values.ToList())
         {
             if (now - send.State.CreatedAt <= TransferProtocol.KeepFor) continue;
-            foreach (var target in send.State.Targets.Where(t => !send.Final(t)))
+            var expired = send.State.Targets.Where(t => !send.Final(t)).ToList();
+            foreach (var target in expired)
             {
                 target.State = FileSendStates.Failed;
                 target.Error = "expired";
                 Report(send, target);
             }
             Remove(send);
+            foreach (var target in expired) _ = RecordAsync(send, target);
             _logger.LogInformation("Send {Id} dropped after {Hours} h.", send.State.Id, (int)TransferProtocol.KeepFor.TotalHours);
         }
     }

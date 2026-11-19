@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.52.0 — Send from Explorer, drop files on Homebase, file history
+
+### Added
+- **Send to › Homebase in Explorer.** Right-click files or a folder, **Send to › Homebase** (on Windows 11 under
+  **Show more options**), tick the phones and PCs in the small window that opens, and press **보내기**. The devices
+  of the last send are ticked already. It works with Homebase closed too: it starts and then asks. The menu entry
+  is a shortcut the tray keeps for each Windows user; **Settings › Phone › Send to menu** turns it off.
+- **Drop files on the Homebase window.** Drag files, folders or selected text onto a phone or PC in the device
+  list to send them there; drop them anywhere else on the page to pick the devices. Text goes as clipboard text.
+- **Folders, and more than 20 files, go as one zip.** Homebase asks first, zips them in your temp folder with your
+  own rights (hidden and system files left out), sends the zip and deletes it.
+- **File history in the notification center.** Files sent from this PC are kept beside the ones received, with
+  the device and how it ended (sent, received, or why not). Two new filters, **받은 파일** and **보낸 파일**, show
+  only those, and a received file's entry has **폴더 열기**.
+- `mobile.filesStoreGiB` (default 10) sets how much this PC keeps at once for files on the way, each direction.
+
+### Fixed
+- A file-send test could fail now and then on a fast machine: a finished send now deletes its folder before the
+  last progress goes out (#101).
+
 ## v0.51.0 — Send files from the PC to phones and other PCs
 
 ### Added

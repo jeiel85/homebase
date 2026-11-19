@@ -92,6 +92,10 @@ public partial class DashboardWindow : ThemedWindow
         };
         // Minimized is out of view too: the Settings page stops polling the Agent (M-13).
         StateChanged += (_, _) => SyncPages();
+        // Files, folders or text dropped on the Devices page (M-66): on a device they go there, elsewhere the user picks.
+        AllowDrop = true;
+        DragOver += (_, e) => OnDragOver(e, null);
+        Drop += (_, e) => OnDrop(e, null);
         // An alias set here, on a phone or on another PC renames the device at once, without waiting for the next poll.
         Action onAliases = () => Dispatcher.BeginInvoke(ApplyAliases);
         DeviceNames.Aliases.Changed += onAliases;
@@ -305,6 +309,45 @@ public partial class DashboardWindow : ThemedWindow
             hint.Margin = new Thickness(6, 14, 6, 0);
             RailPanel.Children.Add(hint);
         }
+        else if (_items.Any(i => DropKey(i) is not null))
+        {
+            var hint = Text(L.DropHint, 10.5, InkSoft, wrap: true);
+            hint.Margin = new Thickness(6, 14, 6, 0);
+            RailPanel.Children.Add(hint);
+        }
+    }
+
+    // ── Drops (M-66) ──
+
+    /// <summary>
+    /// Where a drop on <paramref name="d"/> goes, as a send target key: a phone paired here, or a PC this one is linked to.
+    /// This PC and devices seen only through another PC take none.
+    /// </summary>
+    internal static string? DropKey(DeviceItem d) =>
+        d.Role == DeviceRole.Phone ? d.Key
+        : d.IsPc && d.Key.StartsWith("hub:", StringComparison.Ordinal) ? LocalOpsBot.Core.Mobile.ClipTargetKeys.Pc(d.Key[4..])
+        : null;
+
+    private static bool Droppable(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop) || data.GetDataPresent(DataFormats.UnicodeText);
+
+    private void OnDragOver(DragEventArgs e, DeviceItem? d)
+    {
+        e.Effects = !_preview && _tab == DashTab.Devices && Droppable(e.Data) && (d is null || DropKey(d) is not null)
+            ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnDrop(DragEventArgs e, DeviceItem? d)
+    {
+        e.Handled = true;
+        if (_preview || _tab != DashTab.Devices || TrayIconManager.Current is not { } tray) return;
+        var key = d is null ? null : DropKey(d);
+        if (d is not null && key is null) return;
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths)
+            _ = tray.SendPathsAsync(paths, key);
+        else if (e.Data.GetData(DataFormats.UnicodeText) is string { Length: > 0 } text)
+            _ = tray.SendTextAsync(text, key);
     }
 
     private Border Tile(DeviceItem d)
@@ -342,6 +385,16 @@ public partial class DashboardWindow : ThemedWindow
         }
         tile.MouseLeftButtonUp += (_, _) => Select(d.Key);
         tile.ContextMenu = TileMenu(d);
+        // A device that takes files lights up while something is dragged over it (M-66).
+        tile.AllowDrop = true;
+        tile.DragEnter += (_, e) => { if (!_preview && DropKey(d) is not null && Droppable(e.Data)) tile.Background = on ? Slab : Plate; };
+        tile.DragLeave += (_, _) => tile.Background = on ? Slab : Brushes.Transparent;
+        tile.DragOver += (_, e) => OnDragOver(e, d);
+        tile.Drop += (_, e) =>
+        {
+            tile.Background = on ? Slab : Brushes.Transparent;
+            OnDrop(e, d);
+        };
         return tile;
     }
 
