@@ -23,6 +23,9 @@ public partial class NotificationCenterPanel : UserControl
 {
     private const int PageSize = 50;
     private const string AlertFilter = "\u0001alert";
+    // Files that came in and went out, apart from everything else (M-64, M-66).
+    private const string ReceivedFilter = "\u0001files-received";
+    private const string SentFilter = "\u0001files-sent";
 
     private readonly List<HistoryEntry> _entries = new();
     private DateTimeOffset _seenAtOpen;
@@ -225,6 +228,17 @@ public partial class NotificationCenterPanel : UserControl
         var alerts = _entries.Count(e => e.Kind == HistoryKind.Alert);
         if (alerts > 0) FilterPanel.Children.Add(FilterTile(L.CenterAlerts, AlertFilter, alerts, pc: null));
 
+        var received = _entries.Count(e => Matches(e, ReceivedFilter));
+        var sent = _entries.Count(e => Matches(e, SentFilter));
+        if (received + sent > 0)
+        {
+            var files = Hb.Label(L.CenterFilesHead, Hb.InkSoft, 11);
+            files.Margin = new Thickness(6, 12, 0, 6);
+            FilterPanel.Children.Add(files);
+            if (received > 0) FilterPanel.Children.Add(FilterTile(L.CenterFilesReceived, ReceivedFilter, received, pc: null));
+            if (sent > 0) FilterPanel.Children.Add(FilterTile(L.CenterFilesSent, SentFilter, sent, pc: null));
+        }
+
         var sources = _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
             .GroupBy(e => e.Source!, StringComparer.Ordinal)
             .Select(g => (Group: g, Label: DeviceNames.Show(g.First().SourceKind, g.Key)))
@@ -296,13 +310,19 @@ public partial class NotificationCenterPanel : UserControl
     {
         null => L.CenterAll,
         AlertFilter => L.CenterAlerts,
+        ReceivedFilter => L.CenterFilesReceived,
+        SentFilter => L.CenterFilesSent,
         _ => key,
     };
 
-    private bool Matches(HistoryEntry e) => _filter switch
+    private bool Matches(HistoryEntry e) => Matches(e, _filter);
+
+    private static bool Matches(HistoryEntry e, string? filter) => filter switch
     {
         null => true,
         AlertFilter => e.Kind == HistoryKind.Alert,
+        ReceivedFilter => e.Kind == HistoryKind.Device && e.App == TransferHistory.Received,
+        SentFilter => e.Kind == HistoryKind.Device && e.App == TransferHistory.Sent,
         var name => e.Kind == HistoryKind.Device && e.Source == name,
     };
 
@@ -369,6 +389,15 @@ public partial class NotificationCenterPanel : UserControl
             Margin = new Thickness(0, 3, 0, 0),
         });
 
+        // A received file's entry opens the folder it was saved to (M-66).
+        TextBlock? folderLink = null;
+        if (e.Kind == HistoryKind.Device && e.App == TransferHistory.Received)
+        {
+            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(L.CenterOpenFolder));
+            link.Click += (_, _) => OpenReceivedFolder();
+            folderLink = new TextBlock(link) { Style = Res<Style>("Type.Micro"), Margin = new Thickness(0, 4, 0, 0) };
+        }
+
         if (!string.IsNullOrWhiteSpace(e.Body))
         {
             // One line until clicked; then the whole text, selectable to copy.
@@ -399,15 +428,32 @@ public partial class NotificationCenterPanel : UserControl
             grid.ToolTip = L.CenterExpandTip;
             grid.MouseLeftButtonUp += (_, args) =>
             {
-                if (args.OriginalSource is DependencyObject d && IsInside(d, full)) return; // selecting text
+                if (args.OriginalSource is DependencyObject d && (IsInside(d, full) || (folderLink is not null && IsInside(d, folderLink))))
+                    return; // selecting text, or the folder link
                 var open = full.Visibility == Visibility.Visible;
                 full.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
                 preview.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
             };
         }
 
+        if (folderLink is not null) content.Children.Add(folderLink);
+
         // Transparent background so the whole row, not just its text, takes the click.
         return new Border { Background = Brushes.Transparent, Child = grid };
+    }
+
+    private static void OpenReceivedFolder()
+    {
+        try
+        {
+            var folder = FileReceiver.Folder();
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{folder}\"");
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            TrayLog.Warn("Files", $"Could not open the received files folder: {ex.Message}");
+        }
     }
 
     private Border KindChip(HistoryEntry e)

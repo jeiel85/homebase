@@ -91,6 +91,23 @@ if ($trayExe -and $profileRoot) {
     }
 }
 
+# 4c) Take Explorer's "Send to > Homebase" (DECISIONS M-66) out of each user's Send To folder. The tray
+#     puts it there per user; only a shortcut that runs Homebase.Tray.exe goes.
+if ($profileRoot) {
+    $shell = $null
+    try { $shell = New-Object -ComObject WScript.Shell } catch { }
+    Get-ChildItem -Path $profileRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $lnk = Join-Path $_.FullName "AppData\Roaming\Microsoft\Windows\SendTo\Homebase.lnk"
+        if (-not (Test-Path $lnk)) { return }
+        $target = $null
+        try { if ($shell) { $target = $shell.CreateShortcut($lnk).TargetPath } } catch { }
+        if ($target -and ((Split-Path -Leaf $target) -ieq "Homebase.Tray.exe")) {
+            Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue
+            Write-Host "Removed $lnk"
+        }
+    }
+}
+
 # 5) Remove binaries from the default location and, if given, the actual install dir.
 $roots = @($DefaultRoot)
 if ($InstallDir) { $roots += $InstallDir }

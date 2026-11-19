@@ -123,7 +123,8 @@ public static class MobileServiceCollectionExtensions
         // Files from a device (M-64): kept under the mobile folder (SYSTEM/Administrators), read by the Tray over its pipe.
         services.AddSingleton(sp => new FileShareService(Path.Combine(MobileDeviceStore.DefaultDirectory, "transfers"),
             sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(), sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<ILogger<FileShareService>>(), sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>()));
+            sp.GetRequiredService<ILogger<FileShareService>>(), sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>(),
+            storeCapBytes: sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>().Value.FilesStoreBytes));
         services.AddHostedService(sp => sp.GetRequiredService<FileShareService>());
         // Files this PC sends (M-65): a push to phones (they fetch), an upload to linked PCs.
         services.AddSingleton(sp =>
@@ -133,7 +134,9 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(), sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<FileSendService>>(),
                 (target, plaintext, ct) => push.SendDirectAsync(target, plaintext, FileSendProtocol.PushTtlSeconds, "high", ct),
-                sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<ClipShareService>());
+                sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<ClipShareService>(),
+                history: sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>(),
+                storeCapBytes: sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>().Value.FilesStoreBytes);
         });
         services.AddHostedService(sp => sp.GetRequiredService<FileSendService>());
         services.AddHostedService(sp => new TransferPipeServer(sp.GetRequiredService<FileShareService>(),

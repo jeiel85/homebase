@@ -149,6 +149,8 @@ internal sealed class PreviewDashboardSource : IDashboardSource
             new(HistoryKind.Alert, id, now.AddMinutes(-minutesAgo), null, null, null, kind, title, body, severity, status);
         return new HistoryPage(new[]
         {
+            Dev(11, 1, "Galaxy S24", DeviceKind.Phone, TransferHistory.Received, "파일 3개 · 12.4 MB", "IMG_0412.jpg\nIMG_0413.jpg\nIMG_0414.jpg"),
+            Dev(10, 2, "LAPTOP-JEIEL", DeviceKind.Pc, TransferHistory.Sent, "파일 1개 · 1.8 MB", "보냄\n주간보고.pdf"),
             Dev(9, 3, "Galaxy S24", DeviceKind.Phone, "카카오톡", "김민수", "내일 회의 10시로 옮겨도 될까요?"),
             Dev(8, 12, "LAPTOP-JEIEL", DeviceKind.Pc, "Outlook", "주간 보고 초안", "첨부한 초안 확인 부탁드립니다. 수정할 부분은 메모로 남겨 주세요."),
             Alert(7, 26, "process_watch", "ollama 프로세스가 멈췄습니다", "감시 중인 프로세스 ollama가 실행 중이 아닙니다.", "Warning"),

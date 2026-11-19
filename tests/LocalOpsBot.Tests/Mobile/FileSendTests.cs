@@ -28,6 +28,7 @@ public class FileSendTests : IDisposable
     private readonly List<FilesProgress> _progress = new();
     private bool _pushOk = true;
     private long _free = 100L * 1024 * 1024 * 1024;
+    private readonly HistoryLog _history = new();
     private FileSendService _sends;
 
     public FileSendTests()
@@ -36,13 +37,13 @@ public class FileSendTests : IDisposable
         _sends = NewService();
     }
 
-    private FileSendService NewService()
+    private FileSendService NewService(long storeCap = FileSendService.StoreCapBytes)
     {
         var sends = new FileSendService(_dir, _store, _keys, _time, NullLogger.Instance, (t, p, _) =>
         {
             lock (_pushed) _pushed.Add((t, p));
             return Task.FromResult((_pushOk, _pushOk ? null : (string?)"EndpointOffline"));
-        }, freeSpace: _ => _free);
+        }, freeSpace: _ => _free, history: _history, storeCapBytes: storeCap);
         sends.Progress += p => { lock (_progress) _progress.Add(p); };
         return sends;
     }
@@ -186,6 +187,72 @@ public class FileSendTests : IDisposable
         await Settled(() => _progress.Any(p => p.State == FileSendStates.Failed));
         Assert.Equal(ClipErrors.PushFailed, _progress.Last().Error);
         Assert.Empty(_sends.Ids());
+    }
+
+    [Fact]
+    public async Task A_settled_send_is_kept_in_the_notification_center_with_how_it_ended()
+    {
+        // What went out sits beside what came in (DECISIONS M-66): names, size, the device and the outcome — not the bytes.
+        var (_, _, phone) = Phone();
+        _pushOk = false;
+        Send([ClipTargetKeys.Device(phone.DeviceId)], ("a.jpg", new byte[5]), ("b.jpg", new byte[7]));
+        await Settled(() => _history.Count == 1);
+
+        var record = _history.Records.Single();
+        Assert.Equal(TransferHistory.Sent, record.App);
+        Assert.Equal(phone.DeviceId, record.OriginId);
+        Assert.Equal("Galaxy S24", record.OriginName);
+        Assert.Equal(DeviceKind.Phone, record.OriginKind);
+        Assert.Equal("파일 2개 · 12 B", record.Title);
+        Assert.Equal("실패: 휴대폰에 알리지 못함\na.jpg\nb.jpg", record.Body);
+        Assert.True(TransferHistory.IsFiles(record.App));
+    }
+
+    [Fact]
+    public async Task A_phone_that_never_fetched_is_recorded_as_expired()
+    {
+        var (_, _, phone) = Phone();
+        Send([ClipTargetKeys.Device(phone.DeviceId)], ("a.jpg", new byte[5]));
+        await Settled(() => _progress.Any(p => p.State == FileSendStates.Notified));
+        Assert.Equal(0, _history.Count); // told, not settled: nothing yet
+
+        _time.Advance(TransferProtocol.KeepFor + TimeSpan.FromMinutes(1));
+        _sends.Sweep();
+        await Settled(() => _history.Count == 1);
+        Assert.StartsWith("실패: 24시간 안에 받아 가지 않음", _history.Records.Single().Body);
+    }
+
+    [Fact]
+    public void The_store_can_be_set_smaller()
+    {
+        // mobile:filesStoreGiB (DECISIONS M-66): what this PC keeps at once for files going out.
+        var (_, _, phone) = Phone();
+        _sends = NewService(storeCap: 1024);
+        var big = _sends.Begin(new FilesBeginRequest([ClipTargetKeys.Device(phone.DeviceId)], [new TransferFile("a.mkv", 2048)]));
+        Assert.Equal(TransferErrors.NoSpace, big.Error);
+        Assert.NotNull(_sends.Begin(new FilesBeginRequest([ClipTargetKeys.Device(phone.DeviceId)], [new TransferFile("a.jpg", 512)])).Id);
+        Assert.Equal(10L * 1024 * 1024 * 1024, new MobileOptions().FilesStoreBytes);
+        Assert.Equal(1024L * 1024 * 1024, new MobileOptions { FilesStoreGiB = 0 }.FilesStoreBytes);
+    }
+
+    /// <summary>The notification center's store, as far as these sends use it.</summary>
+    private sealed class HistoryLog : LocalOpsBot.Core.Notifications.INotificationHistoryStore
+    {
+        private readonly List<LocalOpsBot.Core.Notifications.DeviceNotificationRecord> _records = new();
+
+        public int Count { get { lock (_records) return _records.Count; } }
+        public IReadOnlyList<LocalOpsBot.Core.Notifications.DeviceNotificationRecord> Records { get { lock (_records) return _records.ToList(); } }
+
+        public Task AddAsync(LocalOpsBot.Core.Notifications.DeviceNotificationRecord record, CancellationToken ct)
+        {
+            lock (_records) _records.Add(record);
+            return Task.CompletedTask;
+        }
+
+        public Task<LocalOpsBot.Core.Notifications.HistoryPage> ListAsync(LocalOpsBot.Core.Notifications.HistoryCursor? after, int limit,
+            CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> ClearDevicesAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct) => throw new NotSupportedException();
     }
 
     [Fact]

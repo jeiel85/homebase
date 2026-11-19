@@ -51,7 +51,15 @@ public sealed class MobileOptions
     /// </summary>
     public string? UserSid { get; set; }
 
+    /// <summary>
+    /// How much the PC keeps at once for files on the way (DECISIONS M-66), in GiB, for each direction: files coming in
+    /// before the Tray saves them, files going out until every device has them. 1–1024; 10 by default.
+    /// </summary>
+    public int FilesStoreGiB { get; set; } = 10;
+
     public int ClampedIntervalMs => Math.Clamp(LiveIntervalMs, 500, 10_000);
+
+    public long FilesStoreBytes => Math.Clamp(FilesStoreGiB, 1, 1024) * 1024L * 1024 * 1024;
 }
 
 /// <summary>

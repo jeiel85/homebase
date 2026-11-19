@@ -99,6 +99,18 @@ public sealed record FilesIdRequest(string Id);
 /// </summary>
 public sealed record FilesProgress(string Id, string Key, string Name, string Kind, string State, long Sent, long Total, string? Error = null);
 
+/// <summary>
+/// The "app" of file entries in the PC notification center (DECISIONS M-64, M-66): what came in and what went out. The
+/// Tray's "files" filter picks entries by these.
+/// </summary>
+public static class TransferHistory
+{
+    public const string Received = "받은 파일";
+    public const string Sent = "보낸 파일";
+
+    public static bool IsFiles(string? app) => app is Received or Sent;
+}
+
 public static class FileSendStates
 {
     /// <summary>Uploading to a PC.</summary>

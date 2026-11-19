@@ -123,7 +123,8 @@ public partial class PhoneConnectPanel : UserControl
         {
             StatusText.Text = "휴대폰 연결이 꺼져 있습니다. 쓸 경로를 고른 뒤 ENABLE을 누르세요.";
             IntroCard.Visibility = Visibility.Visible;
-            PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = ApprovalPanel.Visibility = Visibility.Collapsed;
+            PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = ApprovalPanel.Visibility
+                = SendToPanel.Visibility = Visibility.Collapsed;
             ApplyButtonText.Text = "ENABLE";
             return;
         }
@@ -451,8 +452,19 @@ public partial class PhoneConnectPanel : UserControl
     {
         _approvalLoading = true;
         ApprovalCheck.IsChecked = ClaudeHookSetup.IsInstalled();
+        SendToCheck.IsChecked = SendPrefs.SendToMenu;
         _approvalLoading = false;
         ApprovalPanel.Visibility = Visibility.Visible;
+        SendToPanel.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Explorer's "Send to › Homebase" for this Windows user (M-66).</summary>
+    private void SendToCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_approvalLoading) return;
+        var on = SendToCheck.IsChecked == true;
+        SendPrefs.SendToMenu = on;
+        if (Environment.ProcessPath is { } exe) SendToShortcut.Sync(on, exe);
     }
 
     private void ApprovalCheck_Changed(object sender, RoutedEventArgs e)

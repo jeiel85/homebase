@@ -33,6 +33,28 @@ public partial class App : Application
             return;
         }
 
+        // Design preview of the "Send to" picker (M-66) with made-up devices; nothing is sent:
+        //   Homebase.Tray.exe --preview-send-picker [--lang en]
+        if (e.Args.Contains("--preview-send-picker"))
+        {
+            base.OnStartup(e);
+            var lang = ArgAfter(e.Args, "--lang");
+            if (lang is not null) CultureInfo.CurrentUICulture = CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo(lang);
+            else ApplyLanguage();
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var targets = new[]
+            {
+                new Core.Mobile.ClipTarget("device:preview-s24", "Galaxy S24", Core.Mobile.DeviceKind.Phone),
+                new Core.Mobile.ClipTarget("device:preview-tab", "Galaxy Tab S9", Core.Mobile.DeviceKind.Phone),
+                new Core.Mobile.ClipTarget("pc:preview-laptop", "LAPTOP-JEIEL", Core.Mobile.DeviceKind.Pc),
+            };
+            SendPickerWindow.Pick(L.SendPickSummary(3, 12_400_000, "IMG_0412.jpg"), targets,
+                t => t.Kind == Core.Mobile.DeviceKind.Pc ? L.ClipTargetPc(t.Name) : L.ClipTargetPhone(t.Name), L.FilesNoTargets,
+                remember: false);
+            Shutdown();
+            return;
+        }
+
         // Design preview of the Homebase window with made-up devices and notifications (no tray icon, no
         // mutex). Settings is the real page: it reads this PC's configuration and, on the Phone area,
         // asks this PC's Agent for a pairing code as the tray does:
@@ -72,13 +94,22 @@ public partial class App : Application
             return;
         }
 
+        // Explorer's "Send to › Homebase" (DECISIONS M-66): Homebase.Tray.exe --send <paths>.
+        var sendPaths = Services.Mobile.SendRequests.PathsFrom(e.Args);
+
         // Hold the mutex for the process lifetime; createdNew == false means another tray in this
-        // session already owns it, so bail out before creating a second icon / pipe client.
+        // session already owns it, so bail out before creating a second icon / pipe client — handing
+        // it the paths to send first, when that is why this one was started.
         _singleInstanceMutex = new Mutex(initiallyOwned: false, SingleInstanceMutexName, out bool createdNew);
         if (!createdNew)
         {
             _singleInstanceMutex.Dispose();
             _singleInstanceMutex = null;
+            if (sendPaths is { Count: > 0 } && !Services.Mobile.SendRequests.Forward(sendPaths, TimeSpan.FromSeconds(5)))
+            {
+                ApplyLanguage();
+                System.Windows.MessageBox.Show(L.SendForwardFailed, "Homebase", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             Shutdown();
             return;
         }
@@ -95,6 +126,9 @@ public partial class App : Application
 
         // Mobile monitoring bridge: connects to the Agent but collects nothing until a phone watches.
         Services.Mobile.MobileHost.StartIfEnabled();
+
+        // Started by "Send to" with no tray running: this one is the tray now, and sends once it reaches the Agent.
+        if (sendPaths is { Count: > 0 }) _ = _trayIcon.SendWhenReadyAsync(sendPaths);
     }
 
     /// <summary>

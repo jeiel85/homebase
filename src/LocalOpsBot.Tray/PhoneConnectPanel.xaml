@@ -144,6 +144,21 @@
       </Border>
     </StackPanel>
 
+    <!-- Explorer's "Send to › Homebase" (DECISIONS M-66); on by default, for this Windows user. -->
+    <StackPanel x:Name="SendToPanel" Visibility="Collapsed">
+      <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.SendToSection}"/>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <CheckBox x:Name="SendToCheck" Margin="0,0,0,2" Checked="SendToCheck_Changed" Unchecked="SendToCheck_Changed">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.SendToToggle}"/>
+          </CheckBox>
+          <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="20,0,0,0" Text="{x:Static local:L.SendToHelp}"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
     <!-- Which paths to open; shown in both states (ENABLE when off, APPLY when on) -->
     <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
       <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePathSettings}"/>

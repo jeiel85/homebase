@@ -22,7 +22,7 @@ public readonly record struct TransferReply(int Status, string Json);
 /// </summary>
 public sealed class FileShareService : BackgroundService
 {
-    /// <summary>Everything kept here at once (unfinished and unsaved transfers together).</summary>
+    /// <summary>Everything kept here at once (unfinished and unsaved transfers together), unless set (<c>mobile:filesStoreGiB</c>).</summary>
     internal const long StoreCapBytes = 10L * 1024 * 1024 * 1024;
     /// <summary>Free disk left over after a transfer, at least.</summary>
     internal const long FreeMarginBytes = 2L * 1024 * 1024 * 1024;
@@ -36,6 +36,7 @@ public sealed class FileShareService : BackgroundService
     private static readonly TimeSpan OfferTimeout = TimeSpan.FromMinutes(10);
 
     private readonly string _root;
+    private readonly long _storeCap;
     private readonly IMobileDeviceStore _devices;
     private readonly IClipKeyStore _keys;
     private readonly INotificationHistoryStore? _history;
@@ -82,8 +83,9 @@ public sealed class FileShareService : BackgroundService
     }
 
     public FileShareService(string root, IMobileDeviceStore devices, IClipKeyStore keys, TimeProvider time, ILogger logger,
-        INotificationHistoryStore? history = null, Func<string, long>? freeSpace = null)
+        INotificationHistoryStore? history = null, Func<string, long>? freeSpace = null, long storeCapBytes = StoreCapBytes)
     {
+        _storeCap = storeCapBytes;
         _root = root;
         _devices = devices;
         _keys = keys;
@@ -125,7 +127,7 @@ public sealed class FileShareService : BackgroundService
             var inUse = _entries.Values.Sum(e => e.TotalBytes);
             // Transfers already accepted will still write what they haven't: that space is promised, not free.
             var free = FreeSpace() - _entries.Values.Sum(e => e.OutstandingBytes);
-            if (inUse + total > StoreCapBytes || free < total + FreeMarginBytes)
+            if (inUse + total > _storeCap || free < total + FreeMarginBytes)
             {
                 _logger.LogWarning("Transfer from {Name} refused: {Total} bytes, {InUse} kept, {Free} free.", device.Name, total, inUse, free);
                 return Error(507, TransferErrors.NoSpace, "Not enough room on this PC for these files.");
@@ -357,7 +359,7 @@ public sealed class FileShareService : BackgroundService
         try
         {
             await _history.AddAsync(new DeviceNotificationRecord($"transfer-{entry.State.Id}", entry.State.DeviceId, entry.State.DeviceName,
-                entry.State.DeviceKind, "받은 파일", title, body, entry.State.Ts, _time.GetUtcNow()), CancellationToken.None);
+                entry.State.DeviceKind, TransferHistory.Received, title, body, entry.State.Ts, _time.GetUtcNow()), CancellationToken.None);
         }
         catch (Exception ex)
         {

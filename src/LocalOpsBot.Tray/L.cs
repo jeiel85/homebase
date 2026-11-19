@@ -101,6 +101,47 @@ public static class L
         _ => ClipError(code),
     };
 
+    // ── Send to, drops, zips (DECISIONS M-66) ──
+    public static string SendPickTitle => T("Send to", "보낼 곳");
+    public static string SendPickSummary(int count, long bytes, string first) => count == 1
+        ? T($"{first} ({Size(bytes)})", $"{first} ({Size(bytes)})")
+        : T($"{count} files, {Size(bytes)} — {first} and more", $"파일 {count}개 · {Size(bytes)} — {first} 외");
+    public static string SendPickFolders(int folders, int files) => T(
+        $"{folders} folder{(folders == 1 ? "" : "s")}{(files > 0 ? $" and {files} file{(files == 1 ? "" : "s")}" : "")} (sent as one zip)",
+        $"폴더 {folders}개{(files > 0 ? $"와 파일 {files}개" : "")} (zip 하나로 보냄)");
+    public static string SendPickText(string preview) => T($"Text: {preview}", $"텍스트: {preview}");
+    public static string SendForwardFailed => T("Homebase didn't answer. Quit Homebase from its tray icon, start it again, then send once more.",
+        "Homebase가 응답하지 않습니다. 트레이 아이콘에서 Homebase를 끝내고 다시 시작한 뒤 한 번 더 보내 주세요.");
+    public static string ZipAskTitle => T("Send as a zip?", "zip으로 묶어 보낼까요?");
+    public static string ZipAskBody(int folders, int files, string name) => folders > 0
+        ? T($"Folders go as one zip file: {folders} folder{(folders == 1 ? "" : "s")}{(files > 0 ? $" and {files} file{(files == 1 ? "" : "s")}" : "")} in {name}.",
+            $"폴더는 zip 파일 하나로 묶어 보냅니다: 폴더 {folders}개{(files > 0 ? $"와 파일 {files}개" : "")}를 {name}(으)로.")
+        : T($"One send takes up to {Core.Mobile.TransferProtocol.MaxFiles} files. Send these {files} as one zip, {name}?",
+            $"한 번에 {Core.Mobile.TransferProtocol.MaxFiles}개까지 보낼 수 있습니다. 파일 {files}개를 zip 하나({name})로 묶어 보낼까요?");
+    public static string ZipAndSend => T("Zip and send", "묶어서 보내기");
+    public static string ZippingTitle => T("Making the zip…", "zip으로 묶는 중…");
+    public static string ZipError(string? code) => code switch
+    {
+        "too_large" => T("too large for one file (up to 2 GB)", "파일 하나로 보내기에 너무 큽니다 (2GB까지)"),
+        "empty" => T("nothing in it could be read", "읽을 수 있는 파일이 없습니다"),
+        _ => T("the zip couldn't be made (is there room in the temp folder?)", "zip을 만들지 못했습니다 (임시 폴더 공간을 확인하세요)"),
+    };
+    public static string ZipSkipped(int count) => T($"{count} file{(count == 1 ? "" : "s")} or folder{(count == 1 ? "" : "s")} couldn't be read and were left out.",
+        $"읽을 수 없는 파일·폴더 {count}개는 뺐습니다.");
+    public static string DropNotHere => T("This device can't take files from here — update its app, or connect it again",
+        "이 기기로는 보낼 수 없습니다 — 앱을 업데이트하거나 다시 연결하세요");
+    public static string DropHint => T("Drop files, folders or text on a phone or PC to send them",
+        "파일·폴더·텍스트를 휴대폰이나 PC에 끌어다 놓으면 보냅니다");
+    public static string SendToSection => T("SEND TO MENU", "보내기 메뉴");
+    public static string SendToToggle => T("Put Homebase in Explorer's \"Send to\" menu", "탐색기 \"보내기\" 메뉴에 Homebase 넣기");
+    public static string SendToHelp => T(
+        "Right-click files or a folder › Send to › Homebase, then pick the devices. On Windows 11 it is under \"Show more options\". Folders go as one zip.",
+        "파일이나 폴더를 오른쪽 클릭 › 보내기 › Homebase를 누르고 받을 기기를 고릅니다. Windows 11에서는 \"추가 옵션 표시\" 안에 있습니다. 폴더는 zip 하나로 묶어 보냅니다.");
+    public static string CenterFilesReceived => T("Received files", "받은 파일");
+    public static string CenterFilesSent => T("Sent files", "보낸 파일");
+    public static string CenterFilesHead => T("FILES", "파일");
+    public static string CenterOpenFolder => T("Open folder", "폴더 열기");
+
     public static string FilesFailedTitle(string from) => T($"Files from {from} not saved", $"{from}에서 받은 파일을 저장하지 못했습니다");
     public static string FilesFailedBody => T("Check the free space in Downloads. They are kept on this PC for a day and saved at the next sign-in.",
         "다운로드 폴더의 여유 공간을 확인하세요. 이 PC에 하루 동안 보관했다가 다음 로그인 때 다시 저장합니다.");
