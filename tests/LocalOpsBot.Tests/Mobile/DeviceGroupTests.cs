@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -145,6 +146,44 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         Assert.Equal(400, (await b.Api.HandleRestAsync(Post(GroupPaths.Alias, phone.Token), "{}"u8.ToArray(), _cts.Token)).Item1);
     }
 
+    // The field case behind M-59: two PCs linked both ways, and one of them (B) moves to a new address — a
+    // Quick Tunnel restarted under a new name, while its Tailscale path was missing from A's copy. A can no
+    // longer reach B, and could only learn B's new paths from B itself. B still reaches A, so B's presence
+    // names its paths and A's link takes them up; before, A showed B as "connecting…" for good.
+    [Fact]
+    public async Task A_pc_that_moved_is_reached_again_through_the_paths_it_names_in_its_presence()
+    {
+        var a = await Node.StartAsync("pc-a", _cts.Token);
+        var b = await Node.StartAsync("pc-b", _cts.Token);
+        _nodes.AddRange(new[] { a, b });
+        Assert.True((await b.Links.LinkAsync(PairingLink.Build(a.Api.CreateOffer()!), _cts.Token)).Linked);
+        await Until(() => a.Links.Views().FirstOrDefault(v => v is { PcId: "pc-b", Online: true }), _cts.Token);
+
+        // The tray's refresh tries at once: A finds B gone now, not at its next turn (up to 30 s on).
+        await b.MoveAsync(_cts.Token);
+        Assert.True(a.Links.Views().Single().Online);
+        var stale = await a.Links.RetryNowAsync(TimeSpan.FromSeconds(8), _cts.Token);
+        Assert.Equal(new DevicesRefreshResult(1, 0), stale);
+        Assert.Equal("unreachable", a.Links.Views().Single().Error);
+        Assert.DoesNotContain(a.Links.Hub("pc-b")!.Endpoints, e => b.Paths().Contains(e));
+
+        // B's next presence to A (pressed here instead of waiting up to 30 s) carries B's new paths: A takes
+        // them and tries at once, well before its own next turn.
+        Assert.Equal(new DevicesRefreshResult(1, 1), await b.Links.RetryNowAsync(TimeSpan.FromSeconds(8), _cts.Token));
+        var back = Stopwatch.StartNew();
+        await Until(() => a.Links.Views().FirstOrDefault(v => v is { PcId: "pc-b", Online: true }), _cts.Token);
+        Assert.True(back.Elapsed < HubLinkService.PresenceInterval / 2, $"took {back.Elapsed}");
+        Assert.Contains(b.Paths()[0], a.Links.Hub("pc-b")!.Endpoints);
+
+        // A link that is up is left alone, and only a PC reporting about itself is listened to.
+        var elsewhere = new[] { new MobileEndpoint(MobileTransport.Tailscale, "100.100.1.2", 47820, false) };
+        Assert.False(a.Links.AdoptPaths("pc-b", elsewhere));
+        var bAtA = a.Store.List().Single(d => d.Kind == DeviceKind.Pc);
+        var phone = new MobileDeviceInfo("phone-1", "Galaxy", "SM-S921N", DateTimeOffset.UtcNow, null);
+        Assert.False(a.Group.AdoptPaths(phone, new PresenceReport(1, DeviceKind.Pc, PcId: "pc-b", Endpoints: elsewhere)));
+        Assert.False(a.Group.AdoptPaths(bAtA, new PresenceReport(1, DeviceKind.Pc, PcId: "pc-a", Endpoints: elsewhere)));
+    }
+
     private static HttpRequestHead Post(string path, string? token) =>
         new("POST", path, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Authorization"] = "Bearer " + token });
 
@@ -161,45 +200,69 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
     private sealed class Node : IAsyncDisposable
     {
         private readonly string _dir;
+        private readonly LiveSnapshotHub _live;
+        private readonly DeviceHub _hub;
+        private readonly HubStore _hubs;
 
-        private Node(string dir, InMemoryDeviceStore store, DeviceStatusBoard board, MobileApiServer api, HubLinkService links, DeviceGroupService group)
+        private Node(string dir, InMemoryDeviceStore store, DeviceStatusBoard board, LiveSnapshotHub live, DeviceHub hub, HubStore hubs)
         {
             _dir = dir;
             Store = store;
             Board = board;
-            Api = api;
-            Links = links;
-            Group = group;
+            _live = live;
+            _hub = hub;
+            _hubs = hubs;
         }
 
         public InMemoryDeviceStore Store { get; }
         public DeviceStatusBoard Board { get; }
-        public MobileApiServer Api { get; }
-        public HubLinkService Links { get; }
-        public DeviceGroupService Group { get; }
+        public MobileApiServer Api { get; private set; } = null!;
+        public HubLinkService Links { get; private set; } = null!;
+        public DeviceGroupService Group { get; private set; } = null!;
+
+        /// <summary>The paths this PC's links name in their presence (M-59): its API's, wherever it listens now.</summary>
+        public IReadOnlyList<MobileEndpoint> Paths() => Api.Endpoints();
 
         public static async Task<Node> StartAsync(string pcId, CancellationToken ct)
         {
             var dir = Path.Combine(Path.GetTempPath(), "hb-group-" + Guid.NewGuid().ToString("N"));
-            var options = Options.Create(new MobileOptions { Enabled = true, Tailscale = false, BindLoopback = true, Port = FreePort() });
             var store = new InMemoryDeviceStore(pcId);
             var board = new DeviceStatusBoard(TimeProvider.System);
-            var live = new LiveSnapshotHub(new FakeSampler(), options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance);
+            var live = new LiveSnapshotHub(new FakeSampler(), Options.Create(new MobileOptions { Enabled = true }), TimeProvider.System,
+                NullLogger<LiveSnapshotHub>.Instance);
             var hub = new DeviceHub(store, board, new NotificationInbox(TimeProvider.System), () => new DeviceStatus("0.35.0"),
                 null, pcId, "0.35.0", NullLogger.Instance);
-            var api = new MobileApiServer(live, new PairingService(store, TimeProvider.System), store,
-                new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
-                new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance, deviceHub: hub);
-            var links = new HubLinkService(new HubStore(dir, NullLogger.Instance, protect: false), store,
+            var node = new Node(dir, store, board, live, hub, new HubStore(dir, NullLogger.Instance, protect: false));
+            node.Links = new HubLinkService(node._hubs, store,
                 new SystemStatusProbeAdapter(h => new PresenceReport(1, DeviceKind.Pc, "0.35.0", PushHashes: h)),
-                TimeProvider.System, NullLogger<HubLinkService>.Instance, allowLoopback: true, live: live);
-            var group = new DeviceGroupService(links, store, board, new GroupTombstones(TimeProvider.System),
-                () => api.CreateOffer(introduction: true), pcId, TimeProvider.System, NullLogger<DeviceGroupService>.Instance);
-            api.AttachGroup(group);
+                TimeProvider.System, NullLogger<HubLinkService>.Instance, allowLoopback: true, live: live, ownPaths: node.Paths);
+            node.Group = new DeviceGroupService(node.Links, store, board, new GroupTombstones(TimeProvider.System),
+                () => node.Api.CreateOffer(introduction: true), pcId, TimeProvider.System, NullLogger<DeviceGroupService>.Instance);
+            await node.ListenAsync(ct);
+            await node.Links.StartAsync(ct);
+            return node;
+        }
+
+        /// <summary>
+        /// The API comes back on another port, as a Quick Tunnel does under a new name after a restart: the
+        /// paths the other PCs keep for this one go stale.
+        /// </summary>
+        public async Task MoveAsync(CancellationToken ct)
+        {
+            await Api.StopAsync(CancellationToken.None);
+            await ListenAsync(ct);
+        }
+
+        private async Task ListenAsync(CancellationToken ct)
+        {
+            var options = Options.Create(new MobileOptions { Enabled = true, Tailscale = false, BindLoopback = true, Port = FreePort() });
+            var api = new MobileApiServer(_live, new PairingService(Store, TimeProvider.System), Store,
+                new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
+                new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance, deviceHub: _hub);
+            api.AttachGroup(Group);
             await api.StartAsync(ct);
-            await links.StartAsync(ct);
             await Until(() => api.CreateOffer(introduction: true), ct);
-            return new Node(dir, store, board, api, links, group);
+            Api = api;
         }
 
         public async ValueTask DisposeAsync()

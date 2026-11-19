@@ -120,8 +120,25 @@
             <StackPanel x:Name="RailPanel"/>
           </ScrollViewer>
           <Border Grid.Row="1" BorderBrush="#C9CFE3" BorderThickness="0,1,0,0" Padding="10">
-            <Button x:Name="AddDeviceButton" Style="{StaticResource Dash.AddButton}" Click="AddDevice_Click"
-                    Content="{x:Static local:L.DashAddDevice}"/>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Button x:Name="AddDeviceButton" Grid.Column="0" Style="{StaticResource Dash.AddButton}" Click="AddDevice_Click"
+                      Content="{x:Static local:L.DashAddDevice}"/>
+              <!-- Refresh (M-59), like pulling the phone app's list: the Agent tries every linked PC now. -->
+              <Button x:Name="RefreshButton" Grid.Column="1" Style="{StaticResource Dash.AddButton}" Click="RefreshDevices_Click"
+                      Margin="8,0,0,0" Padding="0" Width="36" ToolTip="{x:Static local:L.DashRefreshTip}"
+                      AutomationProperties.Name="{x:Static local:L.DashRefreshTip}">
+                <TextBlock x:Name="RefreshIcon" Text="&#xE72C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                           FontSize="14" FontWeight="Normal" RenderTransformOrigin="0.5,0.5">
+                  <TextBlock.RenderTransform>
+                    <RotateTransform x:Name="RefreshSpin"/>
+                  </TextBlock.RenderTransform>
+                </TextBlock>
+              </Button>
+            </Grid>
           </Border>
         </Grid>
       </Border>

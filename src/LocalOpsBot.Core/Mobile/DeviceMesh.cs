@@ -23,7 +23,8 @@ public static class DeviceKind
 /// <remarks>
 /// The fields after <c>PushHashes</c> came with v0.34.0 (M-46). They are display-only: a value out of
 /// range is dropped by <see cref="Sanitized"/> instead of failing the whole report, so one odd sensor on
-/// a phone never hides the rest of its state.
+/// a phone never hides the rest of its state. <c>Endpoints</c> (v0.45.0, M-59): a linked PC's own paths
+/// right now, so a hub whose link back to it went stale can take them up (phones leave it out).
 /// </remarks>
 public sealed record PresenceReport(
     int Schema,
@@ -50,9 +51,13 @@ public sealed record PresenceReport(
     int? LinkMbps = null,
     bool? Forwarding = null,
     bool? Dnd = null,
-    string? PcId = null)
+    string? PcId = null,
+    IReadOnlyList<MobileEndpoint>? Endpoints = null)
 {
     public const int MaxPushHashes = 32;
+
+    /// <summary>More paths than any PC has (LAN adapters, Tailscale name and address, Cloudflare): the list is dropped.</summary>
+    public const int MaxEndpoints = 16;
 
     /// <summary>Why the report is unusable, or <c>null</c>.</summary>
     public static string? Validate(PresenceReport? r)
@@ -82,6 +87,8 @@ public sealed record PresenceReport(
         LinkMbps = LinkMbps is > 0 and <= 100_000 ? LinkMbps : null,
         // A linked PC names itself so the group knows it (M-47); phones leave it out.
         PcId = Kind == DeviceKind.Pc ? Word(PcId, 64) : null,
+        // …and its paths (M-59), which the hub checks one by one before it uses any (HubPaths).
+        Endpoints = Kind == DeviceKind.Pc && Endpoints is { Count: > 0 and <= MaxEndpoints } e && e.All(x => x is not null) ? e : null,
     };
 
     private static string? Word(string? s, int max) => string.IsNullOrWhiteSpace(s) || s.Length > max ? null : s.Trim();

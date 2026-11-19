@@ -513,7 +513,10 @@ public sealed class MobileApiServer : BackgroundService
                 try { report = JsonSerializer.Deserialize<PresenceReport>(body!, MobileProtocol.Json); }
                 catch (JsonException) { report = null; }
                 if (PresenceReport.Validate(report) is { } invalid) return (400, Error("invalid_presence", invalid));
-                return (200, Json(_deviceHub.Presence(device, report!)));
+                var answer = _deviceHub.Presence(device, report!);
+                // A linked PC's paths reach this PC's own link to it when that one went stale (M-59).
+                _group?.AdoptPaths(device, report!.Sanitized());
+                return (200, Json(answer));
             }
 
             case ("GET", "/api/v1/devices"):

@@ -64,6 +64,13 @@ internal sealed class PreviewDashboardSource : IDashboardSource
         return Task.FromResult<DeviceOverview?>(new DeviceOverview(here, new[] { hub, laptopLink }, local));
     }
 
+    /// <summary>The refresh takes a moment, as with real PCs, so the spinning icon can be seen.</summary>
+    public async Task<DevicesRefreshResult?> RefreshAsync()
+    {
+        await Task.Delay(1200);
+        return new DevicesRefreshResult(2, 1);
+    }
+
     public Task<LiveView?> LiveAsync(string target)
     {
         Walk();
