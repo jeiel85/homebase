@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.43.0 — Only urgent phone notifications ring and vibrate
+
+### Changed
+- Phone: **by default, only notifications that need you now pop up with sound and vibration** — watch alerts
+  (process, service, website/HTTP, port) and AI session permission prompts and input waits. Everything else —
+  Windows app notifications, other devices' notifications, an AI session that finished, event log, PC advisor,
+  boot — now arrives silently in the notification shade (no sound, no vibration, still bundled). Kinds and apps
+  you set yourself in Settings → 알림 → 알림 우선순위 keep your choice; to have an app ring again, set that app
+  to 보통 (sound and vibration) or 긴급 there. The notification center keeps everything as before.
+
 ## v0.42.3 — A linked PC shows once, and its live view opens whichever way gets through
 
 ### Fixed
