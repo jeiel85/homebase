@@ -40,6 +40,7 @@ public sealed class LlmAdvisorConfiguratorTests
     [InlineData("  qwen2.5:3b  ", "llama3.2:1b", nameof(ModelChangeCheck.Ok))]
     [InlineData("llama3.2:1b", "llama3.2:1b", nameof(ModelChangeCheck.Unchanged))]
     [InlineData(" llama3.2:1b ", "llama3.2:1b", nameof(ModelChangeCheck.Unchanged))]
+    [InlineData("Llama3.2:1B", "llama3.2:1b", nameof(ModelChangeCheck.Unchanged))] // Ollama ignores case
     [InlineData("", "llama3.2:1b", nameof(ModelChangeCheck.Invalid))]
     [InlineData("x & calc", "llama3.2:1b", nameof(ModelChangeCheck.Invalid))]
     // The enum is internal, so the expected outcome travels by name.

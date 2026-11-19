@@ -431,10 +431,10 @@ public partial class SettingsPanel : UserControl
 
     private async void AiRecheck_Click(object sender, RoutedEventArgs e) => await RefreshAiAsync();
 
-    private async Task RefreshAiAsync()
+    private async Task RefreshAiAsync(bool afterChange = false)
     {
         AiRecheckButton.IsEnabled = false;
-        try { await OllamaPanel.RefreshAsync(); }
+        try { await (afterChange ? OllamaPanel.RefreshAfterChangeAsync() : OllamaPanel.RefreshAsync()); }
         finally { AiRecheckButton.IsEnabled = true; }
     }
 
@@ -483,9 +483,12 @@ public partial class SettingsPanel : UserControl
             }
             // The probe reads the config just written: it shows the new model, and RUN PULL if it
             // isn't on this PC yet.
-            await RefreshAiAsync();
-            if (OllamaPanel.Model == model) SetResult(AiModelStatusText, L.AiModelSaved(model), true);
-            else SetResult(AiModelStatusText, L.AiModelOverridden(OllamaPanel.Model), false);
+            await RefreshAiAsync(afterChange: true);
+            if (LlmAdvisorConfigurator.ServiceOverride() is { } overriding
+                && !string.Equals(overriding, model, StringComparison.OrdinalIgnoreCase))
+                SetResult(AiModelStatusText, L.AiModelOverridden(overriding), false);
+            else
+                SetResult(AiModelStatusText, L.AiModelSaved(model), true);
         }
         catch (Exception ex)
         {

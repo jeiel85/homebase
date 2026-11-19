@@ -53,6 +53,16 @@ public partial class OllamaSetupPanel : UserControl
         return _probe = ProbeAsync();
     }
 
+    /// <summary>
+    /// Probes after something just changed (the config was written): a probe already under way may
+    /// have read the config before the change, so wait it out and probe again rather than share it.
+    /// </summary>
+    internal async Task RefreshAfterChangeAsync()
+    {
+        if (_probe is { IsCompleted: false } running) await running; // ProbeAsync never throws
+        await RefreshAsync();
+    }
+
     // AI advice is optional and network-bound: a short timeout so a slow or absent Ollama never
     // holds up whatever else the caller is checking.
     private async Task ProbeAsync()

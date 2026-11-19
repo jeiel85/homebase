@@ -19,7 +19,19 @@ internal static class LlmAdvisorConfigurator
     {
         var model = input.Trim();
         if (!OllamaSetup.IsValidModelName(model)) return ModelChangeCheck.Invalid;
-        return string.Equals(model, current, StringComparison.Ordinal) ? ModelChangeCheck.Unchanged : ModelChangeCheck.Ok;
+        // Ollama matches model names without regard to case, so a case-only edit selects the same model.
+        return string.Equals(model, current, StringComparison.OrdinalIgnoreCase) ? ModelChangeCheck.Unchanged : ModelChangeCheck.Ok;
+    }
+
+    /// <summary>
+    /// The machine-level <c>HOMEBASE__llmAdvisor__model</c>, which the Agent (a service) reads over the
+    /// config file — or null. The Tray's own environment isn't asked: it was inherited when the Tray
+    /// started and can include user-level variables the service never sees.
+    /// </summary>
+    public static string? ServiceOverride()
+    {
+        var value = Environment.GetEnvironmentVariable("HOMEBASE__llmAdvisor__model", EnvironmentVariableTarget.Machine);
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     /// <summary>

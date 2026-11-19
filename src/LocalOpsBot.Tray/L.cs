@@ -170,19 +170,18 @@ public static class L
         "Pick one already on this PC, or type a name from ollama.com/library (e.g. llama3.2:3b, qwen2.5:3b). Smaller models answer faster. If it isn't downloaded yet, RUN PULL appears above after saving.",
         "이 PC에 받아 둔 모델을 고르거나 ollama.com/library의 이름을 적습니다(예: llama3.2:3b, qwen2.5:3b). 작은 모델일수록 빨리 답합니다. 아직 받지 않은 모델이면 저장한 뒤 위에 '모델 받기'가 나옵니다.");
     public static string AiModelInstalled => T("On this PC (click to use):", "이 PC에 받은 모델 (누르면 입력):");
-    public static string AiModelSaveNote => T(
-        "Saving asks for administrator approval and restarts the monitoring service.",
-        "저장하면 관리자 승인 후 감시 서비스가 다시 시작됩니다.");
+    // Same admin-approval wording as the watch list: both save through ElevatedConfig.
+    public static string AiModelSaveNote => MonSaveNote;
     public static string AiModelSave => T("SAVE", "저장");
     public static string AiModelInvalid => T(
         "Enter a model name of letters, digits and . _ - : / (e.g. llama3.2:3b).",
         "모델 이름은 영문·숫자와 . _ - : / 로 적습니다(예: llama3.2:3b).");
     public static string AiModelSame => T("That's already the model in use.", "지금 쓰는 모델과 같습니다.");
-    public static string AiModelSaving => T("Saving — approve the administrator prompt…", "저장하는 중 — 관리자 승인 창에서 허용하세요…");
+    public static string AiModelSaving => MonSaving;
     public static string AiModelSaved(string model) => T(
         $"Saved — AI advice now uses '{model}'. The monitoring service is restarting to apply.",
         $"저장했습니다 — 이제 '{model}' 모델로 조언합니다. 감시 서비스가 다시 시작되며 적용됩니다.");
-    public static string AiModelNotSaved => T("Not saved — administrator approval is required.", "저장하지 않았습니다 — 관리자 승인이 필요합니다.");
+    public static string AiModelNotSaved => MonNotSaved;
     public static string AiModelOverridden(string model) => T(
         $"Saved, but the HOMEBASE__llmAdvisor__model environment variable overrides the config file, so '{model}' is still used.",
         $"저장했지만 환경 변수 HOMEBASE__llmAdvisor__model 이 설정 파일보다 우선해서 아직 '{model}' 모델을 씁니다.");
