@@ -91,7 +91,8 @@
       </ItemsControl>
     </StackPanel>
 
-    <!-- Link another PC (DECISIONS M-29): paste that PC's pairing link; both then see each other's state and notifications. -->
+    <!-- Link another PC (DECISIONS M-29): paste that PC's pairing link; both then see each other's state and notifications.
+         The list below is every linked PC once, whichever way it is linked (M-47 links PCs both ways). -->
     <StackPanel x:Name="LinkPanel" Visibility="Collapsed">
       <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
         <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhoneLinkHeader}"/>
@@ -113,7 +114,7 @@
             <Border Style="{StaticResource Card}" Margin="0,0,0,6">
               <DockPanel>
                 <Button DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}" Content="{x:Static local:L.PhoneUnlink}"
-                        Tag="{Binding PcId}" Click="Unlink_Click" VerticalAlignment="Center"/>
+                        Tag="{Binding Pc}" Click="Unlink_Click" VerticalAlignment="Center"/>
                 <Ellipse DockPanel.Dock="Left" Width="9" Height="9" Fill="{Binding Dot}" VerticalAlignment="Top" Margin="0,5,8,0"/>
                 <StackPanel>
                   <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{Binding Name}"/>

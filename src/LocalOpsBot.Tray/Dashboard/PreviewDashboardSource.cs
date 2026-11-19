@@ -32,6 +32,9 @@ internal sealed class PreviewDashboardSource : IDashboardSource
                 new DeviceEntry("dev-laptop", "LAPTOP-JEIEL", DeviceKind.Pc, "Windows", now.AddSeconds(-12), true,
                     new DeviceStatus("0.33.0", CpuPct: 9, MemUsedBytes: 9_100_000_000, MemTotalBytes: 16_000_000_000, UptimeSec: 7_400,
                         Os: "Windows 11 Home 24H2"), PcId: "pc-laptop"),
+                // A group links PCs both ways (M-47): WORK-PC is also paired here, and shows once.
+                new DeviceEntry("dev-work", "WORK-PC", DeviceKind.Pc, "Windows", now.AddSeconds(-20), true,
+                    new DeviceStatus("0.33.0", CpuPct: 30, MemUsedBytes: 20_000_000_000, MemTotalBytes: 32_000_000_000), PcId: "pc-work"),
                 new DeviceEntry("dev-s24", "Galaxy S24", DeviceKind.Phone, "samsung SM-S921N", now.AddSeconds(-40), true, phone),
                 new DeviceEntry("dev-tab", "Galaxy Tab S9", DeviceKind.Phone, "samsung SM-X710", now.AddHours(-5), false,
                     new DeviceStatus("0.31.0", Battery: 41, Charging: false, Network: "wifi")),
@@ -49,13 +52,16 @@ internal sealed class PreviewDashboardSource : IDashboardSource
                         StorageTotalBytes: 128_000_000_000, BatteryTempC: 36.2, PowerSave: true, Thermal: "light")),
             },
             null, "w-self");
+        // This PC's link to the laptop has not got through (another network, say), but the laptop reports here:
+        // its one entry is online and shares its live view here.
+        var laptopLink = new LinkedHubView("pc-laptop", "LAPTOP-JEIEL", false, null, null, Array.Empty<DeviceEntry>(), null);
         var local = new[]
         {
             new LocalDeviceInfo("dev-s24", now.AddDays(-3), true, new[] { "advisor", "event_log" }),
             new LocalDeviceInfo("dev-tab", now.AddDays(-20), false, null),
             new LocalDeviceInfo("dev-laptop", now.AddDays(-2), false, null),
         };
-        return Task.FromResult<DeviceOverview?>(new DeviceOverview(here, new[] { hub }, local));
+        return Task.FromResult<DeviceOverview?>(new DeviceOverview(here, new[] { hub, laptopLink }, local));
     }
 
     public Task<LiveView?> LiveAsync(string target)

@@ -42,7 +42,7 @@ public partial class PhoneConnectPanel : UserControl
 
     private sealed record DeviceRow(string DeviceId, string Name, string Detail);
 
-    private sealed record HubRow(string PcId, string Name, string Detail, Brush Dot);
+    private sealed record PcRow(LinkedPc Pc, string Name, string Detail, Brush Dot);
 
     private PairingOffer? _offer;
 
@@ -309,22 +309,26 @@ public partial class PhoneConnectPanel : UserControl
             // instead of claiming that no phone is paired.
             if ((bool?)r["ok"] == true)
             {
-                var devices = r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new();
+                // Phones only: a PC paired here is on the PC list below, together with this PC's link to it —
+                // a group links PCs both ways (M-47), so it would otherwise show twice.
+                var phones = (r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new())
+                    .Where(d => d.Kind != DeviceKind.Pc).ToList();
                 // The group's alias for a device (M-51) in place of its name, which then leads the detail line.
-                DeviceList.ItemsSource = devices.Select(d => new DeviceRow(
+                DeviceList.ItemsSource = phones.Select(d => new DeviceRow(
                     d.DeviceId,
                     DeviceNames.Show(d.Kind, d.Name, PhoneKey(d)),
                     AliasedFrom(d.Kind, d.Name, PhoneKey(d)) +
-                    (d.Kind == DeviceKind.Pc ? "PC" : d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
+                    (d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
                     (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""))).ToList();
-                NoDevicesText.Visibility = devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                NoDevicesText.Visibility = phones.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { }
-        await LoadHubsAsync();
+        await LoadPcsAsync();
     }
 
-    private async Task LoadHubsAsync()
+    /// <summary>The PCs linked either way (M-29, M-47), one row each.</summary>
+    private async Task LoadPcsAsync()
     {
         var client = MobileHost.Client;
         if (client is null) return;
@@ -334,11 +338,14 @@ public partial class PhoneConnectPanel : UserControl
             if ((bool?)r["ok"] != true) return;
             var overview = r["payload"]?.Deserialize<DeviceOverview>(MobileProtocol.Json);
             if (overview is null) return;
-            HubList.ItemsSource = overview.Hubs.Select(h => new HubRow(
-                h.PcId,
-                DeviceNames.Show(DeviceKind.Pc, h.PcName, GroupKeys.Pc(h.PcId)),
-                AliasedFrom(DeviceKind.Pc, h.PcName, GroupKeys.Pc(h.PcId)) + DeviceText.Hub(h),
-                (Brush)FindResource(h.Online ? "Brush.StatusOk" : "Brush.StatusWarn"))).ToList();
+            HubList.ItemsSource = LinkedPcs.Merge(overview.Hubs, overview.Here.Devices).Select(p =>
+            {
+                var key = p.PcId is { } pcId ? GroupKeys.Pc(pcId) : null;
+                return new PcRow(p,
+                    DeviceNames.Show(DeviceKind.Pc, p.Name, key),
+                    AliasedFrom(DeviceKind.Pc, p.Name, key) + DeviceText.Pc(p),
+                    (Brush)FindResource(p.Online ? "Brush.StatusOk" : "Brush.StatusWarn"));
+            }).ToList();
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { }
     }
@@ -347,8 +354,8 @@ public partial class PhoneConnectPanel : UserControl
     private static string AliasedFrom(string kind, string name, string? key) =>
         DeviceNames.AliasOf(key, kind, name) is null ? "" : name + " · ";
 
-    /// <summary>A phone's group key (a PC paired here is found by its name).</summary>
-    private static string? PhoneKey(MobileDeviceInfo d) => d.Kind == DeviceKind.Pc ? null : GroupKeys.PhoneByName(d.Name, d.Model);
+    /// <summary>A phone's group key.</summary>
+    private static string PhoneKey(MobileDeviceInfo d) => GroupKeys.PhoneByName(d.Name, d.Model);
 
     private void CopyLink_Click(object sender, RoutedEventArgs e)
     {
@@ -497,9 +504,17 @@ public partial class PhoneConnectPanel : UserControl
 
     private async void Unlink_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not string pcId || MobileHost.Client is not { } client) return;
+        if ((sender as FrameworkElement)?.Tag is not LinkedPc pc || MobileHost.Client is not { } client) return;
         if (!MessageDialog.Show("Homebase", L.PhoneUnlinkConfirm, L.PhoneUnlink, L.Cancel, owner: Window.GetWindow(this))) return;
-        try { await client.RequestAsync(MobileBridge.OpHubsUnlink, new { pcId }, timeout: TimeSpan.FromSeconds(20)); }
+        try
+        {
+            // By pcId the Agent takes the PC out of the group: its link there and its pairing here (M-47).
+            if (pc.PcId is { } pcId)
+                await client.RequestAsync(MobileBridge.OpHubsUnlink, new { pcId }, timeout: TimeSpan.FromSeconds(20));
+            // A pairing whose pcId the Agent doesn't know yet is not reached that way.
+            foreach (var deviceId in pc.RevokeIds)
+                await client.RequestAsync(MobileBridge.OpDevicesRevoke, new { deviceId });
+        }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
         await LoadDevicesAsync();
     }
