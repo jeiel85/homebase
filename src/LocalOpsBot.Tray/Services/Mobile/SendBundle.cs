@@ -17,7 +17,10 @@ internal static class SendBundle
         public bool NeedsZip => Folders.Count > 0 || Files.Count > TransferProtocol.MaxFiles;
     }
 
-    /// <summary>The zip, how many files could not be read into it, or why there is none (<c>too_large</c>, <c>empty</c>, <c>failed</c>).</summary>
+    /// <summary>
+    /// The zip, how many files or folders could not be read into it (they are left out, and the user is told), or why
+    /// there is none (<c>too_large</c>, <c>empty</c>, <c>failed</c>).
+    /// </summary>
     public sealed record Result(string? Path, int Skipped, string? Error);
 
     public static string TempRoot => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Homebase", "send");
@@ -70,22 +73,23 @@ internal static class SendBundle
     /// <summary>
     /// Writes <paramref name="selection"/> into a new zip at <paramref name="zipPath"/>: each file at the top, each folder
     /// as a folder with everything under it. Hidden and system files, and folders that are links elsewhere (junctions),
-    /// are left out; a file that can't be read is skipped and counted. Stops before writing when the files add up to more
-    /// than <paramref name="maxBytes"/>.
+    /// are left out; a file or folder that can't be read is skipped and counted. Stops before writing when the files add
+    /// up to more than <paramref name="maxBytes"/>.
     /// </summary>
     public static Result Create(Selection selection, string zipPath, long maxBytes = TransferProtocol.MaxFileBytes, CancellationToken ct = default)
     {
         var entries = new List<(string Source, string Name)>();
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skipped = 0;
         foreach (var file in selection.Files)
             entries.Add((file, Unique(used, System.IO.Path.GetFileName(file))));
         foreach (var folder in selection.Folders)
         {
             var root = Unique(used, System.IO.Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : "folder");
-            foreach (var file in Walk(folder))
+            foreach (var file in Walk(folder, ref skipped))
                 entries.Add((file, root + "/" + System.IO.Path.GetRelativePath(folder, file).Replace('\\', '/')));
         }
-        if (entries.Count == 0) return new(null, 0, "empty");
+        if (entries.Count == 0) return new(null, skipped, "empty");
 
         long total = 0;
         foreach (var (source, _) in entries)
@@ -93,9 +97,8 @@ internal static class SendBundle
             try { total += new FileInfo(source).Length; }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
-        if (total > maxBytes) return new(null, 0, "too_large");
+        if (total > maxBytes) return new(null, skipped, "too_large");
 
-        var skipped = 0;
         var written = 0;
         try
         {
@@ -142,9 +145,13 @@ internal static class SendBundle
         }
     }
 
-    /// <summary>Every file under <paramref name="folder"/>, without following junctions or taking hidden and system files.</summary>
-    private static IEnumerable<string> Walk(string folder)
+    /// <summary>
+    /// Every file under <paramref name="folder"/>, without following junctions or taking hidden and system files. A folder
+    /// that can't be listed (its permissions) is left out and counted in <paramref name="unreadable"/> (Codex review on #102).
+    /// </summary>
+    private static List<string> Walk(string folder, ref int unreadable)
     {
+        var files = new List<string>();
         const FileAttributes Skip = FileAttributes.Hidden | FileAttributes.System;
         var pending = new Stack<string>();
         pending.Push(folder);
@@ -153,7 +160,11 @@ internal static class SendBundle
             var dir = pending.Pop();
             IEnumerable<FileSystemInfo> children;
             try { children = new DirectoryInfo(dir).EnumerateFileSystemInfos().ToList(); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                unreadable++;
+                continue;
+            }
             foreach (var child in children.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
                 if ((child.Attributes & Skip) != 0) continue;
@@ -163,10 +174,11 @@ internal static class SendBundle
                 }
                 else
                 {
-                    yield return child.FullName;
+                    files.Add(child.FullName);
                 }
             }
         }
+        return files;
     }
 
     private static string Unique(HashSet<string> used, string name)
