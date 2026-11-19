@@ -65,9 +65,12 @@ public sealed class OllamaReadinessChecker
         }
     }
 
-    // Ollama tags look like "llama3.2:1b". Match the configured model exactly, or by base name
-    // when the user configured a bare name (no tag) so "llama3.2" accepts "llama3.2:latest".
-    private static bool ModelMatches(string installed, string wanted)
+    /// <summary>
+    /// Whether the pulled model <paramref name="installed"/> is the configured <paramref name="wanted"/>.
+    /// Ollama tags look like "llama3.2:1b": an exact match (ignoring case), or by base name when the
+    /// configured name has no tag, so "llama3.2" accepts "llama3.2:latest".
+    /// </summary>
+    public static bool ModelMatches(string installed, string wanted)
     {
         if (string.Equals(installed, wanted, StringComparison.OrdinalIgnoreCase))
             return true;

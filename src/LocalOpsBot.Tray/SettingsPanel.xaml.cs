@@ -1,17 +1,21 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Text.Json;
 using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
 
 public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Ai, Updates }
+
+/// <summary>One entry of the AI advice model picker: the model name and a note after it (empty, or
+/// whether it is the model in use).</summary>
+public sealed record ModelPick(string Name, string Note);
 
 /// <summary>
 /// Everything that changes how Homebase behaves, one area per item down the left — the dashboard's
@@ -28,7 +32,8 @@ public partial class SettingsPanel : UserControl
     private bool _loadingMonitors;
     private bool _inView;
     private bool _loaded;
-    private string _aiModelShown = "";
+    private string? _aiCurrent; // the picker entry that is the model in use; null before the first probe
+    private bool _savingModel;
 
     public SettingsPanel()
     {
@@ -87,8 +92,11 @@ public partial class SettingsPanel : UserControl
     {
         TokenInput.Clear();
         ChatIdInput.Clear();
-        ModelInput.Clear();
-        _aiModelShown = ""; // the next probe fills in the saved model again
+        // An unsaved pick is forgotten; the next probe fills the picker in again.
+        _aiCurrent = null;
+        ModelPicker.ItemsSource = null;
+        ModelPicker.IsEnabled = false;
+        AiModelNoneText.Visibility = Visibility.Collapsed;
         PhonePanel.Forget();
         TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = AdviceStatusText.Text = string.Empty;
         AdviceBox.Visibility = Visibility.Collapsed;
@@ -502,33 +510,43 @@ public partial class SettingsPanel : UserControl
         AdviceBox.Visibility = Visibility.Visible;
     }
 
-    // Each probe re-reads the config: show the saved model in the field unless something else was typed
-    // there, and list what the server has pulled so one click picks it.
+    // Each probe re-reads the config and what the server has pulled: the picker lists the pulled models
+    // with the configured one marked and picked — unless another one was picked and not saved yet, which
+    // stays picked while the server still has it.
     private void OnOllamaProbed(OllamaProbe p)
     {
-        if (ModelInput.Text.Trim() == _aiModelShown) ModelInput.Text = p.Model;
-        _aiModelShown = p.Model;
-        SaveModelButton.IsEnabled = true;
+        var pending = PickedModel() is { } picked && !SameModel(picked, _aiCurrent) ? picked : null;
+        var choices = LlmAdvisorConfigurator.ChoicesFor(p.Model, p.Installed);
+        var currentNote = choices.CurrentPulled ? L.AiModelInUse
+            : p.Status == OllamaReadiness.Unreachable ? L.AiModelSet
+            : L.AiModelSetNotPulled;
+        var picks = choices.Models
+            .Select(m => new ModelPick(m, SameModel(m, choices.Current) ? "  " + currentNote : ""))
+            .ToList();
 
-        InstalledModelsPanel.Children.Clear();
-        foreach (var name in p.Installed.Order(StringComparer.OrdinalIgnoreCase))
-        {
-            var link = new Hyperlink(new Run(name)) { Foreground = (Brush)FindResource("Brush.InkSoft") };
-            link.Click += (_, _) => ModelInput.Text = name;
-            InstalledModelsPanel.Children.Add(new TextBlock(link)
-            {
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 12,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 2, 14, 2),
-            });
-        }
-        InstalledModelsRow.Visibility = p.Installed.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _aiCurrent = choices.Current;
+        ModelPicker.ItemsSource = picks;
+        ModelPicker.SelectedItem = picks.FirstOrDefault(m => SameModel(m.Name, pending))
+            ?? picks.First(m => SameModel(m.Name, choices.Current));
+        ModelPicker.IsEnabled = p.Installed.Count > 0;
+        AiModelNoneText.Visibility = p.Installed.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        UpdateModelSave();
     }
+
+    private void ModelPicker_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateModelSave();
+
+    private string? PickedModel() => (ModelPicker.SelectedItem as ModelPick)?.Name;
+
+    // Ollama matches model names without regard to case.
+    private static bool SameModel(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    // SAVE is offered only for a pick that isn't the model already in use, and not while a save runs.
+    private void UpdateModelSave() =>
+        SaveModelButton.IsEnabled = !_savingModel && PickedModel() is { } m && !SameModel(m, _aiCurrent);
 
     private async void SaveModel_Click(object sender, RoutedEventArgs e)
     {
-        var model = ModelInput.Text.Trim();
+        if (PickedModel() is not { } model) return;
         // Checked before raising UAC so a typo or a no-op never costs an approval prompt.
         switch (LlmAdvisorConfigurator.Check(model, OllamaPanel.Model))
         {
@@ -536,7 +554,8 @@ public partial class SettingsPanel : UserControl
             case ModelChangeCheck.Unchanged: SetResult(AiModelStatusText, L.AiModelSame, null); return;
         }
 
-        SaveModelButton.IsEnabled = false;
+        _savingModel = true;
+        UpdateModelSave();
         SetResult(AiModelStatusText, L.AiModelSaving, null);
         try
         {
@@ -560,7 +579,8 @@ public partial class SettingsPanel : UserControl
         }
         finally
         {
-            SaveModelButton.IsEnabled = true;
+            _savingModel = false;
+            UpdateModelSave();
         }
     }
 

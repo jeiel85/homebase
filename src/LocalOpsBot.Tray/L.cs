@@ -195,15 +195,21 @@ public static class L
     public static string AiModelHeader => T("CHANGE MODEL", "모델 바꾸기");
     public static string AiModelLabel => T("Model", "모델");
     public static string AiModelHint => T(
-        "Pick one already on this PC, or type a name from ollama.com/library (e.g. llama3.2:3b, qwen2.5:3b). Smaller models answer faster. If it isn't downloaded yet, RUN PULL appears above after saving.",
-        "이 PC에 받아 둔 모델을 고르거나 ollama.com/library의 이름을 적습니다(예: llama3.2:3b, qwen2.5:3b). 작은 모델일수록 빨리 답합니다. 아직 받지 않은 모델이면 저장한 뒤 위에 '모델 받기'가 나옵니다.");
-    public static string AiModelInstalled => T("On this PC (click to use):", "이 PC에 받은 모델 (누르면 입력):");
+        "Pick one of the models Ollama has on this PC. Smaller models answer faster. To add one, run ollama pull <name> in a command prompt (names at ollama.com/library, e.g. qwen2.5:3b), then press RE-CHECK above.",
+        "이 PC의 Ollama에 받아 둔 모델 중에서 고릅니다. 작은 모델일수록 빨리 답합니다. 목록에 없는 모델은 명령 프롬프트에서 ollama pull <이름>으로 받은 뒤(이름은 ollama.com/library, 예: qwen2.5:3b) 위의 '다시 확인'을 누르세요.");
+    public static string AiModelNone => T(
+        "Nothing to pick yet — start Ollama and pull a model above, then press RE-CHECK.",
+        "아직 고를 모델이 없습니다 — 위에서 Ollama를 시작하고 모델을 받은 뒤 '다시 확인'을 누르세요.");
+    // Notes after a model name in the picker, for the entry that is the configured model.
+    public static string AiModelInUse => T("· in use", "· 지금 사용 중");
+    public static string AiModelSetNotPulled => T("· set, not pulled yet", "· 지금 설정 · 아직 받지 않음");
+    public static string AiModelSet => T("· set", "· 지금 설정");
     // Same admin-approval wording as the watch list: both save through ElevatedConfig.
     public static string AiModelSaveNote => MonSaveNote;
     public static string AiModelSave => T("SAVE", "저장");
     public static string AiModelInvalid => T(
-        "Enter a model name of letters, digits and . _ - : / (e.g. llama3.2:3b).",
-        "모델 이름은 영문·숫자와 . _ - : / 로 적습니다(예: llama3.2:3b).");
+        "That model name has characters Homebase doesn't accept (only letters, digits and . _ - : /).",
+        "이 모델 이름에는 쓸 수 없는 문자가 있습니다(영문·숫자와 . _ - : / 만 가능).");
     public static string AiModelSame => T("That's already the model in use.", "지금 쓰는 모델과 같습니다.");
     public static string AiModelSaving => MonSaving;
     public static string AiModelSaved(string model) => T(
