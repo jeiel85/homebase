@@ -58,6 +58,30 @@ public static class L
     public static string ClipReceiveFailedBody(string from) => T(
         $"{from} sent text, but another app was holding the clipboard. {from} was told to send it again.",
         $"{from}에서 텍스트를 보냈지만 다른 앱이 클립보드를 쓰고 있었습니다. 보낸 쪽에 다시 보내라고 알렸습니다.");
+    // ── Received files (DECISIONS M-64) ──────────────────────────────────────
+    public static string FilesReceivedTitle(string from, int count, long bytes) => T(
+        $"{count} file{(count == 1 ? "" : "s")} from {from} ({Size(bytes)})",
+        $"{from}에서 받은 파일 {count}개 ({Size(bytes)})");
+    public static string FilesReceivedBody(IReadOnlyList<string> names, bool pictureOnClipboard, bool all)
+    {
+        var shown = string.Join(", ", names.Take(3)) + (names.Count > 3 ? T($" and {names.Count - 3} more", $" 외 {names.Count - 3}개") : "");
+        var text = T($"Saved in Downloads\\Homebase: {shown}.", $"다운로드\\Homebase에 저장했습니다: {shown}.");
+        if (pictureOnClipboard) text += T(" The picture is on the clipboard too.", " 사진은 클립보드에도 넣었습니다.");
+        if (!all) text += T(" Some files could not be saved.", " 일부 파일은 저장하지 못했습니다.");
+        return text + T(" Click to show.", " 누르면 폴더가 열립니다.");
+    }
+    public static string FilesFailedTitle(string from) => T($"Files from {from} not saved", $"{from}에서 받은 파일을 저장하지 못했습니다");
+    public static string FilesFailedBody => T("Check the free space in Downloads. They are kept on this PC for a day and saved at the next sign-in.",
+        "다운로드 폴더의 여유 공간을 확인하세요. 이 PC에 하루 동안 보관했다가 다음 로그인 때 다시 저장합니다.");
+
+    private static string Size(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} GB",
+    };
+
     public static string ClipError(string? code) => code switch
     {
         "no_user_session" => T("nobody is signed in there", "로그인한 사용자가 없습니다"),

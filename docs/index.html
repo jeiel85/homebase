@@ -687,7 +687,7 @@
         <a href="#install">설치</a>
       </nav>
       <div class="mast-r">
-        <a class="ver" href="https://github.com/jeiel85/homebase/releases/latest" title="최신 릴리스"><span class="led" aria-hidden="true"></span><span data-version>v0.49.0</span></a>
+        <a class="ver" href="https://github.com/jeiel85/homebase/releases/latest" title="최신 릴리스"><span class="led" aria-hidden="true"></span><span data-version>v0.50.0</span></a>
         <button class="theme-btn" type="button" id="themeBtn" aria-label="밝게/어둡게 바꾸기">
           <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
           <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
@@ -781,7 +781,7 @@
                       <div><div class="mm-l"><span>RAM</span><b data-bind="w.ram">61%</b></div><div class="seg" data-n="16" data-seg="w.ram"></div></div>
                     </div>
                   </div>
-                  <div class="bay-bot"><div><b>온라인 · 같은 Wi-Fi</b><small>DESKTOP-5BP128L · Agent v0.49.0</small></div><span class="chev">›</span></div>
+                  <div class="bay-bot"><div><b>온라인 · 같은 Wi-Fi</b><small>DESKTOP-5BP128L · Agent v0.50.0</small></div><span class="chev">›</span></div>
                 </div>
                 <div class="bay">
                   <div class="bay-top">
@@ -791,7 +791,7 @@
                       <div><div class="mm-l"><span>RAM</span><b data-bind="l.ram">44%</b></div><div class="seg" data-n="16" data-seg="l.ram"></div></div>
                     </div>
                   </div>
-                  <div class="bay-bot"><div><b>온라인 · Tailscale</b><small>DESKTOP-V0JCEPJ · Agent v0.49.0</small></div><span class="chev">›</span></div>
+                  <div class="bay-bot"><div><b>온라인 · Tailscale</b><small>DESKTOP-V0JCEPJ · Agent v0.50.0</small></div><span class="chev">›</span></div>
                 </div>
                 <div class="bay offline">
                   <div class="bay-top">
@@ -954,6 +954,7 @@
               <li><b>PC끼리는 링크나 24단어 연결 코드로.</b> 이미 연결된 기기들이 일회용 코드로 새 기기를 서로 소개합니다.</li>
               <li><b>빼면 그룹 전체에서.</b> 한 PC에서 해제하면 모든 PC에서 끊기고, 그때 꺼져 있던 PC도 켜지면 따라갑니다.</li>
               <li><b>주소가 바뀌어도 다시 이어집니다.</b> 한 PC의 터널 주소나 LAN 주소가 바뀌면, 그 PC가 닿는 쪽에 새 주소를 알려 저절로 다시 연결합니다.</li>
+              <li><b>사진·파일을 PC로.</b> 휴대폰 공유 메뉴에서 Homebase를 고르면 PC의 다운로드 폴더에 저장되고, 사진 한 장이면 PC 클립보드에도 들어갑니다. 큰 파일도 끊긴 곳부터 이어 갑니다.</li>
               <li><b>복사한 텍스트를 서로 보냅니다.</b> PC 트레이의 "클립보드 보내기", 휴대폰의 공유 메뉴나 빠른 설정 타일로 보내면 받는 기기의 클립보드에 바로 들어갑니다. 내용은 그 기기만 여는 키로 암호화됩니다.</li>
             </ul>
           </div>
@@ -1143,6 +1144,7 @@
         <div class="log">
           <div class="log-h"><span>최근 릴리스</span><a href="https://github.com/jeiel85/homebase/blob/main/CHANGELOG.md">전체 변경 내역 →</a></div>
           <ol>
+            <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.50.0"><b class="v">v0.50.0</b><time datetime="2026-11-19">11.19</time><span>휴대폰 사진·파일을 PC로 보내기</span></a></li>
             <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.49.0"><b class="v">v0.49.0</b><time datetime="2026-11-19">11.19</time><span>PC·휴대폰 사이에 클립보드 텍스트 보내기</span></a></li>
             <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.48.0"><b class="v">v0.48.0</b><time datetime="2026-11-19">11.19</time><span>자동 AI 조언 켜기, 경보 알림에서 바로 조언</span></a></li>
             <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.47.0"><b class="v">v0.47.0</b><time datetime="2026-11-19">11.19</time><span>AI 조언 모델을 받아 둔 목록에서 고르기</span></a></li>
@@ -1152,7 +1154,6 @@
             <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.43.1"><b class="v">v0.43.1</b><time datetime="2026-11-19">11.19</time><span>Telegram 없이 설치, 처음 설정은 휴대폰부터</span></a></li>
             <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.43.0"><b class="v">v0.43.0</b><time datetime="2026-11-19">11.19</time><span>급한 알림만 소리·진동이 기본값</span></a></li>
             <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.42.3"><b class="v">v0.42.3</b><time datetime="2026-11-19">11.19</time><span>양쪽으로 연결된 PC가 한 번만 보임</span></a></li>
-            <li><a href="https://github.com/jeiel85/homebase/releases/tag/v0.42.2"><b class="v">v0.42.2</b><time datetime="2026-11-19">11.19</time><span>업데이트 중 트레이 오류 창 수정</span></a></li>
           </ol>
         </div>
       </div>
@@ -1223,7 +1224,7 @@
           <svg viewBox="18 18 72 72" aria-hidden="true"><rect x="18" y="18" width="72" height="72" fill="#21242E"/><path fill="#ECAB37" d="M54,30 L30,52 L78,52 Z M36,52 L72,52 L72,78 L36,78 Z"/><path fill="#21242E" d="M49,62 L59,62 L59,78 L49,78 Z"/></svg>
           <span class="wordmark">HOMEBASE</span>
         </a>
-        <span>MIT License · <span data-version>v0.49.0</span></span>
+        <span>MIT License · <span data-version>v0.50.0</span></span>
         <nav aria-label="바닥글">
           <a href="https://github.com/jeiel85/homebase">GitHub</a>
           <a href="https://github.com/jeiel85/homebase/releases">릴리스</a>

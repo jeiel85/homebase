@@ -72,6 +72,12 @@ internal sealed class MobileBridgeClient : IDisposable
     /// </summary>
     public Func<TrayClip, Task<bool>>? ClipHandler { get; set; }
 
+    /// <summary>
+    /// Saves files another device sent (M-64) and says whether every one was saved; the Agent then deletes its copy.
+    /// Called on a background thread; unset means "could not" (the Agent keeps them for the next Tray).
+    /// </summary>
+    public Func<TrayTransfer, Task<TrayTransferSaved>>? FilesHandler { get; set; }
+
     /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>
     public IReadOnlyList<DeviceAlias>? LastAliases { get; private set; }
 
@@ -140,6 +146,8 @@ internal sealed class MobileBridgeClient : IDisposable
                 // Tells the Agent this tray puts received clipboard text on the clipboard (M-62). An older
                 // Agent answers nothing to a push it doesn't know, and the connection stays.
                 await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipReady), ct);
+                // …and saves received files (M-64); the Agent then offers what waited for a signed-in user.
+                await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpFilesReady), ct);
                 using var watchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 var watcher = Task.Run(() => WatchSessionsAsync(pipe, watchCts.Token));
                 try { await ReadLoopAsync(pipe, ct); }
@@ -227,6 +235,10 @@ internal sealed class MobileBridgeClient : IDisposable
                 if (msg["payload"]?.Deserialize<TrayClip>(MobileProtocol.Json) is { Text.Length: > 0 } clip)
                     _ = Task.Run(() => PutClipAsync(pipe, MobileBridge.StringOf(msg["id"]), clip));
                 break;
+            case MobileBridge.OpTransferReady:
+                if (msg["payload"]?.Deserialize<TrayTransfer>(MobileProtocol.Json) is { Id.Length: > 0, Files.Count: > 0 } transfer)
+                    _ = Task.Run(() => SaveFilesAsync(pipe, transfer));
+                break;
             case MobileBridge.OpAliases:
                 try
                 {
@@ -252,6 +264,20 @@ internal sealed class MobileBridgeClient : IDisposable
         catch (Exception ex) { TrayLog.Warn("Clipboard", $"Received text was not put on the clipboard: {ex.GetType().Name}"); }
         if (id is null) return;
         try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipDone, new TrayClipDone(id, ok)), _cts.Token); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+    }
+
+    /// <summary>Runs <see cref="FilesHandler"/> off the read loop and tells the Agent how it went (<c>transfer.saved</c>).</summary>
+    private async Task SaveFilesAsync(NamedPipeClientStream pipe, TrayTransfer transfer)
+    {
+        TrayTransferSaved saved;
+        try { saved = FilesHandler is { } handler ? await handler(transfer) : new TrayTransferSaved(transfer.Id, false, "no handler"); }
+        catch (Exception ex)
+        {
+            TrayLog.Warn("Files", $"Received files were not saved: {ex.GetType().Name}");
+            saved = new TrayTransferSaved(transfer.Id, false, ex.GetType().Name);
+        }
+        try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpTransferSaved, saved), _cts.Token); }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
     }
 

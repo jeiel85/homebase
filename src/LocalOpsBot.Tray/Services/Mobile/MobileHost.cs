@@ -30,6 +30,9 @@ internal static class MobileHost
     /// </summary>
     public static Func<LocalOpsBot.Core.Mobile.TrayClip, Task<bool>>? ClipHandler { get; set; }
 
+    /// <summary>Saves files another device sent (DECISIONS M-64). Static for the same reason. Background thread.</summary>
+    public static Func<LocalOpsBot.Core.Mobile.TrayTransfer, Task<LocalOpsBot.Core.Mobile.TrayTransferSaved>>? FilesHandler { get; set; }
+
     public static bool IsEnabled() => TrayConfig.Load().GetSection("mobile").GetValue<bool>("enabled");
 
     public static MobileBridgeClient EnsureStarted()
@@ -40,6 +43,9 @@ internal static class MobileHost
         _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
         _client.ToastRequested += t => ToastRequested?.Invoke(t);
         _client.ClipHandler = c => ClipHandler is { } handler ? handler(c) : Task.FromResult(false);
+        _client.FilesHandler = t => FilesHandler is { } handler
+            ? handler(t)
+            : Task.FromResult(new LocalOpsBot.Core.Mobile.TrayTransferSaved(t.Id, false, "no handler"));
         _client.AliasesReceived += DeviceNames.Apply;
         // The client connects from its constructor: the first table may already be in (Apply is idempotent).
         if (_client.LastAliases is { } aliases) DeviceNames.Apply(aliases);

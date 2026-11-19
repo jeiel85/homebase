@@ -53,6 +53,7 @@ public sealed class MobileBridgeServer : BackgroundService
     private readonly ApprovalBroker? _approvals;
     private readonly OnDemandAdvice? _advice;
     private readonly ClipShareService? _clips;
+    private readonly FileShareService? _files;
     private readonly List<Connection> _connections = new();
 
     /// <summary>
@@ -79,6 +80,12 @@ public sealed class MobileBridgeServer : BackgroundService
 
         /// <summary>The Tray said it puts received clipboard text on the clipboard (M-62); an older one would drop it.</summary>
         public volatile bool ClipReady;
+
+        /// <summary>The Tray said it saves received files (M-64).</summary>
+        public volatile bool FilesReady;
+
+        /// <summary>Transfers handed to this Tray and not answered yet; offered again elsewhere if it goes away.</summary>
+        public ConcurrentDictionary<string, byte> Transfers { get; } = new(StringComparer.Ordinal);
     }
 
     public MobileBridgeServer(
@@ -96,8 +103,11 @@ public sealed class MobileBridgeServer : BackgroundService
         DeviceGroupService? group = null,
         ApprovalBroker? approvals = null,
         OnDemandAdvice? advice = null,
-        ClipShareService? clips = null)
+        ClipShareService? clips = null,
+        FileShareService? files = null)
     {
+        _files = files;
+        if (_files is not null) _files.Tray = DeliverFiles;
         _clips = clips;
         if (_clips is not null) _clips.Tray = DeliverClipAsync;
         _advice = advice;
@@ -215,6 +225,12 @@ public sealed class MobileBridgeServer : BackgroundService
             // fell back to the PC: withdraw its prompts now rather than at their deadline (#64).
             conn.Closed = true;
             foreach (var approvalId in conn.Approvals.Keys) _approvals?.Cancel(approvalId);
+            // Files this Tray was saving when it went: hand them to another Tray now, or to the next one that connects.
+            if (_files is not null && !conn.Transfers.IsEmpty)
+            {
+                foreach (var transferId in conn.Transfers.Keys) _files.OfferLost(transferId);
+                _ = Task.Run(_files.OfferWaiting, CancellationToken.None);
+            }
             await pipe.DisposeAsync();
         }
     }
@@ -241,6 +257,22 @@ public sealed class MobileBridgeServer : BackgroundService
         if (op == MobileBridge.OpClipReady)
         {
             conn.ClipReady = true;
+            return;
+        }
+        if (op == MobileBridge.OpFilesReady)
+        {
+            conn.FilesReady = true;
+            // Off the read loop: offering writes to this very connection.
+            _ = Task.Run(() => _files?.OfferWaiting(), CancellationToken.None);
+            return;
+        }
+        if (op == MobileBridge.OpTransferSaved)
+        {
+            TrayTransferSaved? saved;
+            try { saved = payload?.Deserialize<TrayTransferSaved>(MobileProtocol.Json); }
+            catch (JsonException) { saved = null; }
+            if (saved is not null) conn.Transfers.TryRemove(saved.Id, out _);
+            _files?.Saved(saved);
             return;
         }
         if (op == MobileBridge.OpClipDone)
@@ -596,6 +628,22 @@ public sealed class MobileBridgeServer : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Finished files (M-64) go to one connected Tray that saves files — normally the signed-in user's. False when there
+    /// is none: they wait (24 h) and are offered when one connects.
+    /// </summary>
+    private bool DeliverFiles(TrayTransfer transfer)
+    {
+        Connection? conn;
+        lock (_gate) conn = _connections.FirstOrDefault(c => c.FilesReady && !c.Closed);
+        if (conn is null) return false;
+        conn.Transfers[transfer.Id] = 0;
+        _ = SendAsync(conn, MobileBridge.Message(MobileBridge.OpTransferReady, transfer), CancellationToken.None)
+            .ContinueWith(t => _logger.LogDebug("Files to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
+                TaskContinuationOptions.OnlyOnFaulted);
+        return true;
+    }
+
     private void OnToastRequested(TrayToast toast)
     {
         List<Connection> conns;
@@ -678,6 +726,7 @@ public sealed class MobileBridgeServer : BackgroundService
         _hub.RemoteWatchingChanged -= OnWatchingChanged;
         if (_toasts is not null) _toasts.Requested -= OnToastRequested;
         if (_clips is not null) _clips.Tray = null;
+        if (_files is not null) _files.Tray = null;
         base.Dispose();
     }
 }

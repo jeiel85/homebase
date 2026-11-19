@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.50.0 — Send photos and files from the phone to the PC
+
+### Added
+- **Share photos and files to a PC.** Pick **Homebase** in any app's share menu (one file or many, any kind),
+  choose the PC, and they land in that PC's **Downloads\Homebase** folder. A PC card's menu has
+  **파일 보내기** for the system file picker, and the quick settings tile **클립보드 → PC** sends a copied
+  picture too. A single photo also goes onto the PC's clipboard, ready to paste. Clicking the balloon
+  shows the files in Explorer, and the PC's notification center lists what arrived (names and sizes only).
+- **Big files keep going.** Files go up in 4 MB pieces in the background — on Android 14 and later as a
+  user-started transfer with a progress notification — and pick up where they stopped when the network
+  drops or switches. Up to 20 files, 2 GB each, 4 GB at once. On mobile data, sending more than 20 MB asks
+  first.
+- If nobody is signed in to the PC, the files wait there for a day and are saved at the next sign-in.
+
+### Security
+- Files are encrypted end to end with a key made for each transfer from the key the phone and PC agreed
+  (v0.49.0), on every path including Cloudflare. File names are encrypted too. Each file is checked against
+  its hash before it is saved, and a file that changed on the way is dropped.
+- The monitoring service (which runs as SYSTEM) never writes into your folders: it keeps the files in its
+  own folder, and the tray saves them with your own rights. Saved files are marked as downloaded from the
+  internet, so Windows warns before running or opening them, and nothing is opened automatically. File
+  names are cleaned (no paths, reserved names, hidden direction marks that fake an extension).
+- Every request body to the PC now has a time limit, so a slow sender can no longer hold a connection open.
+
+### Notes
+- Sending from the PC to a phone or another PC comes next (`docs/FILE_SHARE.md`, 2b).
+- Both ends need v0.50.0: an older PC answers "update Homebase there first".
+
 ## v0.49.0 — Send clipboard text between your PCs and phones
 
 ### Added

@@ -310,6 +310,57 @@ public class ProtocolGoldenTests
         Assert.Equal(content, opened);
     }
 
+    public const string TransferFixtureId = "0c1d2e3f405162738495a6b7c8d9eafb";
+    public static readonly byte[] TransferFixtureFile0 = System.Text.Encoding.UTF8.GetBytes("안건: 클립보드 2단계\n결정: 휴대폰 → PC 먼저\n");
+    public static readonly byte[] TransferFixtureFile1 = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
+    /// <summary>
+    /// <c>transfer.v1.json</c> (M-64): a device's transfer of two small files to a PC — the sealed metadata, one chunk of
+    /// each file and the sealed hashes, all with <see cref="ClipFixtureKey"/> and fixed nonces. The Kotlin test derives
+    /// the transfer key, opens each piece and checks the plaintexts and hashes it lists.
+    /// </summary>
+    [Fact]
+    public void Transfer_matches_the_shared_fixture()
+    {
+        var key = ClipFixtureKey();
+        var meta = new TransferMeta(MobileProtocol.Schema,
+            new[] { new TransferFile("회의록 11월.txt", TransferFixtureFile0.Length, "text/plain"), new TransferFile("screen.png", TransferFixtureFile1.Length, "image/png") },
+            new DateTimeOffset(2026, 11, 19, 6, 0, 0, TimeSpan.Zero));
+        var hashes = new TransferHashes(MobileProtocol.Schema, new[]
+        {
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(TransferFixtureFile0)).ToLowerInvariant(),
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(TransferFixtureFile1)).ToLowerInvariant(),
+        });
+        var transferKey = TransferCrypto.TransferKey(key, TransferFixtureId);
+        var metaNonce = Enumerable.Range(0x40, ClipCrypto.NonceBytes).Select(i => (byte)i).ToArray();
+        var hashNonce = Enumerable.Range(0x50, ClipCrypto.NonceBytes).Select(i => (byte)i).ToArray();
+
+        var actual = new JsonObject
+        {
+            ["schema"] = MobileProtocol.Schema,
+            ["transferId"] = TransferFixtureId,
+            ["meta"] = JsonSerializer.SerializeToNode(TransferMessages.SealMeta(key, TransferFixtureId, meta, metaNonce), MobileProtocol.Json),
+            ["chunks"] = new JsonArray(
+                new JsonObject { ["f"] = 0, ["n"] = 0, ["plain"] = Base64Url.Encode(TransferFixtureFile0),
+                    ["data"] = Base64Url.Encode(TransferCrypto.SealChunk(transferKey, 0, 0, TransferFixtureFile0)) },
+                new JsonObject { ["f"] = 1, ["n"] = 0, ["plain"] = Base64Url.Encode(TransferFixtureFile1),
+                    ["data"] = Base64Url.Encode(TransferCrypto.SealChunk(transferKey, 1, 0, TransferFixtureFile1)) }),
+            ["hashes"] = JsonSerializer.SerializeToNode(TransferMessages.SealHashes(key, TransferFixtureId, hashes, hashNonce), MobileProtocol.Json),
+        };
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "transfer.v1.json");
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"transfer.v1.json drifted:\n{actual}");
+        var fixture = JsonNode.Parse(File.ReadAllText(path))!;
+        var openedMeta = TransferMessages.OpenMeta(key, fixture["meta"].Deserialize<ClipEnvelope>(MobileProtocol.Json))!;
+        Assert.Equal(meta.Files, openedMeta.Files);
+        Assert.Equal(hashes.Sha256, TransferMessages.OpenHashes(key, fixture["hashes"].Deserialize<ClipEnvelope>(MobileProtocol.Json))!.Sha256);
+        Assert.Equal(TransferFixtureFile1, TransferCrypto.OpenChunk(transferKey, 1, 0, Base64Url.Decode((string?)fixture["chunks"]![1]!["data"])));
+        // A chunk at another position doesn't open.
+        Assert.Null(TransferCrypto.OpenChunk(transferKey, 0, 0, Base64Url.Decode((string?)fixture["chunks"]![1]!["data"])));
+    }
+
     /// <summary>The QR text (M-20). The Android app parses the same file back into the offer fixture's paths.</summary>
     [Fact]
     public void Pairing_link_matches_the_shared_fixture_and_round_trips()

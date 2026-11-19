@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.PersistableBundle
 import android.util.Log
@@ -36,6 +37,25 @@ object PhoneClipboard {
         // A SecurityException when Android decides this app may not read it right now.
         Log.w(TAG, "could not read the clipboard: ${e.javaClass.simpleName}")
         null
+    }
+
+    /**
+     * A picture on the clipboard (a screenshot's "copy", an image copied in a gallery app): its content URI when
+     * the first item is one of an `image/` type, else null. Reading the clip grants this app read access to it
+     * while it stays on the clipboard (DECISIONS M-64).
+     */
+    fun readImage(context: Context): Uri? {
+        return try {
+            val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip ?: return null
+            if (clip.itemCount == 0) return null
+            val uri = clip.getItemAt(0).uri ?: return null
+            val image = clip.description.hasMimeType("image/*") ||
+                context.contentResolver.getType(uri)?.startsWith("image/") == true
+            if (image) uri else null
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read a picture from the clipboard: ${e.javaClass.simpleName}")
+            null
+        }
     }
 
     /**

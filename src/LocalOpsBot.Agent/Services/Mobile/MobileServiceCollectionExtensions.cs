@@ -120,6 +120,12 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<ClipShareService>>());
         });
+        // Files from a device (M-64): kept under the mobile folder (SYSTEM/Administrators), read by the Tray over its pipe.
+        services.AddSingleton(sp => new FileShareService(Path.Combine(MobileDeviceStore.DefaultDirectory, "transfers"),
+            sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(), sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<FileShareService>>(), sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>()));
+        services.AddHostedService(sp => sp.GetRequiredService<FileShareService>());
+        services.AddHostedService<TransferPipeServer>();
         services.AddSingleton(sp =>
         {
             var api = new MobileApiServer(
@@ -128,7 +134,7 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
                 sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
                 deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>(),
-                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>(), clips: sp.GetRequiredService<ClipShareService>());
+                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>(), clips: sp.GetRequiredService<ClipShareService>(), files: sp.GetRequiredService<FileShareService>());
             api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
             return api;
         });

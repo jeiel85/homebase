@@ -32,6 +32,8 @@ public sealed class TrayIconManager : IDisposable
     private OnboardingWindow? _onboarding;
     private readonly ToolStripMenuItem _centerItem;
     private readonly ToolStripMenuItem _clipItem;
+    /// <summary>What a click on the balloon now showing does; null = open the notification center.</summary>
+    private Action? _balloonClick;
     private readonly System.Windows.Threading.DispatcherTimer _unreadTimer;
     private readonly System.Windows.Threading.DispatcherTimer _updateTimer;
 
@@ -107,10 +109,18 @@ public sealed class TrayIconManager : IDisposable
         ApplyWatching(MobileHost.IsWatching);
         MobileHost.ToastRequested += OnToastRequested;
         MobileHost.ClipHandler = OnClipReceivedAsync;
+        MobileHost.FilesHandler = OnFilesReceivedAsync;
 
         // A relayed notification's balloon opens the center; the unread count follows new arrivals
         // and is re-read every minute (this PC's alerts do not reach the Tray as balloons).
-        _trayIcon.BalloonTipClicked += (_, _) => ShowNotificationCenter();
+        _trayIcon.BalloonTipClicked += (_, _) =>
+        {
+            // A received file's balloon opens its folder (M-64); the others open the notification center.
+            var click = _balloonClick;
+            _balloonClick = null;
+            if (click is not null) click();
+            else ShowNotificationCenter();
+        };
         NotificationCenter.UnreadChanged += n => _centerItem.Text = L.MenuNotifications(n);
         _unreadTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _unreadTimer.Tick += async (_, _) => await NotificationCenter.RefreshUnreadAsync();
@@ -154,6 +164,7 @@ public sealed class TrayIconManager : IDisposable
             var title = Clip(heading, 63);
             var text = Clip(string.IsNullOrWhiteSpace(toast.Body) ? " " : toast.Body!, 255);
             OwnToasts.Remember(title);
+            _balloonClick = null;
             try { _trayIcon.ShowBalloonTip(6000, title, text, ToolTipIcon.None); }
             catch (Exception) { /* the shell refused (focus assist etc.): the phones still get it */ }
             // A center in view adds it itself and marks it read; otherwise count it.
@@ -190,6 +201,46 @@ public sealed class TrayIconManager : IDisposable
                 ok ? L.ClipReceivedBody(from, clip.Text.Length) : L.ClipReceiveFailedBody(from));
             return ok;
         }).Task.Unwrap();
+    }
+
+    /// <summary>
+    /// Files another device sent (M-64): saved in Downloads\Homebase with the user's rights, a single picture also put on
+    /// the clipboard, then a balloon whose click shows them in Explorer. The answer tells the Agent whether to delete its copy.
+    /// </summary>
+    private async Task<LocalOpsBot.Core.Mobile.TrayTransferSaved> OnFilesReceivedAsync(LocalOpsBot.Core.Mobile.TrayTransfer transfer)
+    {
+        var result = await FileReceiver.SaveAsync(transfer);
+        var from = DeviceNames.Show(transfer.SourceKind, transfer.Source);
+        var total = transfer.Files.Sum(f => f.Size);
+        TrayLog.Info("Files", $"{result.Paths.Count} of {transfer.Files.Count} file(s) from {from} ({total} bytes) saved in {FileReceiver.Folder()}" +
+            (result.Ok ? "" : $"; failed: {result.Error}"));
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !_disposed)
+        {
+            await dispatcher.InvokeAsync(async () =>
+            {
+                if (_disposed) return;
+                var picture = result.Paths.Count == 1 && transfer.Files.Count == 1 && FileReceiver.IsPicture(transfer.Files[0])
+                    && await ClipboardShare.PutImageAsync(result.Paths[0]);
+                if (result.Paths.Count == 0)
+                {
+                    ShowBalloon(L.FilesFailedTitle(from), L.FilesFailedBody);
+                    return;
+                }
+                var first = result.Paths[0];
+                ShowBalloon(L.FilesReceivedTitle(from, result.Paths.Count, total),
+                    L.FilesReceivedBody(result.Paths.Select(System.IO.Path.GetFileName).ToList()!, picture, result.Ok),
+                    () => OpenInExplorer(first));
+            }).Task.Unwrap();
+        }
+        return new LocalOpsBot.Core.Mobile.TrayTransferSaved(transfer.Id, result.Ok, result.Error);
+    }
+
+    private static void OpenInExplorer(string path)
+    {
+        try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }
+        catch (Exception ex) { TrayLog.Warn("Files", $"Opening Explorer failed: {ex.Message}"); }
     }
 
     /// <summary>The "Send clipboard" submenu: the devices the Agent can reach, asked for when it opens.</summary>
@@ -275,11 +326,12 @@ public sealed class TrayIconManager : IDisposable
     }
 
     /// <summary>A balloon of the tray's own (never forwarded to the phones as a Windows notification).</summary>
-    private void ShowBalloon(string title, string text)
+    private void ShowBalloon(string title, string text, Action? onClick = null)
     {
         if (_disposed) return;
         title = Clip(title, 63);
         OwnToasts.Remember(title);
+        _balloonClick = onClick;
         try { _trayIcon.ShowBalloonTip(5000, title, Clip(string.IsNullOrWhiteSpace(text) ? " " : text, 255), ToolTipIcon.None); }
         catch (Exception) { /* the shell refused (focus assist etc.) */ }
     }
@@ -590,6 +642,7 @@ public sealed class TrayIconManager : IDisposable
         MobileHost.WatchingChanged -= OnWatchingChanged;
         MobileHost.ToastRequested -= OnToastRequested;
         MobileHost.ClipHandler = null;
+        MobileHost.FilesHandler = null;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _baseIcon.Dispose();

@@ -13,6 +13,9 @@
     <!-- Keeps the background jobs scheduled across reboots (JobInfo.setPersisted): presence (M-27), and the
          GitHub build's update check (M-22). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 14+: files to a PC go as a user-initiated data transfer job, which runs until done and shows its
+         own progress (DECISIONS M-64). No foreground service. -->
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -77,10 +80,27 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- Files and pictures, one or several, of any type (DECISIONS M-64). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
-        <!-- The tile's clipboard send and a "long text" notification's fetch (M-62). Not exported: reading
-             the clipboard and sending it on is only ever started by this app. -->
+        <!-- Files to a PC (M-64): the upload job, and the cancel action on its notification. Only the system binds
+             the job; only this app's own notification reaches the receiver. -->
+        <service
+            android:name=".share.UploadJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver
+            android:name=".share.UploadCancelReceiver"
+            android:exported="false" />
+
+        <!-- The tile's clipboard send and a "long text" notification's fetch (M-62), and a PC card's "파일 보내기"
+             (M-64). Not exported: reading the clipboard and sending it on is only ever started by this app. -->
         <activity
             android:name=".clip.ClipActionActivity"
             android:exported="false"
