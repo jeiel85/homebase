@@ -62,6 +62,7 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | GET | `/api/v1/inbox?after=<seq>` | `Authorization: Bearer <token>` | 200 `{schema, next, items[]}` — 새 항목이 없으면 최대 25초 기다린다 · 401 (M-28) |
 | DELETE | `/api/v1/device` | `Authorization: Bearer <token>` | 200 `{schema, deviceId, removed}` — 기기가 스스로 페어링을 끊는다 · 401 (M-29) |
 | POST | `/api/v1/approval` | `Authorization: Bearer <token>` | 본문 `{schema, id, decision}`(`allow`·`deny`) → 200 `{schema, accepted}`. Claude Code 권한 요청(M-48, 푸시의 `approval.id`)에 답한다. 410 `approval_gone`: 이미 답했거나 PC가 더는 기다리지 않음(다른 휴대폰이 먼저 답함, 사용자가 PC로 돌아옴, 10분 지남), 400 잘못된 본문 |
+| POST | `/api/v1/advise` | `Authorization: Bearer <token>` | 본문 `{schema}` → 200 [`advice.v1.json`](mobile-protocol/advice.v1.json) `{schema, ok, text?, summary?, model?, generatedAt, cached, error?, message?}` · 401 (M-59). PC 의 로컬 AI(Ollama) 조언. 조언을 못 만든 것도 200 + `ok: false`: `error` 는 `disabled`·`unreachable`·`model_missing`·`timeout`·`server_error`·`empty`·`failed`, `message` 는 영어 설명. 생성은 한 번에 하나, 성공한 조언은 60초 동안 다시 줌(`cached: true`). 최대 `llmAdvisor.timeoutSeconds`(기본 60초) 걸리므로 읽기 대기를 길게(앱 90초). `text` 는 일반 텍스트로만 보인다. v0.44.0 이하 PC 는 404 |
 | POST | `/api/v1/live-snapshot` | `Authorization: Bearer <token>` (PC만) | 200 `{schema, live}` · 400 `invalid_snapshot` · 401 · 403 (M-46) |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
@@ -192,5 +193,6 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
   `session.report`에는 `agents[]`(Codex 세션 등 Claude 밖의 작업, M-26)가 더해졌다.
   `aliases.set {key, name, alias?}`(M-51): 트레이에서 정한 별칭 → `true`. Agent가 바로 저장하고 그룹의 PC에 백그라운드로 보내며, 바뀐 표는 `aliases` 푸시로 돌아온다.
   `approval.ask` ApprovalRequest `{id, app, session, project?, toolTitle, detail, expiresAt}` → `{decision}`(M-48, 최대 10분 대기, `null`이면 PC에서 묻기): Tray의 훅 수신기가 보낸다. Agent는 연결의 읽기 루프와 따로 처리해 그동안 다른 메시지가 막히지 않는다. `approval.cancel {id}`(응답 없음): 사용자가 PC로 돌아와 Tray가 기다리기를 그만둠.
+  `advise`(M-59) → `advice.v1.json` 과 같은 `AdviceResponse`: 휴대폰과 같은 조언(한 번에 하나, 60초 재사용)을 트레이 설정 › AI 조언에 보인다. 읽기 루프와 따로 처리한다. 이 op 를 모르는 Agent 는 `unsupported`.
   `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.

@@ -57,6 +57,12 @@ class HomebaseApi(
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
+    /** For the PC's local AI (DECISIONS M-59): a model loading cold can take most of a minute to answer. */
+    private val patient: OkHttpClient = client.newBuilder()
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .build()
+
     private val pinnedClients = ConcurrentHashMap<String, OkHttpClient>()
 
     /** The HTTP client for [e]: a pinned TLS client for LAN, the normal client otherwise. */
@@ -225,6 +231,20 @@ class HomebaseApi(
     }
 
     /**
+     * Asks [pc]'s local AI for advice about its current state (DECISIONS M-59). Null when the PC
+     * predates the route (404/405: v0.44.0 and older). Advice that couldn't be produced (Ollama not
+     * running, model not pulled …) is a reply with `ok = false`, not an exception.
+     */
+    suspend fun advise(pc: PcEntry): AdviceReply? =
+        authedCall(pc, "/api/v1/advise", Request.Builder().post("{\"schema\":1}".toRequestBody(JSON)), base = patient) { code, text ->
+            when {
+                code in 200..299 -> AdviceReply.parse(text!!)
+                code == 404 || code == 405 -> null
+                else -> throw IOException(errorMessage(text) ?: "조언 요청 실패 (HTTP $code)")
+            }
+        }
+
+    /**
      * One authenticated call over [pc]'s paths in order; the first path that answers decides.
      * With [budgetMillis] every attempt is bounded by what is left of it (OkHttp's call timeout, which
      * really stops a blocking call), and no further path is tried once it is spent. A call cut off by
@@ -235,6 +255,7 @@ class HomebaseApi(
         path: String,
         builder: Request.Builder,
         budgetMillis: Long? = null,
+        base: OkHttpClient = quick,
         handle: (code: Int, body: String?) -> T,
     ): T = withContext(Dispatchers.IO) {
         val deadline = budgetMillis?.let { System.currentTimeMillis() + it }
@@ -243,8 +264,8 @@ class HomebaseApi(
             val remaining = deadline?.let { it - System.currentTimeMillis() }
             if (remaining != null && remaining <= 0) break
             val req = builder.url(e.url(path)).header("Authorization", "Bearer ${pc.token}").build()
-            val base = clientFor(e, quick)
-            val client = if (remaining != null) base.newBuilder().callTimeout(remaining, TimeUnit.MILLISECONDS).build() else base
+            val pathClient = clientFor(e, base)
+            val client = if (remaining != null) pathClient.newBuilder().callTimeout(remaining, TimeUnit.MILLISECONDS).build() else pathClient
             val res = try {
                 client.newCall(req).execute()
             } catch (ex: IOException) {

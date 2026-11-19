@@ -51,6 +51,7 @@ public sealed class OllamaLlmClientTests
 
         Assert.False(result.Ok);
         Assert.Contains("ollama pull", result.Error);
+        Assert.Equal(AdviceErrors.ModelMissing, result.Code); // the app says "pull the model" in its own words
     }
 
     [Fact]
@@ -63,6 +64,7 @@ public sealed class OllamaLlmClientTests
 
         Assert.False(result.Ok);
         Assert.Contains("empty", result.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AdviceErrors.Empty, result.Code);
     }
 
     [Fact]
@@ -72,6 +74,19 @@ public sealed class OllamaLlmClientTests
 
         Assert.False(result.Ok);
         Assert.Contains("reach", result.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AdviceErrors.Unreachable, result.Code);
+    }
+
+    [Fact]
+    public async Task Generate_on_another_server_error_says_so()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.QueueResponse(HttpStatusCode.InternalServerError, """{"error":"out of memory"}""");
+
+        var result = await Client(handler).GenerateAsync("hi", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal(AdviceErrors.ServerError, result.Code);
     }
 
     private sealed class ThrowingHandler : HttpMessageHandler

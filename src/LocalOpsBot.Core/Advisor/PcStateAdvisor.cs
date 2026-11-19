@@ -4,8 +4,12 @@ using LocalOpsBot.Core.Monitoring;
 
 namespace LocalOpsBot.Core.Advisor;
 
-/// <summary>Outcome of an advisory request: the LLM's guidance, or a reason it couldn't be produced.</summary>
-public sealed record AdvisoryResult(bool Ok, string Text, string? Error);
+/// <summary>
+/// Outcome of an advisory request: the LLM's guidance, or a reason it couldn't be produced.
+/// <see cref="Code"/> is one of <see cref="AdviceErrors"/> on failure; <see cref="Summary"/> is the
+/// state summary the model was given (empty when it never got that far).
+/// </summary>
+public sealed record AdvisoryResult(bool Ok, string Text, string? Error, string? Code = null, string Summary = "");
 
 public interface IPcStateAdvisor
 {
@@ -53,13 +57,13 @@ public sealed class PcStateAdvisor : IPcStateAdvisor
     public async Task<AdvisoryResult> AdviseAsync(CancellationToken ct)
     {
         if (!_options.Enabled)
-            return new AdvisoryResult(false, "", "The AI advisor is turned off (set llmAdvisor.enabled to true).");
+            return new AdvisoryResult(false, "", "The AI advisor is turned off (set llmAdvisor.enabled to true).", AdviceErrors.Disabled);
 
         var summary = await BuildStateSummaryAsync(ct);
         var result = await _llm.GenerateAsync(BuildPrompt(summary), ct);
         return result.Ok
-            ? new AdvisoryResult(true, result.Text, null)
-            : new AdvisoryResult(false, "", result.Error);
+            ? new AdvisoryResult(true, result.Text, null, null, summary)
+            : new AdvisoryResult(false, "", result.Error, result.Code ?? AdviceErrors.Failed, summary);
     }
 
     public async Task<string> BuildStateSummaryAsync(CancellationToken ct)

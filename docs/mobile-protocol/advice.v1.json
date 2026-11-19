@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "ok": true,
+  "text": "- CPU가 92%로 오래 바쁩니다. 작업 관리자에서 chrome을 확인하세요.\n- C: 드라이브 여유가 5%뿐입니다. 임시 파일을 정리하세요.",
+  "summary": "Host: HOME-PC (Windows 11)\nCPU load: 92%\nRAM: 12.0/32.0 GB (38%)\nDisk C:\\: 24 GB free / 476 GB (95% used)",
+  "model": "llama3.2:1b",
+  "generatedAt": "2026-11-19T01:30:00+00:00",
+  "cached": false
+}

@@ -113,7 +113,8 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<TailscaleAddressResolver>(),
                 sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
                 sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
-                deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>());
+                deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>(),
+                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>());
             api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
             return api;
         });

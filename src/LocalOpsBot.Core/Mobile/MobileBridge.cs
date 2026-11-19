@@ -37,6 +37,7 @@ public static class MobileBridge
     public const string OpApprovalAsk = "approval.ask";       // request ApprovalRequest → ApprovalAskResult (M-48, waits up to 10 min)
     public const string OpApprovalCancel = "approval.cancel"; // push {id} — the user is back at the PC (M-48)
     public const string OpAliasesSet = "aliases.set";         // request AliasSetRequest → bool, shared with the group (M-51)
+    public const string OpAdvise = "advise";                  // request → AdviceResponse, the local LLM's advice (M-59, takes up to a minute)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
@@ -48,7 +49,7 @@ public static class MobileBridge
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
         OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
-        OpApprovalAsk, OpApprovalCancel, OpAliasesSet,
+        OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpAdvise,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>

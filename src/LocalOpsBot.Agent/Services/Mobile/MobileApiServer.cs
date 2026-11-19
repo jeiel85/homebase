@@ -7,6 +7,7 @@ using System.Runtime.Versioning;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Core.Mobile;
 using LocalOpsBot.Core.Push;
 using LocalOpsBot.Infrastructure.Mobile;
@@ -50,6 +51,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly DeviceHub? _deviceHub;
     private DeviceGroupService? _group;
     private readonly ApprovalBroker? _approvals;
+    private readonly OnDemandAdvice? _advice;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -71,10 +73,12 @@ public sealed class MobileApiServer : BackgroundService
         CloudflareTunnel? tunnel = null,
         X509Certificate2? lanCertificate = null,
         DeviceHub? deviceHub = null,
-        ApprovalBroker? approvals = null)
+        ApprovalBroker? approvals = null,
+        OnDemandAdvice? advice = null)
     {
         _deviceHub = deviceHub;
         _approvals = approvals;
+        _advice = advice;
         _hub = hub;
         _pairing = pairing;
         _devices = devices;
@@ -604,6 +608,19 @@ public sealed class MobileApiServer : BackgroundService
                 };
             }
 
+            case ("POST", "/api/v1/advise"):
+            {
+                // The local LLM's health advice, asked for from the app (M-59). Any paired device may ask:
+                // it reads this PC's state like the live view does and changes nothing.
+                if (_advice is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                var reply = await _advice.GetAsync(ct);
+                _logger.LogInformation("AI advice for {Name}: {Outcome}{Cached}.", device.Name,
+                    reply.Ok ? "ok" : reply.Code, reply.Cached ? " (reused)" : "");
+                return (200, Json(AdviceResponse.From(reply)));
+            }
+
             case ("DELETE", "/api/v1/device"):
             {
                 if (_deviceHub is null) return (404, Error("not_found", "Not found."));
@@ -614,7 +631,7 @@ public sealed class MobileApiServer : BackgroundService
 
             case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"
                 or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"
-                or LiveSharePath or "/api/v1/approval"):
+                or LiveSharePath or "/api/v1/approval" or "/api/v1/advise"):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

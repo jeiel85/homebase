@@ -51,24 +51,27 @@ public sealed class OllamaLlmClient : ILlmClient
             {
                 // Ollama replies 404 with a helpful "model not found, try pulling it" body.
                 var body = await response.Content.ReadAsStringAsync(cts.Token);
+                var missing = (int)response.StatusCode == 404 || body.Contains("not found", StringComparison.OrdinalIgnoreCase);
                 return new LlmResult(false, "",
-                    $"LLM server returned {(int)response.StatusCode}. {Summarize(body, _options.Model)}");
+                    $"LLM server returned {(int)response.StatusCode}. {Summarize(body, _options.Model)}",
+                    missing ? AdviceErrors.ModelMissing : AdviceErrors.ServerError);
             }
 
             var result = await response.Content.ReadFromJsonAsync<OllamaGenerateResponse>(JsonOpts, cts.Token);
             var text = result?.Response?.Trim() ?? "";
             return string.IsNullOrEmpty(text)
-                ? new LlmResult(false, "", "The LLM returned an empty response.")
+                ? new LlmResult(false, "", "The LLM returned an empty response.", AdviceErrors.Empty)
                 : new LlmResult(true, text, null);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return new LlmResult(false, "", $"The LLM did not respond within {_options.TimeoutSeconds}s.");
+            return new LlmResult(false, "", $"The LLM did not respond within {_options.TimeoutSeconds}s.", AdviceErrors.Timeout);
         }
         catch (HttpRequestException ex)
         {
             return new LlmResult(false, "",
-                $"Could not reach a local LLM at {_options.Endpoint}. Is Ollama running? ({ex.Message})");
+                $"Could not reach a local LLM at {_options.Endpoint}. Is Ollama running? ({ex.Message})",
+                AdviceErrors.Unreachable);
         }
     }
 

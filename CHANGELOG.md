@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.45.0 — Ask the PC's AI for advice from the app
+
+### Added
+- **AI advice from the phone app.** A PC's screen in the Homebase app has an **AI 조언 받기** (Get AI advice)
+  button under the gauges: the PC's local AI (Ollama) looks at its current readings — CPU, memory, disks,
+  temperature, recent alerts — and says what to check. The advice shows with the readings it was based on,
+  the model and the time. Until now this was only Telegram's `/advise`.
+- **…and from the tray.** Settings › AI advice has **Get advice now**, the same advice on the PC.
+- When there is no advice, both say why in plain words and what to do on the PC: start Ollama, pull the
+  model, or wait and try again. In the tray, the Ollama row above then offers the matching button.
+- Advice is written once at a time and handed out again for a minute, so two phones asking together, or
+  asking twice, don't keep the PC's GPU busy. The model's text is always shown as plain text.
+- PC: `POST /api/v1/advise` for paired devices (DECISIONS M-59). A PC on v0.44.0 or older doesn't have it;
+  the app then asks you to update the PC.
+
 ## v0.44.0 — AI advice (Ollama) in Settings: set it up and change the model
 
 ### Fixed
