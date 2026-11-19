@@ -50,6 +50,13 @@ object NotificationGroups {
         ),
     )
 
+    /**
+     * Alerts whose push offers "AI 조언" (DECISIONS M-61): something on the PC stopped or failed —
+     * watched processes, services, sites and ports, and event-log errors. Not the PC's own advice
+     * ("advisor"), app notifications or AI sessions.
+     */
+    val ADVICE_ON: Set<String> = setOf("process_watch", "service_watch", "http_monitor", "port_monitor", "event_log")
+
     /** Every category but app notifications (this PC's and other devices') — the "앱 알림만" preset. */
     val ALL_BUT_TOASTS: Set<String> = ALL.flatMap { it.categories }.filter { it != TOAST && it != DEVICE }.toSet()
 

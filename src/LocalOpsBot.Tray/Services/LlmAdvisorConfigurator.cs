@@ -80,20 +80,6 @@ internal static class LlmAdvisorConfigurator
         return await ElevatedConfig.WriteAsync(root);
     }
 
-    internal static void SetModel(JsonObject root, string model)
-    {
-        var sectionKey = KeyOf(root, Section);
-        if (root[sectionKey] is not JsonObject section)
-        {
-            section = new JsonObject();
-            root[sectionKey] = section;
-        }
-        section[KeyOf(section, ModelKey)] = model;
-    }
-
-    // The Agent binds config without regard to case, and its JSON reader refuses two keys that differ
-    // only in case — so a file that spells it "LlmAdvisor"/"Model" is written under that spelling
-    // instead of gaining a second key that would stop the Agent from reading its config at all.
-    private static string KeyOf(JsonObject obj, string name) =>
-        obj.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) ?? name;
+    internal static void SetModel(JsonObject root, string model) =>
+        ElevatedConfig.SetValue(root, Section, ModelKey, model);
 }

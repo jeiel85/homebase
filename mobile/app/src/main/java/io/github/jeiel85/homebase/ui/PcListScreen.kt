@@ -293,6 +293,7 @@ fun PcListScreen(
                     PushState(context).markRegistered(pc.pcId, false)
                     PushNotifier.forgetPc(context, pc.pcId)
                     PushHistory.forgetPc(context, pc.pcId)
+                    AdviceRequests.close(pc.pcId) // a request still under way must not file advice for it later
                     MeshSync.forget(pc.pcId)
                     GroupSync.decline(context, pc.pcId) // deleted here: the group doesn't bring it back
                     store.remove(pc.pcId)
