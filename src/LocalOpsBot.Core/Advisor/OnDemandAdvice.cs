@@ -116,7 +116,8 @@ public sealed class OnDemandAdvice
             if (reply.Ok) _last = reply;
             _running = null;
         }
-        if (reply.Ok) await RecordAsync(reply);
+        // Kept off the asker's path: a slow or locked history never holds the advice back.
+        if (reply.Ok) _ = Task.Run(() => RecordAsync(reply));
         return reply;
     }
 
@@ -126,12 +127,16 @@ public sealed class OnDemandAdvice
     /// </summary>
     public static DeviceNotificationRecord HistoryRecord(AdviceReply reply, string pcName, DateTimeOffset now)
     {
-        var firstLine = reply.Text.Split('\n').Select(l => l.Trim().TrimStart('-', '*', '•').Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
+        var firstLine = reply.Text.Split('\n').Select(TitleLine).FirstOrDefault(l => l.Length > 0) ?? "";
         var title = firstLine.Length <= 120 ? firstLine : firstLine[..119] + "…";
         return new DeviceNotificationRecord(
             $"advice-{reply.GeneratedAt.ToUnixTimeMilliseconds()}", NotificationInbox.SelfOrigin, pcName, DeviceKind.Pc,
             Strings.AiAdvisorTitle, title, reply.Text, reply.GeneratedAt, now);
     }
+
+    // A list marker ("-", "*", "•", "1.", "2)") and markdown emphasis don't belong in a title.
+    private static string TitleLine(string line) =>
+        System.Text.RegularExpressions.Regex.Replace(line.Trim(), @"^(?:[-*•]|\d+[.)])\s*", "").Replace("**", "").Replace("__", "").Trim();
 
     // A failed write never costs the asker the advice: the history is a convenience.
     private async Task RecordAsync(AdviceReply reply)

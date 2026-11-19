@@ -21,8 +21,11 @@ internal sealed record AiAutomationState(
     int ConsecutiveBreaches,
     int CooldownMinutes)
 {
-    /// <summary>How long a breach must last before advice is sent: the polls in a row × the poll interval.</summary>
-    public int SustainMinutes => Math.Max(1, (int)Math.Ceiling(Math.Max(1, ConsecutiveBreaches) * Math.Max(30, IntervalSeconds) / 60.0));
+    /// <summary>
+    /// How long a breach lasts at least before advice is sent: the breached polls in a row are one interval
+    /// apart, so N of them span (N − 1) intervals (one poll alone: one interval, the time to notice it).
+    /// </summary>
+    public int SustainMinutes => Math.Max(1, (int)Math.Ceiling(Math.Max(1, ConsecutiveBreaches - 1) * Math.Max(30, IntervalSeconds) / 60.0));
 }
 
 /// <summary>Reads and writes <see cref="AiAutomationState"/> in the Agent config.</summary>

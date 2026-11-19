@@ -99,7 +99,7 @@ public partial class SettingsPanel : UserControl
         ModelPicker.IsEnabled = false;
         AiModelNoneText.Visibility = Visibility.Collapsed;
         PhonePanel.Forget();
-        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = AdviceStatusText.Text = string.Empty;
+        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = AdviceStatusText.Text = AiAutoStatusText.Text = string.Empty;
         AdviceBox.Visibility = Visibility.Collapsed;
         _loaded = false;
     }

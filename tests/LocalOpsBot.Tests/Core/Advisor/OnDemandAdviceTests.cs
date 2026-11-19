@@ -154,6 +154,7 @@ public sealed class OnDemandAdviceTests
 
         await advice.GetAsync(CancellationToken.None);
         await advice.GetAsync(CancellationToken.None); // reused within the minute: not kept again
+        await history.WaitForAsync(1); // written off the asker's path
 
         var r = Assert.Single(history.Records);
         Assert.Equal(NotificationInbox.SelfOrigin, r.OriginId);
@@ -169,6 +170,7 @@ public sealed class OnDemandAdviceTests
         var history = new RecordingStore();
         var advisor = new GatedAdvisor { Immediate = new AdvisoryResult(false, "", "down", AdviceErrors.Unreachable) };
         await new OnDemandAdvice(advisor, Options, new ManualTimeProvider(), history).GetAsync(CancellationToken.None);
+        await Task.Delay(100);
 
         Assert.Empty(history.Records);
     }
@@ -195,6 +197,15 @@ public sealed class OnDemandAdviceTests
         Assert.Equal("HOME-PC", r.OriginName);
     }
 
+    [Theory]
+    [InlineData("1. **CPU** is pegged.\n2. Disk is full.", "CPU is pegged.")]
+    [InlineData("\n  - Close Chrome.", "Close Chrome.")]
+    [InlineData("• Fine.", "Fine.")]
+    [InlineData("2) __Restart__ the PC.", "Restart the PC.")]
+    public void The_title_drops_list_markers_and_emphasis(string text, string title) =>
+        Assert.Equal(title, OnDemandAdvice.HistoryRecord(new AdviceReply(true, text, null, null, "", "m", DateTimeOffset.UnixEpoch),
+            "PC", DateTimeOffset.UnixEpoch).Title);
+
     private sealed class RecordingStore : INotificationHistoryStore
     {
         public List<DeviceNotificationRecord> Records { get; } = new();
@@ -203,8 +214,17 @@ public sealed class OnDemandAdviceTests
         public Task AddAsync(DeviceNotificationRecord record, CancellationToken ct)
         {
             if (Fail) throw new IOException("disk full");
-            Records.Add(record);
+            lock (Records) Records.Add(record);
             return Task.CompletedTask;
+        }
+
+        public async Task WaitForAsync(int count)
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                lock (Records) if (Records.Count >= count) return;
+                await Task.Delay(10);
+            }
         }
 
         public Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct) => throw new NotSupportedException();

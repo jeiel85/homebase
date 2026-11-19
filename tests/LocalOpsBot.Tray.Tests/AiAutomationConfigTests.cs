@@ -23,7 +23,7 @@ public sealed class AiAutomationConfigTests
         Assert.False(s.InterpretErrors);
         Assert.True(s.EventLogOn);
         Assert.Equal((90d, 90d, 95d, 85d), (s.CpuPercent, s.MemoryPercent, s.DiskPercent, s.TempCelsius));
-        Assert.Equal(10, s.SustainMinutes); // 2 polls × 300 s
+        Assert.Equal(5, s.SustainMinutes); // 2 breached polls in a row are 300 s apart
         Assert.Equal(60, s.CooldownMinutes);
     }
 
@@ -38,7 +38,7 @@ public sealed class AiAutomationConfigTests
         Assert.True(s.InterpretErrors);
         Assert.False(s.EventLogOn);
         Assert.Equal(80, s.CpuPercent);
-        Assert.Equal(3, s.SustainMinutes); // 3 polls × 60 s
+        Assert.Equal(2, s.SustainMinutes); // 3 polls 60 s apart span 2 minutes
     }
 
     [Fact]

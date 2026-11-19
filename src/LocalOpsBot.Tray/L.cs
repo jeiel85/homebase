@@ -198,8 +198,8 @@ public static class L
         "직접 묻는 조언 말고도 PC가 스스로 로컬 AI를 쓰게 할 수 있습니다. 둘 다 처음에는 꺼져 있고, Ollama가 실행 중이며 모델을 받아 둬야 동작합니다.");
     public static string AiAutoAdvice => T("Send advice when the PC stays overloaded", "PC가 계속 과부하면 조언 보내기");
     public static string AiAutoAdviceHint(double cpu, double mem, double disk, double temp, int minutes, int cooldown) => T(
-        $"When CPU ≥ {cpu:0}%, memory ≥ {mem:0}%, a disk ≥ {disk:0}% used or a temperature ≥ {temp:0}°C lasts about {minutes} min, AI advice comes to your phone — at most once every {cooldown} min.",
-        $"CPU {cpu:0}%·메모리 {mem:0}%·디스크 {disk:0}%·온도 {temp:0}°C 이상이 {minutes}분쯤 이어지면 AI 조언이 휴대폰으로 옵니다({cooldown}분에 한 번까지).");
+        $"When CPU ≥ {cpu:0}%, memory ≥ {mem:0}%, a disk ≥ {disk:0}% used or a temperature ≥ {temp:0}°C lasts {minutes} min or more, AI advice comes to your phone — at most once every {cooldown} min.",
+        $"CPU {cpu:0}%·메모리 {mem:0}%·디스크 {disk:0}%·온도 {temp:0}°C 이상이 {minutes}분 넘게 이어지면 AI 조언이 휴대폰으로 옵니다({cooldown}분에 한 번까지).");
     public static string AiInterpret => T("Explain event-log errors with AI", "이벤트 로그 오류 알림에 AI 해석 붙이기");
     public static string AiInterpretHint => T(
         "Each Windows event-log error alert gets a short note on what it means and what to check (up to 3 per check).",

@@ -49,6 +49,13 @@ class AdviceHistoryTest {
     }
 
     @Test
+    fun the_title_drops_list_markers_and_emphasis() {
+        assertEquals("CPU is pegged.", adviceHistoryEntry(pc, reply("1. **CPU** is pegged.\n2. Disk is full."), now = 1L)!!.title)
+        assertEquals("Restart the PC.", adviceHistoryEntry(pc, reply("2) __Restart__ the PC."), now = 1L)!!.title)
+        assertEquals("Fine.", adviceHistoryEntry(pc, reply("• Fine."), now = 1L)!!.title)
+    }
+
+    @Test
     fun a_long_first_line_is_cut() {
         val e = adviceHistoryEntry(pc, reply("가".repeat(300)), now = 1L)!!
         assertEquals(120, e.title.length)

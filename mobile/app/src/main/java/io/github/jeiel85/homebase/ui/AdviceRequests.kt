@@ -77,6 +77,8 @@ object AdviceRequests {
     }
 }
 
+private val LIST_MARKER = Regex("""^(?:[-*•]|\d+[.)])\s*""")
+
 /** Category the notification center files advice under — the "PC 상태 조언" kind (DECISIONS M-25). */
 internal const val ADVICE_CATEGORY = "advisor"
 
@@ -89,7 +91,10 @@ internal fun adviceHistoryEntry(pc: PcEntry, reply: AdviceReply, now: Long): His
     val text = reply.text
     if (!reply.ok || text == null) return null
     val at = reply.generatedAt?.let { runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() } ?: now
-    val firstLine = text.lineSequence().map { it.trim().trimStart('-', '*', '•').trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+    // A list marker ("-", "*", "•", "1.", "2)") and markdown emphasis don't belong in a title.
+    val firstLine = text.lineSequence()
+        .map { it.trim().replace(LIST_MARKER, "").replace("**", "").replace("__", "").trim() }
+        .firstOrNull { it.isNotEmpty() }.orEmpty()
     return HistoryEntry(
         id = "advice-$at",
         pcId = pc.pcId,
