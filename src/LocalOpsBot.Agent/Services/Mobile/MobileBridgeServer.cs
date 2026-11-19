@@ -83,6 +83,9 @@ public sealed class MobileBridgeServer : BackgroundService
 
         /// <summary>The Tray said it saves received files (M-64).</summary>
         public volatile bool FilesReady;
+
+        /// <summary>Transfers handed to this Tray and not answered yet; offered again elsewhere if it goes away.</summary>
+        public ConcurrentDictionary<string, byte> Transfers { get; } = new(StringComparer.Ordinal);
     }
 
     public MobileBridgeServer(
@@ -222,6 +225,12 @@ public sealed class MobileBridgeServer : BackgroundService
             // fell back to the PC: withdraw its prompts now rather than at their deadline (#64).
             conn.Closed = true;
             foreach (var approvalId in conn.Approvals.Keys) _approvals?.Cancel(approvalId);
+            // Files this Tray was saving when it went: hand them to another Tray now, or to the next one that connects.
+            if (_files is not null && !conn.Transfers.IsEmpty)
+            {
+                foreach (var transferId in conn.Transfers.Keys) _files.OfferLost(transferId);
+                _ = Task.Run(_files.OfferWaiting, CancellationToken.None);
+            }
             await pipe.DisposeAsync();
         }
     }
@@ -262,6 +271,7 @@ public sealed class MobileBridgeServer : BackgroundService
             TrayTransferSaved? saved;
             try { saved = payload?.Deserialize<TrayTransferSaved>(MobileProtocol.Json); }
             catch (JsonException) { saved = null; }
+            if (saved is not null) conn.Transfers.TryRemove(saved.Id, out _);
             _files?.Saved(saved);
             return;
         }
@@ -627,6 +637,7 @@ public sealed class MobileBridgeServer : BackgroundService
         Connection? conn;
         lock (_gate) conn = _connections.FirstOrDefault(c => c.FilesReady && !c.Closed);
         if (conn is null) return false;
+        conn.Transfers[transfer.Id] = 0;
         _ = SendAsync(conn, MobileBridge.Message(MobileBridge.OpTransferReady, transfer), CancellationToken.None)
             .ContinueWith(t => _logger.LogDebug("Files to Tray failed: {Message}", t.Exception?.GetBaseException().Message),
                 TaskContinuationOptions.OnlyOnFaulted);

@@ -59,12 +59,10 @@ internal static class FileReceiver
                      ?? throw new InvalidDataException("No header from the Agent.");
         if (!header.Ok) throw new IOException($"The Agent has no such file ({header.Error}).");
 
-        var name = TransferNames.Unique(TransferNames.Clean(file.Name), n => File.Exists(Path.Combine(folder, n)));
-        var path = Path.Combine(folder, name);
+        var (created, path) = CreateUnique(folder, file.Name);
         try
         {
-            // CreateNew: never overwrite, even if a file of that name appeared meanwhile.
-            await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferBytes, useAsync: true))
+            await using (var output = created)
             {
                 var buffer = new byte[BufferBytes];
                 long left = header.Size;
@@ -81,8 +79,31 @@ internal static class FileReceiver
         }
         catch
         {
+            // Only the file this call created (and has closed by now): never one that was there before.
             try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             throw;
+        }
+    }
+
+    /// <summary>
+    /// A new, empty file in <paramref name="folder"/> under the cleaned <paramref name="name"/> — "name (2).ext" and on
+    /// when taken. <see cref="FileMode.CreateNew"/> never overwrites: when another save (or another program) takes the
+    /// name between the check and the create, the next free name is tried.
+    /// </summary>
+    internal static (FileStream Stream, string Path) CreateUnique(string folder, string? name)
+    {
+        var clean = TransferNames.Clean(name);
+        for (var attempt = 0; ; attempt++)
+        {
+            var path = Path.Combine(folder, TransferNames.Unique(clean, n => File.Exists(Path.Combine(folder, n))));
+            try
+            {
+                return (new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferBytes, useAsync: true), path);
+            }
+            catch (IOException) when (attempt < 20 && File.Exists(path))
+            {
+                // Taken a moment ago: the next round finds it taken and picks the next number.
+            }
         }
     }
 

@@ -26,6 +26,21 @@ public class FileReceiverTests : IDisposable
         Assert.Equal(new byte[] { 0x4D, 0x5A }, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void A_taken_name_gets_the_next_number_and_the_file_there_is_left_alone()
+    {
+        File.WriteAllText(Path.Combine(_dir, "photo.jpg"), "already here");
+
+        var (stream, path) = FileReceiver.CreateUnique(_dir, "photo.jpg");
+        stream.Dispose();
+
+        Assert.Equal(Path.Combine(_dir, "photo (2).jpg"), path);
+        Assert.Equal("already here", File.ReadAllText(Path.Combine(_dir, "photo.jpg")));
+        var (again, next) = FileReceiver.CreateUnique(_dir, "../photo.jpg");
+        again.Dispose();
+        Assert.Equal(Path.Combine(_dir, "photo (3).jpg"), next);
+    }
+
     [Theory]
     [InlineData("photo.jpg", "image/jpeg", 1000L, true)]
     [InlineData("shot.PNG", null, 1000L, true)]

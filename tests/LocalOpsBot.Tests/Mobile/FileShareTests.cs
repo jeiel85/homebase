@@ -264,6 +264,46 @@ public class FileShareApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Space_promised_to_transfers_on_the_way_is_not_counted_as_free()
+    {
+        // 7 GiB free: one 3 GiB transfer leaves the 2 GiB margin; a second, while the first hasn't written anything
+        // yet, would not (Codex review on #99).
+        var (token, key, _) = Phone();
+        var api = Api();
+        _free = 7L * 1024 * 1024 * 1024;
+        TransferMeta Big() => new(1, [new TransferFile("a.mkv", 3L * 512 * 1024 * 1024), new TransferFile("b.mkv", 3L * 512 * 1024 * 1024)], DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(200, (await api.HandleRestAsync(Req("POST", TransferProtocol.Path, token), Body(TransferMessages.SealMeta(key, ClipProtocol.NewId(), Big())), default)).Status);
+        var (status, json) = await api.HandleRestAsync(Req("POST", TransferProtocol.Path, token), Body(TransferMessages.SealMeta(key, ClipProtocol.NewId(), Big())), default);
+        Assert.Equal(507, status);
+        Assert.Contains(TransferErrors.NoSpace, json);
+    }
+
+    [Fact]
+    public async Task A_transfer_whose_tray_went_away_is_offered_again()
+    {
+        var (token, key, _) = Phone();
+        var api = Api();
+        var id = ClipProtocol.NewId();
+        var file = new byte[] { 1, 2, 3 };
+        await api.HandleRestAsync(Req("POST", TransferProtocol.Path, token), Body(TransferMessages.SealMeta(key, id, Meta(("a.bin", file)))), default);
+        await SendChunks(api, token, key, id, file);
+        await api.HandleRestAsync(Req("POST", TransferProtocol.DonePath, token, $"id={id}"), Body(TransferMessages.SealHashes(key, id, Hashes(file))), default);
+        Assert.Single(_tray);
+
+        // Not twice while that Tray may still be saving it…
+        _files.OfferWaiting();
+        Assert.Single(_tray);
+        // …but at once when the bridge sees it go (Codex review on #99), and after the timeout otherwise.
+        _files.OfferLost(id);
+        _files.OfferWaiting();
+        Assert.Equal(2, _tray.Count);
+        _time.Advance(TimeSpan.FromMinutes(11));
+        _files.OfferWaiting();
+        Assert.Equal(3, _tray.Count);
+    }
+
+    [Fact]
     public async Task A_chunk_at_the_wrong_place_or_length_is_refused_and_done_waits_for_every_chunk()
     {
         var (token, key, _) = Phone();

@@ -30,7 +30,8 @@ public sealed class FileShareService : BackgroundService
     internal const int ConcurrentChunks = 4;
     /// <summary>How long a chunk waits for its turn before the device is told "busy".</summary>
     internal static readonly TimeSpan ChunkWait = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan SweepEvery = TimeSpan.FromHours(1);
+    /// <summary>How often old transfers are dropped and finished ones nobody answered for are offered again.</summary>
+    private static readonly TimeSpan SweepEvery = TimeSpan.FromMinutes(1);
     private const int MaxActivePerDevice = 4;
     private static readonly TimeSpan OfferTimeout = TimeSpan.FromMinutes(10);
 
@@ -68,6 +69,11 @@ public sealed class FileShareService : BackgroundService
         public SemaphoreSlim Lock { get; } = new(1, 1);
         public List<HashSet<long>> Have { get; } = state.Have.Select(r => (ChunkRanges.Parse(r) ?? Array.Empty<long>()).ToHashSet()).ToList();
         public long TotalBytes => State.Files.Sum(f => f.Size);
+
+        /// <summary>Bytes still to arrive: a transfer on the way has only empty files until its chunks come.</summary>
+        public long OutstandingBytes => State.State != TransferStates.Receiving
+            ? 0
+            : State.Files.Select((f, i) => f.Size - Have[i].Sum(n => (long)TransferProtocol.ChunkLength(f.Size, n))).Sum();
         /// <summary>
         /// When it was handed to a Tray that has not answered yet. Not offered again meanwhile, unless that Tray stays
         /// silent past <see cref="OfferTimeout"/> (it went away while saving).
@@ -117,7 +123,8 @@ public sealed class FileShareService : BackgroundService
             if (_entries.Values.Count(e => e.State.DeviceId == device.DeviceId && e.State.State == TransferStates.Receiving) >= MaxActivePerDevice)
                 return Error(503, TransferErrors.Busy, "Finish or cancel the transfers already on the way.");
             var inUse = _entries.Values.Sum(e => e.TotalBytes);
-            var free = FreeSpace();
+            // Transfers already accepted will still write what they haven't: that space is promised, not free.
+            var free = FreeSpace() - _entries.Values.Sum(e => e.OutstandingBytes);
             if (inUse + total > StoreCapBytes || free < total + FreeMarginBytes)
             {
                 _logger.LogWarning("Transfer from {Name} refused: {Total} bytes, {InUse} kept, {Free} free.", device.Name, total, inUse, free);
@@ -250,6 +257,15 @@ public sealed class FileShareService : BackgroundService
             Offer(entry);
     }
 
+    /// <summary>
+    /// The Tray a transfer was handed to went away before answering (the bridge saw its connection close): offer it
+    /// again at once instead of waiting out <see cref="OfferTimeout"/>.
+    /// </summary>
+    public void OfferLost(string id)
+    {
+        if (_entries.TryGetValue(id, out var entry)) entry.OfferedAt = null;
+    }
+
     /// <summary>The Tray's answer to <c>transfer.ready</c>: saved — the files are deleted here; not saved — offered again later.</summary>
     public void Saved(TrayTransferSaved? saved)
     {
@@ -283,7 +299,13 @@ public sealed class FileShareService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { Sweep(); }
+            try
+            {
+                Sweep();
+                // Finished transfers whose Tray never answered (it hung, or left without the bridge noticing) go
+                // to a connected Tray again once OfferTimeout has passed — not only when a Tray reconnects.
+                OfferWaiting();
+            }
             catch (Exception ex) { _logger.LogWarning(ex, "Sweeping old transfers failed"); }
             try { await Task.Delay(SweepEvery, _time, stoppingToken); }
             catch (OperationCanceledException) { break; }
