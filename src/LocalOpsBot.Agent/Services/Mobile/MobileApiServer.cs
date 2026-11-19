@@ -61,6 +61,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly OnDemandAdvice? _advice;
     private readonly ClipShareService? _clips;
     private readonly FileShareService? _files;
+    private readonly FileSendService? _sends;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -85,10 +86,12 @@ public sealed class MobileApiServer : BackgroundService
         ApprovalBroker? approvals = null,
         OnDemandAdvice? advice = null,
         ClipShareService? clips = null,
-        FileShareService? files = null)
+        FileShareService? files = null,
+        FileSendService? sends = null)
     {
         _clips = clips;
         _files = files;
+        _sends = sends;
         _deviceHub = deviceHub;
         _approvals = approvals;
         _advice = advice;
@@ -371,6 +374,21 @@ public sealed class MobileApiServer : BackgroundService
         if (r.Head.Path == "/api/v1/live" && r.Head.Method == "GET")
         {
             await HandleLiveAsync(stream, r.Head, ct);
+            return;
+        }
+
+        if (r.Head.Path == FileSendProtocol.FetchPath && r.Head.Method == "GET" && _sends is not null)
+        {
+            // A chunk of files this PC sends a phone (M-65): the one binary answer.
+            var device = _devices.Authenticate(r.Head.BearerToken() ?? "");
+            if (device is null)
+            {
+                await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                return;
+            }
+            var fetched = await _sends.FetchAsync(device, r.Head.QueryValue("id"), r.Head.QueryValue("f"), r.Head.QueryValue("n"), ct);
+            if (fetched.Bytes is { } chunk) await MiniHttp.WriteBytesAsync(stream, chunk, ct);
+            else await MiniHttp.WriteResponseAsync(stream, fetched.Status, fetched.Json, ct);
             return;
         }
 
@@ -742,6 +760,20 @@ public sealed class MobileApiServer : BackgroundService
                     ("DELETE", TransferProtocol.Path) => _files.Cancel(device, id),
                     ("POST", TransferProtocol.ChunkPath) => await _files.ChunkAsync(device, id, head.QueryValue("f"), head.QueryValue("n"), body, ct),
                     ("POST", TransferProtocol.DonePath) => await _files.DoneAsync(device, id, Read<ClipEnvelope>(body), ct),
+                    _ => new TransferReply(405, Error("method_not_allowed", "Method not allowed.")),
+                };
+                return (reply.Status, reply.Json);
+            }
+
+            case (_, FileSendProtocol.OfferPath or FileSendProtocol.ReceivedPath) when _sends is not null:
+            {
+                // Files this PC sends a phone (M-65): what they are, and the phone saying it has them.
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                var reply = (head.Method, head.Path) switch
+                {
+                    ("GET", FileSendProtocol.OfferPath) => _sends.Offer(device, head.QueryValue("id")),
+                    ("POST", FileSendProtocol.ReceivedPath) => _sends.Received(device, head.QueryValue("id")),
                     _ => new TransferReply(405, Error("method_not_allowed", "Method not allowed.")),
                 };
                 return (reply.Status, reply.Json);

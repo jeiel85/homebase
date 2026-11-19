@@ -22,13 +22,16 @@ public sealed class TransferPipeServer : BackgroundService
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
     private readonly FileShareService _files;
+    private readonly FileSendService? _sends;
     private readonly MobileOptions _options;
     private readonly ILogger<TransferPipeServer> _logger;
     private readonly string _pipeName;
 
     /// <param name="pipeName">Tests only: a name of their own, so they never meet an installed Agent's pipe.</param>
-    public TransferPipeServer(FileShareService files, IOptions<MobileOptions> options, ILogger<TransferPipeServer> logger, string? pipeName = null)
+    public TransferPipeServer(FileShareService files, IOptions<MobileOptions> options, ILogger<TransferPipeServer> logger,
+        string? pipeName = null, FileSendService? sends = null)
     {
+        _sends = sends;
         _pipeName = pipeName ?? TransferPipe.PipeName;
         _files = files;
         _options = options.Value;
@@ -90,6 +93,11 @@ public sealed class TransferPipeServer : BackgroundService
                 limit.CancelAfter(RequestTimeout);
                 request = (await MobileBridge.ReadFrameAsync(pipe, limit.Token))?.Deserialize<TransferPipeRequest>(MobileProtocol.Json);
             }
+            if (request?.Mode == TransferPipeRequest.Write)
+            {
+                await ReceiveFromTrayAsync(pipe, request, ct);
+                return;
+            }
             if (_files.OpenForTray(request) is not { } open)
             {
                 await MobileBridge.WriteFrameAsync(pipe, Frame(new TransferPipeHeader(false, 0, "not_found")), ct);
@@ -112,6 +120,40 @@ public sealed class TransferPipeServer : BackgroundService
         {
             await pipe.DisposeAsync();
         }
+    }
+
+    /// <summary>
+    /// Write mode (M-65): a file the Tray sends, read with the user's rights on its side; stored in the send's folder with
+    /// its SHA-256 counted on the way. The Agent never opens the user's path itself.
+    /// </summary>
+    private async Task ReceiveFromTrayAsync(NamedPipeServerStream pipe, TransferPipeRequest request, CancellationToken ct)
+    {
+        if (_sends?.OpenForWrite(request) is not { } output)
+        {
+            await MobileBridge.WriteFrameAsync(pipe, Frame(new TransferPipeHeader(false, 0, "not_expected")), ct);
+            return;
+        }
+        string hash;
+        await using (output)
+        {
+            await MobileBridge.WriteFrameAsync(pipe, Frame(new TransferPipeHeader(true, request.Size)), ct);
+            using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+            var buffer = new byte[BufferBytes];
+            var left = request.Size;
+            while (left > 0)
+            {
+                var read = await pipe.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, left)), ct);
+                if (read == 0) throw new EndOfStreamException($"The Tray stopped {left} bytes early.");
+                sha.AppendData(buffer, 0, read);
+                await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                left -= read;
+            }
+            hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+        }
+        _sends.Written(request.Id, request.File, hash);
+        await MobileBridge.WriteFrameAsync(pipe, Frame(new TransferPipeHeader(true, request.Size)), ct);
+        await pipe.FlushAsync(ct);
+        try { pipe.WaitForPipeDrain(); } catch (IOException) { }
     }
 
     private static System.Text.Json.Nodes.JsonObject Frame(TransferPipeHeader header) =>

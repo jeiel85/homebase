@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.IntentCompat
 import io.github.jeiel85.homebase.data.PcEntry
+import io.github.jeiel85.homebase.share.DownloadSpec
+import io.github.jeiel85.homebase.share.FileReceive
 import io.github.jeiel85.homebase.share.FileSendFlow
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
@@ -87,6 +89,8 @@ class ClipShareActivity : ComponentActivity() {
  *   (M-64), text onto the PC's clipboard (M-62).
  * - [ACTION_FETCH] (a "long text" notification): fetches what the PC kept and copies it.
  * - [ACTION_SEND_FILES] (a PC card's "파일 보내기"): the picked files, in the intent's ClipData, to [EXTRA_PC_ID].
+ * - [ACTION_RECEIVE_FILES] ([받기] on files a PC sent, M-65): starts fetching them. Scheduled from here because a
+ *   user-initiated job (Android 14+) can only be started while a screen of this app is in front.
  */
 class ClipActionActivity : ComponentActivity() {
     private var clip by mutableStateOf<ClipText?>(null)
@@ -100,10 +104,12 @@ class ClipActionActivity : ComponentActivity() {
         val pcId = intent?.getStringExtra(EXTRA_PC_ID)
         val clipId = intent?.getStringExtra(EXTRA_CLIP_ID)
         val picked = if (action == ACTION_SEND_FILES) clipUris(intent?.clipData) else emptyList()
+        val receive = if (action == ACTION_RECEIVE_FILES) DownloadSpec.from(intent) else null
         val valid = when (action) {
             ACTION_SEND_CLIPBOARD -> true
             ACTION_FETCH -> pcId != null && clipId != null
             ACTION_SEND_FILES -> pcId != null && picked.isNotEmpty()
+            ACTION_RECEIVE_FILES -> receive != null
             else -> false
         }
         if (!valid) {
@@ -113,6 +119,7 @@ class ClipActionActivity : ComponentActivity() {
         setContent {
             HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
                 when {
+                    receive != null -> ReceiveStartFlow(receive, onDone = { finish() })
                     action == ACTION_FETCH && pcId != null && clipId != null -> ClipFetchFlow(pcId, clipId, onDone = { finish() })
                     action == ACTION_SEND_FILES -> FileSendFlow(picked, presetPcId = pcId, pickAlways = false, onDone = { finish() })
                     else -> {
@@ -152,6 +159,7 @@ class ClipActionActivity : ComponentActivity() {
         const val ACTION_SEND_CLIPBOARD = "io.github.jeiel85.homebase.action.SEND_CLIPBOARD"
         const val ACTION_FETCH = "io.github.jeiel85.homebase.action.FETCH_CLIP"
         const val ACTION_SEND_FILES = "io.github.jeiel85.homebase.action.SEND_FILES"
+        const val ACTION_RECEIVE_FILES = "io.github.jeiel85.homebase.action.RECEIVE_FILES"
         const val EXTRA_PC_ID = "io.github.jeiel85.homebase.CLIP_PC_ID"
         const val EXTRA_CLIP_ID = "io.github.jeiel85.homebase.CLIP_ID"
     }
@@ -258,6 +266,20 @@ private fun ClipSendFlow(text: String, sensitive: Boolean, pickAlways: Boolean, 
             text = { Text("${sending?.displayName}에 보내는 중…") },
             confirmButton = {},
         )
+    }
+}
+
+/**
+ * [받기] on files a PC sent (M-65): starts the download job — now that this screen is in front, as a user-initiated
+ * job on Android 14+ — says so and calls [onDone]. Runs from the first frame, when the activity is resumed.
+ */
+@Composable
+private fun ReceiveStartFlow(spec: DownloadSpec, onDone: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        val started = FileReceive.schedule(context, spec, userInitiated = true)
+        toast(context, if (started) "${spec.pcName}에서 받는 중 — 진행 상황은 알림에서 볼 수 있습니다" else "받기를 시작하지 못했습니다. 다시 시도하세요.")
+        onDone()
     }
 }
 

@@ -33,6 +33,9 @@ internal static class MobileHost
     /// <summary>Saves files another device sent (DECISIONS M-64). Static for the same reason. Background thread.</summary>
     public static Func<LocalOpsBot.Core.Mobile.TrayTransfer, Task<LocalOpsBot.Core.Mobile.TrayTransferSaved>>? FilesHandler { get; set; }
 
+    /// <summary>Where files this PC sends stand (DECISIONS M-65). Background thread.</summary>
+    public static event Action<LocalOpsBot.Core.Mobile.FilesProgress>? FilesProgress;
+
     public static bool IsEnabled() => TrayConfig.Load().GetSection("mobile").GetValue<bool>("enabled");
 
     public static MobileBridgeClient EnsureStarted()
@@ -43,6 +46,7 @@ internal static class MobileHost
         _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
         _client.ToastRequested += t => ToastRequested?.Invoke(t);
         _client.ClipHandler = c => ClipHandler is { } handler ? handler(c) : Task.FromResult(false);
+        _client.FilesProgressReceived += p => FilesProgress?.Invoke(p);
         _client.FilesHandler = t => FilesHandler is { } handler
             ? handler(t)
             : Task.FromResult(new LocalOpsBot.Core.Mobile.TrayTransferSaved(t.Id, false, "no handler"));

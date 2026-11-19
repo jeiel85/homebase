@@ -32,6 +32,19 @@ public sealed class TrayIconManager : IDisposable
     private OnboardingWindow? _onboarding;
     private readonly ToolStripMenuItem _centerItem;
     private readonly ToolStripMenuItem _clipItem;
+    private readonly ToolStripMenuItem _filesItem;
+    /// <summary>Sends under way (M-65): what was sent to whom, and which targets were already reported.</summary>
+    private readonly Dictionary<string, SendTracking> _sends = new(StringComparer.Ordinal);
+
+    private sealed class SendTracking(int count, long bytes, IReadOnlyDictionary<string, string> names)
+    {
+        public int Count { get; } = count;
+        public long Bytes { get; } = bytes;
+        public IReadOnlyDictionary<string, string> Names { get; } = names;
+        public Dictionary<string, LocalOpsBot.Core.Mobile.FilesProgress> Latest { get; } = new(StringComparer.Ordinal);
+        public bool Announced;
+        public HashSet<string> ReceivedShown { get; } = new(StringComparer.Ordinal);
+    }
     /// <summary>What a click on the balloon now showing does; null = open the notification center.</summary>
     private Action? _balloonClick;
     private readonly System.Windows.Threading.DispatcherTimer _unreadTimer;
@@ -75,7 +88,13 @@ public sealed class TrayIconManager : IDisposable
         _clipItem.DropDownItems.Add(new ToolStripMenuItem(L.ClipLoading) { Enabled = false });
         _clipItem.DropDownOpening += async (_, _) => await FillClipTargetsAsync();
         menu.Items.Add(_clipItem);
-        menu.Opening += (_, _) => _clipItem.Visible = MobileHost.Client is not null;
+
+        // Send files from this PC to a phone or another PC of the group (DECISIONS M-65): pick the device, then the files.
+        _filesItem = new ToolStripMenuItem(L.MenuSendFiles);
+        _filesItem.DropDownItems.Add(new ToolStripMenuItem(L.ClipLoading) { Enabled = false });
+        _filesItem.DropDownOpening += async (_, _) => await FillFileTargetsAsync();
+        menu.Items.Add(_filesItem);
+        menu.Opening += (_, _) => _clipItem.Visible = _filesItem.Visible = MobileHost.Client is not null;
 
         var settingsItem = new ToolStripMenuItem(L.MenuSettings);
         settingsItem.Click += (_, _) => ShowSettings(SettingsTab.Phone);
@@ -110,6 +129,7 @@ public sealed class TrayIconManager : IDisposable
         MobileHost.ToastRequested += OnToastRequested;
         MobileHost.ClipHandler = OnClipReceivedAsync;
         MobileHost.FilesHandler = OnFilesReceivedAsync;
+        MobileHost.FilesProgress += OnFilesProgress;
 
         // A relayed notification's balloon opens the center; the unread count follows new arrivals
         // and is re-read every minute (this PC's alerts do not reach the Tray as balloons).
@@ -291,6 +311,18 @@ public sealed class TrayIconManager : IDisposable
             ShowBalloon(L.ClipNotSentTitle, L.ClipBusy);
             return;
         }
+        // Files copied in Explorer, or a picture (a screenshot), go as files (M-65); text as before.
+        if (snapshot.Files is { Count: > 0 } copied)
+        {
+            await SendFilesAsync(FileSender.FromPaths(copied), targets);
+            return;
+        }
+        if (snapshot.Text is null && snapshot.Png is { } png)
+        {
+            var name = $"clipboard-{DateTime.Now:yyyyMMdd-HHmmss}.png";
+            await SendFilesAsync(new[] { new FileSender.Item(name, png.Length, "image/png", () => new System.IO.MemoryStream(png, writable: false)) }, targets);
+            return;
+        }
         if (snapshot.Text is not { } text)
         {
             ShowBalloon(L.ClipNotSentTitle, L.ClipNothing);
@@ -324,6 +356,136 @@ public sealed class TrayIconManager : IDisposable
             ShowBalloon(sent.Count == 0 ? L.ClipNotSentTitle : L.ClipPartlySentTitle,
                 string.Join("\n", failed.Select(o => $"{Name(o)}: {L.ClipError(o.Error)}")));
     }
+
+    /// <summary>The "Send files" submenu: the devices that take files, asked for when it opens (M-65).</summary>
+    private async Task FillFileTargetsAsync()
+    {
+        var items = _filesItem.DropDownItems;
+        items.Clear();
+        items.Add(new ToolStripMenuItem(L.ClipLoading) { Enabled = false });
+        var targets = await FileSender.TargetsAsync();
+        if (_disposed) return;
+        items.Clear();
+        if (targets is null)
+        {
+            items.Add(new ToolStripMenuItem(L.ClipAgentUnavailable) { Enabled = false });
+            return;
+        }
+        if (targets.Count == 0)
+        {
+            items.Add(new ToolStripMenuItem(L.FilesNoTargets) { Enabled = false });
+            return;
+        }
+        foreach (var t in targets)
+        {
+            var target = t;
+            items.Add(new ToolStripMenuItem(ClipTargetLabel(target), null, async (_, _) => await PickAndSendAsync(new[] { target })));
+        }
+        if (targets.Count > 1)
+        {
+            items.Add(new ToolStripSeparator());
+            items.Add(new ToolStripMenuItem(L.ClipSendAll(targets.Count), null, async (_, _) => await PickAndSendAsync(targets)));
+        }
+    }
+
+    private async Task PickAndSendAsync(IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget> targets)
+    {
+        if (Closing) return;
+        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = L.FilesPickTitle, CheckFileExists = true };
+        if (dialog.ShowDialog() != true || dialog.FileNames.Length == 0) return;
+        await SendFilesAsync(FileSender.FromPaths(dialog.FileNames), targets);
+    }
+
+    /// <summary>
+    /// Sends <paramref name="items"/> to the <paramref name="targets"/> that take files (M-65): the bytes go to the Agent
+    /// first (the tray reads them, with the user's rights), then the Agent tells phones and uploads to PCs. How each target
+    /// fares arrives as files.progress and ends in one balloon.
+    /// </summary>
+    private async Task SendFilesAsync(IReadOnlyList<FileSender.Item> items, IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget> targets)
+    {
+        if (items.Count == 0)
+        {
+            ShowBalloon(L.FilesNotSentTitle, L.FilesNothing);
+            return;
+        }
+        var allowed = await FileSender.TargetsAsync();
+        if (allowed is null)
+        {
+            ShowBalloon(L.FilesNotSentTitle, L.ClipAgentUnavailable);
+            return;
+        }
+        var keys = allowed.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
+        var usable = targets.Where(t => keys.Contains(t.Key)).ToList();
+        if (usable.Count == 0)
+        {
+            ShowBalloon(L.FilesNotSentTitle, L.FilesNoTargets);
+            return;
+        }
+        var bytes = items.Sum(i => i.Size);
+        var names = usable.ToDictionary(t => t.Key,
+            t => DeviceNames.Show(t.Kind, t.Name, t.Kind == LocalOpsBot.Core.Mobile.DeviceKind.Pc ? t.Key : null), StringComparer.Ordinal);
+        ShowBalloon(L.FilesSendingTitle(items.Count, bytes), L.FilesSendingBody(string.Join(", ", names.Values)));
+
+        // Tracked before files.go: delivery starts inside it, and its first (even final) progress may come back at once.
+        string? tracked = null;
+        var result = await Task.Run(() => FileSender.SendAsync(items, usable.Select(t => t.Key).ToList(), id =>
+        {
+            tracked = id;
+            lock (_sends) _sends[id] = new SendTracking(items.Count, bytes, names);
+        }));
+        if (_disposed) return;
+        TrayLog.Info("Files", $"Send of {items.Count} file(s), {bytes} bytes to {string.Join(", ", names.Values)}: {result.Id ?? result.Error}");
+        if (result.Id is null)
+        {
+            if (tracked is not null) lock (_sends) _sends.Remove(tracked);
+            ShowBalloon(L.FilesNotSentTitle, L.FileSendError(result.Error));
+        }
+    }
+
+    /// <summary>
+    /// How a send stands for one target (M-65). One balloon once every target got as far as it can on its own (a PC has
+    /// the files, a phone was told, or it failed), and a short one when a phone then fetches them.
+    /// </summary>
+    private void OnFilesProgress(LocalOpsBot.Core.Mobile.FilesProgress progress) =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_disposed) return;
+            SendTracking? send;
+            lock (_sends) _sends.TryGetValue(progress.Id, out send);
+            if (send is null) return;
+            send.Latest[progress.Key] = progress;
+            var name = send.Names.TryGetValue(progress.Key, out var n) ? n : progress.Name;
+
+            if (send.Announced)
+            {
+                if (progress.State == LocalOpsBot.Core.Mobile.FileSendStates.Received && send.ReceivedShown.Add(progress.Key))
+                    ShowBalloon(L.FilesReceivedByTitle(name), L.FilesReceivedByBody(send.Count, send.Bytes));
+                return;
+            }
+            var settled = send.Names.Keys.All(k => send.Latest.TryGetValue(k, out var p)
+                && p.State is not LocalOpsBot.Core.Mobile.FileSendStates.Sending);
+            if (!settled) return;
+            send.Announced = true;
+            var lines = send.Names.Select(kv =>
+            {
+                var p = send.Latest[kv.Key];
+                return p.State switch
+                {
+                    LocalOpsBot.Core.Mobile.FileSendStates.Sent => L.FilesSentTo(kv.Value),
+                    LocalOpsBot.Core.Mobile.FileSendStates.Notified => L.FilesNotified(kv.Value),
+                    LocalOpsBot.Core.Mobile.FileSendStates.Received => L.FilesReceivedLine(kv.Value),
+                    _ => $"{kv.Value}: {L.FileSendError(p.Error)}",
+                };
+            }).ToList();
+            var failed = send.Names.Keys.Count(k => send.Latest[k].State == LocalOpsBot.Core.Mobile.FileSendStates.Failed);
+            var title = failed == 0 ? L.FilesSentTitle(send.Count, send.Bytes)
+                : failed == send.Names.Count ? L.FilesNotSentTitle : L.FilesPartlySentTitle;
+            ShowBalloon(title, string.Join("\n", lines));
+            foreach (var kv in send.Latest.Where(kv => kv.Value.State == LocalOpsBot.Core.Mobile.FileSendStates.Received)) send.ReceivedShown.Add(kv.Key);
+            // Kept only while a phone may still fetch them (the Agent keeps them a day).
+            if (send.Latest.Values.All(p => p.State is not LocalOpsBot.Core.Mobile.FileSendStates.Notified))
+                lock (_sends) _sends.Remove(progress.Id);
+        }));
 
     /// <summary>A balloon of the tray's own (never forwarded to the phones as a Windows notification).</summary>
     private void ShowBalloon(string title, string text, Action? onClick = null)
@@ -643,6 +805,7 @@ public sealed class TrayIconManager : IDisposable
         MobileHost.ToastRequested -= OnToastRequested;
         MobileHost.ClipHandler = null;
         MobileHost.FilesHandler = null;
+        MobileHost.FilesProgress -= OnFilesProgress;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _baseIcon.Dispose();

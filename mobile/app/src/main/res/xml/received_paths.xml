@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Files a PC sent, on Android 8–9 (DECISIONS M-65): this app's own Download/Homebase folder, external when there is
+     external storage, else internal. Nothing else of the app is reachable through ReceivedFileProvider. -->
+<paths>
+    <external-files-path name="received" path="Download/Homebase/" />
+    <files-path name="received_internal" path="Download/Homebase/" />
+</paths>

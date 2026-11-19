@@ -45,6 +45,10 @@ public static class MobileBridge
     public const string OpClipDone = "clip.done";             // push TrayClipDone — whether clip.set {id} reached the clipboard (M-62)
     public const string OpFilesReady = "files.ready";         // push — this Tray saves received files; the Agent offers what waits (M-64)
     public const string OpTransferSaved = "transfer.saved";   // push TrayTransferSaved — the Tray saved transfer.ready {id} (or could not) (M-64)
+    public const string OpFilesTargets = "files.targets";     // request → ClipTargetList: where files can go (M-65)
+    public const string OpFilesBegin = "files.begin";         // request FilesBeginRequest → FilesBeginResult; then the files over Homebase.Transfer (M-65)
+    public const string OpFilesGo = "files.go";               // request FilesIdRequest → bool: every file is in, send them (M-65)
+    public const string OpFilesCancel = "files.cancel";       // request FilesIdRequest → bool (M-65)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
@@ -52,6 +56,7 @@ public static class MobileBridge
     public const string OpAliases = "aliases";                // push AliasListPayload — the group's aliases, on connect and on change (M-51)
     public const string OpClipSet = "clip.set";               // push TrayClip with an id — text another device sent; the Tray answers clip.done (M-62)
     public const string OpTransferReady = "transfer.ready";   // push TrayTransfer — files another device sent, to read from Homebase.Transfer and save (M-64)
+    public const string OpFilesProgress = "files.progress";   // push FilesProgress — files this PC sends, per target (M-65)
     public const string OpResponse = "response";
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
@@ -60,6 +65,7 @@ public static class MobileBridge
         OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
         OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpDevicesRefresh, OpAdvise,
         OpClipReady, OpClipTargets, OpClipSend, OpClipDone, OpFilesReady, OpTransferSaved,
+        OpFilesTargets, OpFilesBegin, OpFilesGo, OpFilesCancel,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>

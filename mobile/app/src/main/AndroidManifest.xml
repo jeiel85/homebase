@@ -99,6 +99,27 @@
             android:name=".share.UploadCancelReceiver"
             android:exported="false" />
 
+        <!-- Files a PC sends (M-65): the download job and the cancel action on its notification. -->
+        <service
+            android:name=".share.DownloadJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver
+            android:name=".share.DownloadCancelReceiver"
+            android:exported="false" />
+
+        <!-- Android 8–9 keep received files in this app's own folder; this hands them to the app that opens or
+             shares them. Its own class and authority: the GitHub build's updater has the plain FileProvider. -->
+        <provider
+            android:name=".share.ReceivedFileProvider"
+            android:authorities="${applicationId}.received"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/received_paths" />
+        </provider>
+
         <!-- The tile's clipboard send and a "long text" notification's fetch (M-62), and a PC card's "파일 보내기"
              (M-64). Not exported: reading the clipboard and sending it on is only ever started by this app. -->
         <activity

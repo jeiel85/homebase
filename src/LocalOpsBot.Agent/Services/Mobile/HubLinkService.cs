@@ -144,6 +144,14 @@ public sealed class HubLinkService : BackgroundService
         catch (ObjectDisposedException) { return null; } // unlinked meanwhile
     }
 
+    /// <summary>A raw-body POST to a linked PC (a sealed file chunk, M-65). Null when not linked to <paramref name="pcId"/>.</summary>
+    public async Task<HubReply?> CallBytesAsync(string pcId, string path, byte[] body, TimeSpan timeout, CancellationToken ct)
+    {
+        if (!_links.TryGetValue(pcId, out var link)) return null;
+        try { return await link.Client.PostBytesAsync(link.Hub.Endpoints, path, body, link.Hub.Token, timeout, ct); }
+        catch (ObjectDisposedException) { return null; }
+    }
+
     /// <summary>What the Tray's device list shows for the linked PCs.</summary>
     public IReadOnlyList<LinkedHubView> Views() => _links.Values
         .Select(l => new LinkedHubView(l.Hub.PcId, l.LastDevices?.Hub.PcName ?? l.Hub.PcName, l.Online, l.LastContactAt,

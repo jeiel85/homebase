@@ -361,6 +361,54 @@ public class ProtocolGoldenTests
         Assert.Null(TransferCrypto.OpenChunk(transferKey, 0, 0, Base64Url.Decode((string?)fixture["chunks"]![1]!["data"])));
     }
 
+    /// <summary>
+    /// <c>push-share.v1.json</c> (M-65): the plaintext push telling a phone files wait on a PC, sealed with
+    /// <see cref="ClipFixtureKey"/>; its id is <see cref="TransferFixtureId"/>. The Kotlin test opens the notice.
+    /// </summary>
+    [Fact]
+    public void Share_push_matches_the_shared_fixture()
+    {
+        var key = ClipFixtureKey();
+        var notice = new ShareNotice(MobileProtocol.Schema, 2, TransferFixtureFile0.Length + TransferFixtureFile1.Length, "회의록 11월.txt",
+            new DateTimeOffset(2026, 11, 19, 7, 0, 0, TimeSpan.Zero));
+        var bytes = FileSendMessages.PushPlaintext("6f1c0d2e9b8a4c7d", key, TransferFixtureId, notice,
+            Enumerable.Range(0x60, ClipCrypto.NonceBytes).Select(i => (byte)i).ToArray());
+        var actual = JsonNode.Parse(bytes)!;
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "push-share.v1.json");
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"push-share.v1.json drifted:\n{actual}");
+        Assert.Null(actual["title"]); // an app from before M-65 drops it
+        Assert.Equal(notice, FileSendMessages.OpenNotice(key, JsonSerializer.Deserialize<ClipPushEnvelope>(bytes, MobileProtocol.Json)));
+    }
+
+    /// <summary>
+    /// <c>transfer-offer.v1.json</c> (M-65): <c>GET /api/v1/transfer/offer</c> for the two fixture files, sealed with
+    /// <see cref="ClipFixtureKey"/>. The chunks a phone fetches are sealed like <c>transfer.v1.json</c>'s.
+    /// </summary>
+    [Fact]
+    public void Transfer_offer_matches_the_shared_fixture()
+    {
+        var key = ClipFixtureKey();
+        var offer = new TransferOffer(MobileProtocol.Schema, new[]
+        {
+            new TransferOfferFile("회의록 11월.txt", TransferFixtureFile0.Length, "text/plain",
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(TransferFixtureFile0)).ToLowerInvariant()),
+            new TransferOfferFile("screen.png", TransferFixtureFile1.Length, "image/png",
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(TransferFixtureFile1)).ToLowerInvariant()),
+        }, new DateTimeOffset(2026, 11, 19, 7, 0, 0, TimeSpan.Zero));
+        var envelope = FileSendMessages.SealOffer(key, TransferFixtureId, offer, Enumerable.Range(0x70, ClipCrypto.NonceBytes).Select(i => (byte)i).ToArray());
+        var actual = JsonSerializer.SerializeToNode(envelope, MobileProtocol.Json)!;
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "transfer-offer.v1.json");
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"transfer-offer.v1.json drifted:\n{actual}");
+        var opened = FileSendMessages.OpenOffer(key, JsonSerializer.Deserialize<ClipEnvelope>(File.ReadAllText(path), MobileProtocol.Json))!;
+        Assert.Equal(offer.Files, opened.Files);
+    }
+
     /// <summary>The QR text (M-20). The Android app parses the same file back into the offer fixture's paths.</summary>
     [Fact]
     public void Pairing_link_matches_the_shared_fixture_and_round_trips()

@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.51.0 — Send files from the PC to phones and other PCs
+
+### Added
+- **Send files from the PC.** The tray menu has **Send files to ▸**: pick a phone or a PC of your group (or all
+  of them), then the files. A phone gets a notification — small sends (up to 25 MB on Wi-Fi) are saved at
+  once, bigger ones with a tap on **받기** — and photos and videos land in the gallery (Pictures/Homebase),
+  everything else in Download/Homebase. Another PC saves them in its Downloads\Homebase, like files from a
+  phone.
+- **Send clipboard to ▸** now sends what you copied, whatever it is: files copied in Explorer go as files, a
+  screenshot or a copied picture as a PNG, text as before.
+- A balloon says how each device fared, and another one when a phone has fetched the files. Files wait on
+  this PC for a day for a phone that is off.
+
+### Security
+- Files are sealed for each phone with the key it agreed with this PC (v0.49.0), chunk by chunk, and checked
+  against their hashes before they are saved. The monitoring service keeps its copy in its own folder; the tray
+  reads your files with your own rights.
+
+### Notes
+- Phones need the v0.51.0 app to be offered (older ones can't fetch files); another PC needs v0.50.0 or later.
+
 ## v0.50.0 — Send photos and files from the phone to the PC
 
 ### Added
