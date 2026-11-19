@@ -418,8 +418,9 @@ public sealed class FileSendService : BackgroundService
             allDone = send.State.Targets.All(send.Final);
             if (!allDone) Save(send);
         }
-        Report(send, target);
+        // Gone before the last progress goes out: whoever sees a send end finds nothing of it left on disk.
         if (allDone) Remove(send);
+        Report(send, target);
     }
 
     private DateTimeOffset _lastReport = DateTimeOffset.MinValue;
