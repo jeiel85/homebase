@@ -25,6 +25,51 @@ public static class L
     public static string MenuPhoneWatching => T("● Another device is viewing this PC", "● 다른 기기가 이 PC를 보는 중");
     public static string TrayTipWatching => T("Homebase — another device is viewing this PC", "Homebase — 다른 기기가 이 PC를 보는 중");
 
+    // ── Clipboard (DECISIONS M-62) ───────────────────────────────────────────
+    public static string MenuSendClipboard => T("Send clipboard to", "클립보드 보내기");
+    public static string ClipLoading => T("Looking for devices…", "기기를 찾는 중…");
+    public static string ClipAgentUnavailable => T("The Homebase service isn't reachable. Make sure it is running and up to date.",
+        "Homebase 서비스에 닿지 않습니다. 서비스가 실행 중이고 최신 버전인지 확인하세요.");
+    public static string ClipNoTargets => T("No device to send to — connect a phone (with the latest app) or another PC",
+        "보낼 기기가 없습니다 — 휴대폰(최신 앱)이나 다른 PC를 연결하세요");
+    public static string ClipTargetPhone(string name) => T($"{name} (phone)", $"{name} (휴대폰)");
+    public static string ClipTargetPc(string name) => T($"{name} (PC)", $"{name} (PC)");
+    public static string ClipSendAll(int count) => T($"All {count} devices", $"모든 기기 {count}대");
+    public static string ClipSentTitle => T("Clipboard sent", "클립보드를 보냈습니다");
+    public static string ClipSentBody(string names) => T($"To {names}.", $"{names}(으)로 보냈습니다.");
+    public static string ClipNotSentTitle => T("Clipboard not sent", "클립보드를 보내지 못했습니다");
+    public static string ClipPartlySentTitle => T("Clipboard sent to some devices only", "일부 기기에만 보냈습니다");
+    public static string ClipBusy => T("Another app is holding the clipboard. Try again in a moment.",
+        "다른 앱이 클립보드를 쓰고 있습니다. 잠시 뒤 다시 하세요.");
+    public static string ClipNothing => T("The clipboard has no text. Copy some text first.",
+        "클립보드에 텍스트가 없습니다. 텍스트를 먼저 복사하세요.");
+    public static string ClipTooLong(int max) => T($"The text is too long (up to {max:N0} characters).",
+        $"텍스트가 너무 깁니다 (최대 {max:N0}자).");
+    public static string ClipSensitiveTitle => T("Send a password?", "비밀번호를 보낼까요?");
+    public static string ClipSensitiveBody => T(
+        "A password manager copied what is on the clipboard. Send it anyway? It is encrypted on the way, and the other device keeps it out of clipboard history.",
+        "클립보드 내용은 비밀번호 관리자가 복사한 것입니다. 그래도 보낼까요? 보내는 동안 암호화되고, 받는 기기는 클립보드 기록에 남기지 않습니다.");
+    public static string ClipSendAnyway => T("Send", "보내기");
+    public static string ClipReceivedTitle => T("Copied to the clipboard", "클립보드에 넣었습니다");
+    public static string ClipReceivedBody(string from, int chars) => T(
+        $"Text from {from} ({chars:N0} characters). Paste it with Ctrl+V.",
+        $"{from}에서 받은 텍스트({chars:N0}자)입니다. Ctrl+V로 붙여 넣으세요.");
+    public static string ClipReceiveFailedTitle => T("Couldn't copy received text", "받은 텍스트를 넣지 못했습니다");
+    public static string ClipReceiveFailedBody(string from) => T(
+        $"{from} sent text, but another app was holding the clipboard. {from} was told to send it again.",
+        $"{from}에서 텍스트를 보냈지만 다른 앱이 클립보드를 쓰고 있었습니다. 보낸 쪽에 다시 보내라고 알렸습니다.");
+    public static string ClipError(string? code) => code switch
+    {
+        "no_user_session" => T("nobody is signed in there", "로그인한 사용자가 없습니다"),
+        "unreachable" => T("not reachable", "연결할 수 없습니다"),
+        "unsupported" => T("update Homebase there first", "그 PC의 Homebase를 먼저 업데이트하세요"),
+        "rejected" => T("no longer connected — connect it again", "연결이 끊겼습니다 — 다시 연결하세요"),
+        "push_failed" => T("the push didn't go out (is the phone's ntfy app running?)", "푸시를 보내지 못했습니다 (휴대폰의 ntfy 앱이 켜져 있는지 확인하세요)"),
+        "clipboard_busy" => T("its clipboard was busy — send again", "그 PC의 클립보드가 사용 중이었습니다 — 다시 보내세요"),
+        "unknown_target" => T("no longer connected", "더 이상 연결되어 있지 않습니다"),
+        _ => T("failed", "실패했습니다"),
+    };
+
     // ── Common ───────────────────────────────────────────────────────────────
     public static string Close => T("CLOSE", "닫기");
     public static string Cancel => T("Cancel", "취소");

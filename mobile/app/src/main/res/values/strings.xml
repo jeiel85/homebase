@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Homebase</string>
+    <!-- Quick settings tile (DECISIONS M-62): sends the phone's clipboard text to the PC used last. -->
+    <string name="clip_tile_label">클립보드 → PC</string>
 </resources>

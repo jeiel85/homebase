@@ -52,7 +52,20 @@ public sealed class MobileBridgeServer : BackgroundService
     internal static readonly TimeSpan RefreshWait = TimeSpan.FromSeconds(8);
     private readonly ApprovalBroker? _approvals;
     private readonly OnDemandAdvice? _advice;
+    private readonly ClipShareService? _clips;
     private readonly List<Connection> _connections = new();
+
+    /// <summary>
+    /// How long the Tray's "send clipboard" may wait for its targets: a push takes up to 15 s, a PC up to 8 s per path
+    /// (a PC with a LAN, a Tailscale and a Cloudflare path that all fail takes the longest).
+    /// </summary>
+    internal static readonly TimeSpan ClipSendWait = TimeSpan.FromSeconds(45);
+
+    /// <summary>How long received text waits for a Tray to say it reached the clipboard (it retries a busy one briefly).</summary>
+    internal static readonly TimeSpan ClipDeliverWait = TimeSpan.FromSeconds(10);
+
+    /// <summary><c>clip.set</c> ids waiting for their Tray's <c>clip.done</c>.</summary>
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _clipAcks = new(StringComparer.Ordinal);
 
     private sealed class Connection(Stream stream)
     {
@@ -63,6 +76,9 @@ public sealed class MobileBridgeServer : BackgroundService
         public ConcurrentDictionary<string, byte> Approvals { get; } = new(StringComparer.Ordinal);
 
         public volatile bool Closed;
+
+        /// <summary>The Tray said it puts received clipboard text on the clipboard (M-62); an older one would drop it.</summary>
+        public volatile bool ClipReady;
     }
 
     public MobileBridgeServer(
@@ -79,8 +95,11 @@ public sealed class MobileBridgeServer : BackgroundService
         TrayLiveService? trayLive = null,
         DeviceGroupService? group = null,
         ApprovalBroker? approvals = null,
-        OnDemandAdvice? advice = null)
+        OnDemandAdvice? advice = null,
+        ClipShareService? clips = null)
     {
+        _clips = clips;
+        if (_clips is not null) _clips.Tray = DeliverClipAsync;
         _advice = advice;
         _group = group;
         if (_group is not null) _group.Aliases.Changed += OnAliasesChanged;
@@ -219,6 +238,19 @@ public sealed class MobileBridgeServer : BackgroundService
             _approvals?.Cancel(MobileBridge.StringOf(payload?["id"]));
             return;
         }
+        if (op == MobileBridge.OpClipReady)
+        {
+            conn.ClipReady = true;
+            return;
+        }
+        if (op == MobileBridge.OpClipDone)
+        {
+            TrayClipDone? done;
+            try { done = payload?.Deserialize<TrayClipDone>(MobileProtocol.Json); }
+            catch (JsonException) { done = null; }
+            if (done is { Id.Length: > 0 } && _clipAcks.TryGetValue(done.Id, out var ack)) ack.TrySetResult(done.Ok);
+            return;
+        }
         if (op == MobileBridge.OpApprovalAsk && id is not null)
         {
             // Waits for a phone for up to 10 minutes: answered off the read loop so this connection's
@@ -232,6 +264,19 @@ public sealed class MobileBridgeServer : BackgroundService
         {
             // Waits a few seconds for the linked PCs: off the read loop so live views keep flowing (M-59).
             _ = Task.Run(() => RefreshDevicesAsync(conn, id, ct), CancellationToken.None);
+            return;
+        }
+        if (op == MobileBridge.OpClipSend)
+        {
+            // Waits for pushes and other PCs: off the read loop so live views keep flowing (M-62).
+            _ = Task.Run(() => SendClipAsync(conn, id, payload, ct), CancellationToken.None);
+            return;
+        }
+        if (op == MobileBridge.OpClipTargets)
+        {
+            await SendAsync(conn, _clips is null
+                ? MobileBridge.Response(id, false, error: MobileBridge.ErrorUnsupported)
+                : MobileBridge.Response(id, true, new ClipTargetList(_clips.Targets())), ct);
             return;
         }
         if (op == MobileBridge.OpAdvise)
@@ -469,6 +514,88 @@ public sealed class MobileBridgeServer : BackgroundService
         return new NotifyTestResult(result.Delivered, via, result.Delivered ? null : result.CombinedError);
     }
 
+    /// <summary>The Tray's "send clipboard" (M-62): to phones by push, to linked PCs over the link.</summary>
+    private async Task SendClipAsync(Connection conn, string id, JsonNode? payload, CancellationToken ct)
+    {
+        JsonObject response;
+        if (_clips is null)
+        {
+            response = MobileBridge.Response(id, false, error: MobileBridge.ErrorUnsupported);
+        }
+        else
+        {
+            ClipSendRequest? request;
+            try { request = payload?.Deserialize<ClipSendRequest>(MobileProtocol.Json); }
+            catch (JsonException) { request = null; }
+            if (request is null)
+            {
+                response = MobileBridge.Response(id, false, error: "bad_request");
+            }
+            else
+            {
+                using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                limit.CancelAfter(ClipSendWait);
+                try { response = MobileBridge.Response(id, true, await _clips.SendAsync(request, limit.Token)); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    response = MobileBridge.Response(id, false, error: "timeout");
+                }
+                catch (OperationCanceledException) { return; }
+            }
+        }
+        if (conn.Closed) return;
+        try { await SendAsync(conn, response, ct); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Text another device sent (M-62) goes to every connected Tray that takes it — normally the one signed-in
+    /// user's — and each says whether it reached the clipboard (<c>clip.done</c>). Null when no Tray takes it
+    /// (nobody signed in); true once one put it there; false when none could or none answered in time.
+    /// </summary>
+    private async Task<bool?> DeliverClipAsync(TrayClip clip, CancellationToken ct)
+    {
+        List<Connection> conns;
+        lock (_gate) conns = _connections.Where(c => c.ClipReady && !c.Closed).ToList();
+        if (conns.Count == 0) return null;
+
+        var acks = new List<(string Id, TaskCompletionSource<bool> Ack)>();
+        foreach (var c in conns)
+        {
+            var id = Guid.NewGuid().ToString("N");
+            var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _clipAcks[id] = ack;
+            acks.Add((id, ack));
+            try { await SendAsync(c, MobileBridge.Message(MobileBridge.OpClipSet, clip, id), ct); }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidDataException)
+            {
+                _logger.LogDebug("Clipboard text to Tray failed: {Message}", ex.Message);
+                ack.TrySetResult(false);
+            }
+        }
+        try
+        {
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(ClipDeliverWait);
+            var pending = acks.Select(a => a.Ack.Task).ToList();
+            while (pending.Count > 0)
+            {
+                var finished = await Task.WhenAny(pending).WaitAsync(limit.Token);
+                if (await finished) return true;
+                pending.Remove(finished);
+            }
+            return false;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return false; // no Tray answered in time
+        }
+        finally
+        {
+            foreach (var (id, _) in acks) _clipAcks.TryRemove(id, out _);
+        }
+    }
+
     private void OnToastRequested(TrayToast toast)
     {
         List<Connection> conns;
@@ -550,6 +677,7 @@ public sealed class MobileBridgeServer : BackgroundService
         _hub.WatchingChanged -= OnWatchingChanged;
         _hub.RemoteWatchingChanged -= OnWatchingChanged;
         if (_toasts is not null) _toasts.Requested -= OnToastRequested;
+        if (_clips is not null) _clips.Tray = null;
         base.Dispose();
     }
 }

@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.49.0 — Send clipboard text between your PCs and phones
+
+### Added
+- **Send the clipboard from the PC.** The tray menu has **Send clipboard to ▸** with the phones and PCs of
+  your group: it sends the text on this PC's clipboard to the one you pick, or to all of them. A phone gets
+  it on its clipboard at once, with a quiet notification; another PC gets it on its clipboard with a balloon
+  ("paste it with Ctrl+V"). Text too long for one push (about a thousand Korean characters) arrives as a
+  notification to tap, and stays on the PC for ten minutes.
+- **Send the clipboard from the phone.** Share text to **Homebase** from any app, use the new quick
+  settings tile **클립보드 → PC**, or **클립보드 보내기** on a PC's card: the text lands on that PC's
+  clipboard. The PC it went to last is remembered.
+- **Passwords are handled with care.** When a password manager put the text on the clipboard, the tray
+  asks before sending it, and the device that receives it keeps it out of clipboard history (Win+V, cloud
+  sync) and out of notification previews.
+- Clipboard text is encrypted end to end with a key that device and that PC agree once (ECDH, only public
+  keys travel), on every path — including Cloudflare, whose edge would otherwise see it. It is never logged
+  or stored; logs keep only the length and the device.
+- The sender hears whether the text really reached the clipboard: a PC whose clipboard stayed busy says so,
+  and the same text can simply be sent again.
+
+### Notes
+- This is sending by hand, not syncing: nothing watches the clipboard. Android does not let apps read the
+  clipboard in the background, and the push quota would not last. Images and files come next
+  (`docs/CLIPBOARD_SHARE.md`).
+- Both ends need v0.49.0: an older phone app is not offered as a target, and an older PC answers
+  "update Homebase there first".
+
 ## v0.48.0 — AI advice, step two: turn it on by itself, ask from an alert, keep it
 
 ### Added

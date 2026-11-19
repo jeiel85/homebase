@@ -121,7 +121,8 @@ public static class WebPushEncryption
         return result;
     }
 
-    private static ECDiffieHellman ImportPublic(ReadOnlySpan<byte> uncompressed)
+    /// <summary>A 65-byte uncompressed P-256 public key; throws <see cref="ArgumentException"/> when it is not a point on the curve.</summary>
+    public static ECDiffieHellman ImportPublic(ReadOnlySpan<byte> uncompressed)
     {
         if (uncompressed.Length != 65 || uncompressed[0] != 0x04)
             throw new ArgumentException("Public key must be a 65-byte uncompressed P-256 point.");

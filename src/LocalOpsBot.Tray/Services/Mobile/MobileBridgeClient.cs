@@ -66,6 +66,12 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>The group's aliases (M-51): sent on connect and whenever they change. Background thread.</summary>
     public event Action<IReadOnlyList<DeviceAlias>>? AliasesReceived;
 
+    /// <summary>
+    /// Puts text another device sent on this PC's clipboard (M-62) and says whether it did; the Agent passes the
+    /// answer on to the sender. Called on a background thread; unset means "could not".
+    /// </summary>
+    public Func<TrayClip, Task<bool>>? ClipHandler { get; set; }
+
     /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>
     public IReadOnlyList<DeviceAlias>? LastAliases { get; private set; }
 
@@ -131,6 +137,9 @@ internal sealed class MobileBridgeClient : IDisposable
                 await pipe.ConnectAsync(3000, ct);
                 _pipe = pipe;
                 connectedAt = DateTime.UtcNow;
+                // Tells the Agent this tray puts received clipboard text on the clipboard (M-62). An older
+                // Agent answers nothing to a push it doesn't know, and the connection stays.
+                await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipReady), ct);
                 using var watchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 var watcher = Task.Run(() => WatchSessionsAsync(pipe, watchCts.Token));
                 try { await ReadLoopAsync(pipe, ct); }
@@ -214,6 +223,10 @@ internal sealed class MobileBridgeClient : IDisposable
             case MobileBridge.OpToast:
                 if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);
                 break;
+            case MobileBridge.OpClipSet:
+                if (msg["payload"]?.Deserialize<TrayClip>(MobileProtocol.Json) is { Text.Length: > 0 } clip)
+                    _ = Task.Run(() => PutClipAsync(pipe, MobileBridge.StringOf(msg["id"]), clip));
+                break;
             case MobileBridge.OpAliases:
                 try
                 {
@@ -229,6 +242,17 @@ internal sealed class MobileBridgeClient : IDisposable
                 tcs.TrySetResult(msg);
                 break;
         }
+    }
+
+    /// <summary>Runs <see cref="ClipHandler"/> off the read loop and tells the Agent how it went (<c>clip.done</c>).</summary>
+    private async Task PutClipAsync(NamedPipeClientStream pipe, string? id, TrayClip clip)
+    {
+        var ok = false;
+        try { ok = ClipHandler is { } handler && await handler(clip); }
+        catch (Exception ex) { TrayLog.Warn("Clipboard", $"Received text was not put on the clipboard: {ex.GetType().Name}"); }
+        if (id is null) return;
+        try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipDone, new TrayClipDone(id, ok)), _cts.Token); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
     }
 
     private void StartReporting(NamedPipeClientStream pipe)

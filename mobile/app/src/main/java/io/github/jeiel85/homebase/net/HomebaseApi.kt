@@ -63,6 +63,13 @@ class HomebaseApi(
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
+    /** Clipboard text (DECISIONS M-62): up to ~1 MB on the way up, which a slow mobile link needs time for. */
+    private val clipClient: OkHttpClient = client.newBuilder()
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
     private val pinnedClients = ConcurrentHashMap<String, OkHttpClient>()
 
     /** The HTTP client for [e]: a pinned TLS client for LAN, the normal client otherwise. */
@@ -245,6 +252,51 @@ class HomebaseApi(
                 }
                 code == 404 || code == 405 -> null
                 else -> throw IOException(errorMessage(text) ?: "조언 요청 실패 (HTTP $code)")
+            }
+        }
+
+    /**
+     * Agrees a fresh clipboard key with [pc] (`POST /api/v1/clip/key`, DECISIONS M-62): an ECDH exchange
+     * with a P-256 pair made for this call only; the PC replaces any key it held for this phone. Returns the
+     * 32-byte key, or null when the PC is too old to know the route (404/405). Throws
+     * [UnauthorizedException] on 401 and [IOException] when no path answered or the answer is unusable.
+     */
+    suspend fun agreeClipKey(pc: PcEntry): ByteArray? {
+        val agreement = ClipKeyAgreement()
+        val body = agreement.requestJson().toString().toRequestBody(JSON)
+        return authedCall(pc, ClipProtocol.KEY_PATH, Request.Builder().post(body)) { code, answer ->
+            when {
+                code in 200..299 -> agreement.finish(answer) ?: throw IOException("PC의 클립보드 키를 읽지 못했습니다.")
+                code == 404 || code == 405 -> null
+                else -> throw IOException(errorMessage(answer) ?: "클립보드 키 교환 실패 (HTTP $code)")
+            }
+        }
+    }
+
+    /**
+     * Puts [text] on [pc]'s clipboard (DECISIONS M-62), sealed with [key] (agreed with that PC), so the
+     * Cloudflare edge never reads it. Throws [UnauthorizedException] on 401 and [IOException] when no path
+     * answered; everything the PC said is a [ClipSendResult].
+     */
+    suspend fun sendClip(pc: PcEntry, key: ByteArray, text: String, sensitive: Boolean): ClipSendResult {
+        val envelope = ClipEnvelope.seal(key, ClipProtocol.newId(), ClipContent.of(text, sensitive))
+        val body = envelope.toJson().toString().toRequestBody(JSON)
+        return authedCall(pc, ClipProtocol.PATH, Request.Builder().post(body), base = clipClient) { code, answer ->
+            ClipSendResult.of(code, answer)
+        }
+    }
+
+    /**
+     * Text [pc] kept for this phone because it was too long for a push (DECISIONS M-62), sealed with [key].
+     * Null when it is gone (more than 10 minutes passed, or the PC restarted). Throws like [sendClip].
+     */
+    suspend fun fetchClip(pc: PcEntry, key: ByteArray, id: String): ClipContent? =
+        authedCall(pc, "${ClipProtocol.PATH}?id=$id", Request.Builder().get(), base = clipClient) { code, body ->
+            when {
+                code in 200..299 -> ClipEnvelope.parse(body ?: "")?.open(key)
+                    ?: throw IOException("PC가 보낸 텍스트를 열지 못했습니다.")
+                code == 404 || code == 405 -> null
+                else -> throw IOException(errorMessage(body) ?: "텍스트 받기 실패 (HTTP $code)")
             }
         }
 

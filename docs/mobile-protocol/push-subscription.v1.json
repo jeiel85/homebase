@@ -6,5 +6,8 @@
   "mutedCategories": [
     "advisor",
     "event_log"
+  ],
+  "features": [
+    "clip"
   ]
 }
