@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using LocalOpsBot.Infrastructure.Llm;
 
 namespace LocalOpsBot.Tray.Services;
 
@@ -36,8 +35,8 @@ internal static class LlmAdvisorConfigurator
 
     /// <summary>
     /// The picker's entries: the models the server has pulled, by name. The configured model is the pulled
-    /// one it matches (a bare <c>llama3.2</c> is <c>llama3.2:latest</c>), so picking that entry is no change;
-    /// when none matches it is listed first, so the picker always shows what is in use.
+    /// one Ollama would load for it, so picking that entry is no change; when none is pulled it is listed
+    /// first, so the picker always shows what is in use.
     /// </summary>
     public static ModelChoices ChoicesFor(string configured, IReadOnlyList<string> pulled)
     {
@@ -46,7 +45,12 @@ internal static class LlmAdvisorConfigurator
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var match = models.FirstOrDefault(m => OllamaReadinessChecker.ModelMatches(m, configured));
+        // The Agent sends the configured name as it is, and Ollama loads a name without a tag as its
+        // ":latest" tag — so a bare "llama3.2" is "llama3.2:latest", never another pulled tag of it.
+        var loaded = configured.Contains(':') ? configured : configured + ":latest";
+        var match = models.FirstOrDefault(m =>
+            string.Equals(m, loaded, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(m, configured, StringComparison.OrdinalIgnoreCase));
         if (match is not null) return new ModelChoices(models, match, CurrentPulled: true);
         models.Insert(0, configured);
         return new ModelChoices(models, configured, CurrentPulled: false);

@@ -99,8 +99,8 @@ public sealed class LlmAdvisorConfiguratorTests
         Assert.True(c.CurrentPulled);
     }
 
-    // The readiness probe already treats a bare configured name as its ":latest" tag; picking that
-    // entry must not count as a change worth an approval prompt.
+    // Ollama loads a configured name without a tag as its ":latest" tag; picking that entry must not
+    // count as a change worth an approval prompt.
     [Theory]
     [InlineData("llama3.2", "llama3.2:latest")]
     [InlineData("LLAMA3.2:1B", "llama3.2:1b")]
@@ -112,6 +112,41 @@ public sealed class LlmAdvisorConfiguratorTests
         Assert.Equal(2, c.Models.Count);
         Assert.True(c.CurrentPulled);
     }
+
+    // Another tag of the same name is a different model: it must stay pickable (and savable), not be
+    // marked as the one in use.
+    [Fact]
+    public void A_bare_name_is_its_latest_tag_not_another_tag()
+    {
+        var c = LlmAdvisorConfigurator.ChoicesFor("llama3.2", ["llama3.2:1b", "llama3.2:latest"]);
+
+        Assert.Equal("llama3.2:latest", c.Current);
+        Assert.True(c.CurrentPulled);
+    }
+
+    [Fact]
+    public void A_bare_name_with_only_other_tags_pulled_is_not_pulled()
+    {
+        var c = LlmAdvisorConfigurator.ChoicesFor("llama3.2", ["llama3.2:1b"]);
+
+        Assert.Equal(new[] { "llama3.2", "llama3.2:1b" }, c.Models);
+        Assert.Equal("llama3.2", c.Current);
+        Assert.False(c.CurrentPulled);
+    }
+
+    [Fact]
+    public Task Another_tag_of_a_bare_configured_name_can_be_saved() => Wpf.Run(() =>
+    {
+        var settings = new SettingsPanel();
+        settings.OllamaPanel.Apply(Probe("llama3.2", "llama3.2:1b", "llama3.2:latest"));
+
+        Assert.Equal("llama3.2:latest", Picked(settings));
+        Assert.False(settings.SaveModelButton.IsEnabled);
+
+        settings.ModelPicker.SelectedItem = Picks(settings).Single(p => p.Name == "llama3.2:1b");
+        Assert.True(settings.SaveModelButton.IsEnabled);
+        return Task.CompletedTask;
+    });
 
     [Fact]
     public void Lists_a_configured_model_that_is_not_pulled_first()
