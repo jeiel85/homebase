@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.44.0 — AI advice (Ollama) in Settings: set it up and change the model
+
+### Fixed
+- **Local AI (Ollama) setup is reachable after the setup checklist is closed.** Checking Ollama, starting
+  it (which also makes it run at sign-in) and pulling the model were only in the first-run checklist;
+  Settings had no place for them, so once the checklist was closed there was no way back short of the tray
+  menu's "Setup checklist". Settings now has an **AI advice** area with the same row — state, Get Ollama /
+  Start Ollama / Run pull — plus the model and server the Agent is configured to use, and a re-check
+  button for after a pull finishes. It is checked again each time the area is opened.
+
+### Added
+- **Change the AI advice model in Settings › AI advice.** Type a model name, or click one of the models
+  already pulled on this PC, and save: it asks for administrator approval once, writes `llmAdvisor.model`
+  (nothing else in the config changes) and restarts the monitoring service. If the new model isn't pulled
+  yet, Run pull appears right above. Names are limited to the characters Ollama uses, so nothing else can
+  reach the pull command or the config.
+
 ## v0.43.1 — Install without Telegram; the setup checklist puts the phone first
 
 ### Fixed

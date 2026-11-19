@@ -28,7 +28,7 @@ public sealed class OnboardingWindowTests
             Assert.False(Contains(required, window.TelegramChip));
 
             Assert.True(Contains(optional, window.TelegramChip));
-            Assert.True(Contains(optional, window.OllamaChip));
+            Assert.True(Contains(optional, window.OllamaPanel));
             Assert.False(Contains(optional, window.PhoneChip));
         }
         finally

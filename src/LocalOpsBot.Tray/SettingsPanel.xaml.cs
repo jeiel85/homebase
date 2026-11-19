@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
 
-public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Updates }
+public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Ai, Updates }
 
 /// <summary>
 /// Everything that changes how Homebase behaves, one area per item down the left — the dashboard's
@@ -24,10 +25,12 @@ public partial class SettingsPanel : UserControl
     private bool _loadingMonitors;
     private bool _inView;
     private bool _loaded;
+    private string _aiModelShown = "";
 
     public SettingsPanel()
     {
         InitializeComponent();
+        OllamaPanel.Probed += OnOllamaProbed;
         var ver = typeof(SettingsPanel).Assembly.GetName().Version;
         AboutVersionText.Text = $"Homebase v{ver?.ToString(3) ?? "?"}";
     }
@@ -44,6 +47,7 @@ public partial class SettingsPanel : UserControl
         SettingsTab.Telegram => TelegramTab,
         SettingsTab.Forwarding => ForwardingTab,
         SettingsTab.Monitors => MonitorsTab,
+        SettingsTab.Ai => AiTab,
         SettingsTab.Updates => UpdatesTab,
         _ => PhoneTab,
     };
@@ -68,6 +72,7 @@ public partial class SettingsPanel : UserControl
             }
         }
         SyncPhonePanel();
+        RefreshAiIfShown();
     }
 
     /// <summary>
@@ -79,8 +84,10 @@ public partial class SettingsPanel : UserControl
     {
         TokenInput.Clear();
         ChatIdInput.Clear();
+        ModelInput.Clear();
+        _aiModelShown = ""; // the next probe fills in the saved model again
         PhonePanel.Forget();
-        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = string.Empty;
+        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = string.Empty;
         _loaded = false;
     }
 
@@ -93,6 +100,7 @@ public partial class SettingsPanel : UserControl
     {
         if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
         SyncPhonePanel();
+        RefreshAiIfShown();
     }
 
     private void SyncPhonePanel()
@@ -412,6 +420,85 @@ public partial class SettingsPanel : UserControl
 
     private static IEnumerable<string> Lines(TextBox box) =>
         box.Text.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
+
+    // ── AI advice (Ollama) ─────────────────────────────────────────────────────────────────────
+    // Ollama is probed each time the area is shown (it is started and stopped outside Homebase), and
+    // on "re-check" after a pull finishes in its console window.
+    private void RefreshAiIfShown()
+    {
+        if (_inView && Tabs.SelectedItem == AiTab) _ = RefreshAiAsync();
+    }
+
+    private async void AiRecheck_Click(object sender, RoutedEventArgs e) => await RefreshAiAsync();
+
+    private async Task RefreshAiAsync(bool afterChange = false)
+    {
+        AiRecheckButton.IsEnabled = false;
+        try { await (afterChange ? OllamaPanel.RefreshAfterChangeAsync() : OllamaPanel.RefreshAsync()); }
+        finally { AiRecheckButton.IsEnabled = true; }
+    }
+
+    // Each probe re-reads the config: show the saved model in the field unless something else was typed
+    // there, and list what the server has pulled so one click picks it.
+    private void OnOllamaProbed(OllamaProbe p)
+    {
+        if (ModelInput.Text.Trim() == _aiModelShown) ModelInput.Text = p.Model;
+        _aiModelShown = p.Model;
+        SaveModelButton.IsEnabled = true;
+
+        InstalledModelsPanel.Children.Clear();
+        foreach (var name in p.Installed.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            var link = new Hyperlink(new Run(name)) { Foreground = (Brush)FindResource("Brush.InkSoft") };
+            link.Click += (_, _) => ModelInput.Text = name;
+            InstalledModelsPanel.Children.Add(new TextBlock(link)
+            {
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 2, 14, 2),
+            });
+        }
+        InstalledModelsRow.Visibility = p.Installed.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void SaveModel_Click(object sender, RoutedEventArgs e)
+    {
+        var model = ModelInput.Text.Trim();
+        // Checked before raising UAC so a typo or a no-op never costs an approval prompt.
+        switch (LlmAdvisorConfigurator.Check(model, OllamaPanel.Model))
+        {
+            case ModelChangeCheck.Invalid: SetResult(AiModelStatusText, L.AiModelInvalid, false); return;
+            case ModelChangeCheck.Unchanged: SetResult(AiModelStatusText, L.AiModelSame, null); return;
+        }
+
+        SaveModelButton.IsEnabled = false;
+        SetResult(AiModelStatusText, L.AiModelSaving, null);
+        try
+        {
+            if (!await LlmAdvisorConfigurator.SaveModelAsync(model))
+            {
+                SetResult(AiModelStatusText, L.AiModelNotSaved, false);
+                return;
+            }
+            // The probe reads the config just written: it shows the new model, and RUN PULL if it
+            // isn't on this PC yet.
+            await RefreshAiAsync(afterChange: true);
+            if (LlmAdvisorConfigurator.ServiceOverride() is { } overriding
+                && !string.Equals(overriding, model, StringComparison.OrdinalIgnoreCase))
+                SetResult(AiModelStatusText, L.AiModelOverridden(overriding), false);
+            else
+                SetResult(AiModelStatusText, L.AiModelSaved(model), true);
+        }
+        catch (Exception ex)
+        {
+            SetResult(AiModelStatusText, L.Failed(ex.Message), false);
+        }
+        finally
+        {
+            SaveModelButton.IsEnabled = true;
+        }
+    }
 
     // ── Updates ────────────────────────────────────────────────────────────────────────────────
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)

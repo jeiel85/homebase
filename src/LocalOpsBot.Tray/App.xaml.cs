@@ -37,7 +37,7 @@ public partial class App : Application
         // mutex). Settings is the real page: it reads this PC's configuration and, on the Phone area,
         // asks this PC's Agent for a pairing code as the tray does:
         //   Homebase.Tray.exe --preview-dashboard [--view devices|notifications|settings]
-        //                     [--area phone|telegram|forwarding|monitors|updates] [--select <device key>] [--lang en]
+        //                     [--area phone|telegram|forwarding|monitors|ai|updates] [--select <device key>] [--lang en]
         //                     [--alias "<group key>=<alias>"] [--rename]   (pc:pc-work, phone-name:galaxy s24|samsung sm-s921n)
         if (e.Args.Contains("--preview-dashboard"))
         {

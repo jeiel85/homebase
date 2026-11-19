@@ -1,0 +1,44 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LocalOpsBot.Tray"
+        x:Class="LocalOpsBot.Tray.OllamaSetupPanel"
+        FontFamily="{StaticResource Font.Sans}"
+        TextOptions.TextFormattingMode="Display">
+  <!-- The local AI (Ollama) row: state + the next step (get it, start it, pull the model). Shared by
+       the setup checklist and Settings › AI advice, so the same steps stay reachable after the
+       checklist is closed. -->
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Border x:Name="StateChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
+      <TextBlock x:Name="StateChipText" Style="{StaticResource ChipText}" Text="…"/>
+    </Border>
+    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+      <TextBlock x:Name="TitleText" Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupAi}"/>
+      <TextBlock x:Name="StatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
+                 Text="{x:Static local:L.BadgeChecking}"/>
+      <TextBlock x:Name="ConfigText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,2,0,0"
+                 Visibility="Collapsed"/>
+
+      <TextBlock x:Name="InstallHint" Visibility="Collapsed" Margin="0,6,0,0"
+                 FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
+        <Hyperlink NavigateUri="https://ollama.com/download" RequestNavigate="Hyperlink_RequestNavigate"
+                   Foreground="{StaticResource Brush.InkSoft}"><Run Text="{x:Static local:L.OllamaGet}"/></Hyperlink>
+      </TextBlock>
+
+      <Button x:Name="StartButton" Visibility="Collapsed" Style="{StaticResource Button.Amber}"
+              Content="{x:Static local:L.OllamaStart}" Margin="0,6,0,0" HorizontalAlignment="Left"
+              Click="Start_Click"/>
+
+      <StackPanel x:Name="PullHint" Visibility="Collapsed" Margin="0,6,0,0">
+        <TextBlock x:Name="PullCommand" FontFamily="Consolas" FontSize="12"
+                   Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap" Text="ollama pull …"/>
+        <Button x:Name="PullButton" Style="{StaticResource Button.Amber}"
+                Content="{x:Static local:L.OllamaPull}" Margin="0,6,0,0" HorizontalAlignment="Left"
+                Click="Pull_Click"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>

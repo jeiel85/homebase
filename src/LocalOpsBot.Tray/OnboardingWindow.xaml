@@ -110,38 +110,8 @@
               </StackPanel>
             </Grid>
 
-            <Grid Margin="0,12,0,4">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Border x:Name="OllamaChip" Style="{StaticResource Chip}" VerticalAlignment="Top" Margin="0,2,0,0">
-                <TextBlock x:Name="OllamaChipText" Style="{StaticResource ChipText}" Text="…"/>
-              </Border>
-              <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{x:Static local:L.SetupAi}"/>
-                <TextBlock x:Name="OllamaStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap"
-                           Text="{x:Static local:L.BadgeChecking}"/>
-
-                <TextBlock x:Name="OllamaInstallHint" Visibility="Collapsed" Margin="0,6,0,0"
-                           FontFamily="{StaticResource Font.Sans}" FontSize="12" FontWeight="Bold">
-                  <Hyperlink NavigateUri="https://ollama.com/download" RequestNavigate="Hyperlink_RequestNavigate"
-                             Foreground="{StaticResource Brush.InkSoft}"><Run Text="{x:Static local:L.OllamaGet}"/></Hyperlink>
-                </TextBlock>
-
-                <Button x:Name="OllamaStartButton" Visibility="Collapsed" Style="{StaticResource Button.Amber}"
-                        Content="{x:Static local:L.OllamaStart}" Margin="0,6,0,0" HorizontalAlignment="Left"
-                        Click="OllamaStart_Click"/>
-
-                <StackPanel x:Name="OllamaPullHint" Visibility="Collapsed" Margin="0,6,0,0">
-                  <TextBlock x:Name="OllamaPullCommand" FontFamily="Consolas" FontSize="12"
-                             Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap" Text="ollama pull …"/>
-                  <Button x:Name="OllamaPullButton" Style="{StaticResource Button.Amber}"
-                          Content="{x:Static local:L.OllamaPull}" Margin="0,6,0,0" HorizontalAlignment="Left"
-                          Click="OllamaPull_Click"/>
-                </StackPanel>
-              </StackPanel>
-            </Grid>
+            <!-- The same row as Settings › AI advice, where it stays after this checklist is closed. -->
+            <local:OllamaSetupPanel x:Name="OllamaPanel" Margin="0,12,0,4"/>
 
             <Grid Margin="0,12,0,4">
               <Grid.ColumnDefinitions>
