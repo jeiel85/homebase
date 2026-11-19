@@ -222,7 +222,7 @@
             <Border Style="{StaticResource SectionHeaderBar}">
               <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiHeader}"/>
             </Border>
-            <Border Style="{StaticResource Card}">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
               <StackPanel>
                 <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiWhat}"/>
                 <local:OllamaSetupPanel x:Name="OllamaPanel" Margin="0,12,0,0" Title="Ollama" ShowConfig="True"/>
@@ -230,6 +230,35 @@
                            Text="{x:Static local:L.AiConfigHint}"/>
                 <Button x:Name="AiRecheckButton" Style="{StaticResource Button.Carbon}" HorizontalAlignment="Right"
                         Margin="0,10,0,0" Content="{x:Static local:L.Recheck}" Click="AiRecheck_Click"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiModelHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.AiModelLabel}"/>
+                <TextBox x:Name="ModelInput" Margin="0,3,0,0" FontFamily="Consolas"/>
+                <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,2,0,0" Text="{x:Static local:L.AiModelHint}"/>
+
+                <!-- What the server already has: a click puts it in the field above. -->
+                <StackPanel x:Name="InstalledModelsRow" Margin="0,8,0,0" Visibility="Collapsed">
+                  <TextBlock Style="{StaticResource Type.Micro}" Text="{x:Static local:L.AiModelInstalled}"/>
+                  <WrapPanel x:Name="InstalledModelsPanel" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <Border Style="{StaticResource AdminNote}" Margin="0,12,0,0">
+                  <DockPanel><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiModelSaveNote}"/></DockPanel>
+                </Border>
+                <DockPanel Margin="0,10,0,0" LastChildFill="True">
+                  <Button x:Name="SaveModelButton" DockPanel.Dock="Right" Style="{StaticResource Button.Signal}"
+                          IsEnabled="False" Click="SaveModel_Click">
+                    <StackPanel Orientation="Horizontal"><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock VerticalAlignment="Center" Text="{x:Static local:L.AiModelSave}"/></StackPanel>
+                  </Button>
+                  <TextBlock x:Name="AiModelStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                             Style="{StaticResource Type.BodyStrong}" Margin="0,0,8,0"/>
+                </DockPanel>
               </StackPanel>
             </Border>
           </StackPanel>

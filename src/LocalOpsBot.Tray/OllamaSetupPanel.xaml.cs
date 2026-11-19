@@ -37,6 +37,12 @@ public partial class OllamaSetupPanel : UserControl
     /// <summary>Also show which model and server the Agent is configured to use.</summary>
     public bool ShowConfig { get; set; }
 
+    /// <summary>The model the Agent is configured to use, as of the last probe.</summary>
+    internal string Model => _model;
+
+    /// <summary>Raised on the UI thread after each probe is shown.</summary>
+    internal event Action<OllamaProbe>? Probed;
+
     /// <summary>
     /// Probes Ollama again and shows the result. A probe already under way is shared rather than
     /// doubled, so the tab coming into view and a "re-check" click don't race each other.
@@ -84,7 +90,7 @@ public partial class OllamaSetupPanel : UserControl
                 StatusText.Text = L.OllamaModelMissing;
                 PullCommand.Text = $"ollama pull {p.Model}";
                 PullHint.Visibility = Visibility.Visible;
-                PullButton.IsEnabled = IsSafeModelName(p.Model);
+                PullButton.IsEnabled = OllamaSetup.IsValidModelName(p.Model);
                 break;
             default: // Unreachable
                 SetChip("Brush.Hairline", L.ChipOptional);
@@ -101,6 +107,7 @@ public partial class OllamaSetupPanel : UserControl
                 }
                 break;
         }
+        Probed?.Invoke(p);
     }
 
     private void SetChip(string brushKey, string label)
@@ -111,7 +118,7 @@ public partial class OllamaSetupPanel : UserControl
 
     private void Pull_Click(object sender, RoutedEventArgs e)
     {
-        if (!IsSafeModelName(_model))
+        if (!OllamaSetup.IsValidModelName(_model))
         {
             StatusText.Text = L.OllamaBadModel;
             return;
@@ -147,12 +154,6 @@ public partial class OllamaSetupPanel : UserControl
             StartButton.IsEnabled = true;
         }
     }
-
-    // Only shell out for model names built from the characters Ollama actually uses, so a stray
-    // llmAdvisor.model config value can't smuggle shell metacharacters into the pull command.
-    internal static bool IsSafeModelName(string model) =>
-        !string.IsNullOrWhiteSpace(model)
-        && model.All(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-' or ':' or '/');
 
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
     {

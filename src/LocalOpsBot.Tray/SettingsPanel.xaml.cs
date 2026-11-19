@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using LocalOpsBot.Tray.Services;
@@ -24,10 +25,12 @@ public partial class SettingsPanel : UserControl
     private bool _loadingMonitors;
     private bool _inView;
     private bool _loaded;
+    private string _aiModelShown = "";
 
     public SettingsPanel()
     {
         InitializeComponent();
+        OllamaPanel.Probed += OnOllamaProbed;
         var ver = typeof(SettingsPanel).Assembly.GetName().Version;
         AboutVersionText.Text = $"Homebase v{ver?.ToString(3) ?? "?"}";
     }
@@ -81,8 +84,10 @@ public partial class SettingsPanel : UserControl
     {
         TokenInput.Clear();
         ChatIdInput.Clear();
+        ModelInput.Clear();
+        _aiModelShown = ""; // the next probe fills in the saved model again
         PhonePanel.Forget();
-        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = string.Empty;
+        TgResultText.Text = AppsStatusText.Text = MonitorsStatusText.Text = AiModelStatusText.Text = string.Empty;
         _loaded = false;
     }
 
@@ -431,6 +436,65 @@ public partial class SettingsPanel : UserControl
         AiRecheckButton.IsEnabled = false;
         try { await OllamaPanel.RefreshAsync(); }
         finally { AiRecheckButton.IsEnabled = true; }
+    }
+
+    // Each probe re-reads the config: show the saved model in the field unless something else was typed
+    // there, and list what the server has pulled so one click picks it.
+    private void OnOllamaProbed(OllamaProbe p)
+    {
+        if (ModelInput.Text.Trim() == _aiModelShown) ModelInput.Text = p.Model;
+        _aiModelShown = p.Model;
+        SaveModelButton.IsEnabled = true;
+
+        InstalledModelsPanel.Children.Clear();
+        foreach (var name in p.Installed.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            var link = new Hyperlink(new Run(name)) { Foreground = (Brush)FindResource("Brush.InkSoft") };
+            link.Click += (_, _) => ModelInput.Text = name;
+            InstalledModelsPanel.Children.Add(new TextBlock(link)
+            {
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 2, 14, 2),
+            });
+        }
+        InstalledModelsRow.Visibility = p.Installed.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void SaveModel_Click(object sender, RoutedEventArgs e)
+    {
+        var model = ModelInput.Text.Trim();
+        // Checked before raising UAC so a typo or a no-op never costs an approval prompt.
+        switch (LlmAdvisorConfigurator.Check(model, OllamaPanel.Model))
+        {
+            case ModelChangeCheck.Invalid: SetResult(AiModelStatusText, L.AiModelInvalid, false); return;
+            case ModelChangeCheck.Unchanged: SetResult(AiModelStatusText, L.AiModelSame, null); return;
+        }
+
+        SaveModelButton.IsEnabled = false;
+        SetResult(AiModelStatusText, L.AiModelSaving, null);
+        try
+        {
+            if (!await LlmAdvisorConfigurator.SaveModelAsync(model))
+            {
+                SetResult(AiModelStatusText, L.AiModelNotSaved, false);
+                return;
+            }
+            // The probe reads the config just written: it shows the new model, and RUN PULL if it
+            // isn't on this PC yet.
+            await RefreshAiAsync();
+            if (OllamaPanel.Model == model) SetResult(AiModelStatusText, L.AiModelSaved(model), true);
+            else SetResult(AiModelStatusText, L.AiModelOverridden(OllamaPanel.Model), false);
+        }
+        catch (Exception ex)
+        {
+            SetResult(AiModelStatusText, L.Failed(ex.Message), false);
+        }
+        finally
+        {
+            SaveModelButton.IsEnabled = true;
+        }
     }
 
     // ── Updates ────────────────────────────────────────────────────────────────────────────────

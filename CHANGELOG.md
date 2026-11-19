@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.42.3 — Ollama can be set up from Settings, not only the first-run checklist
+## v0.43.0 — AI advice (Ollama) in Settings: set it up and change the model
 
 ### Fixed
 - **Local AI (Ollama) setup is reachable after the setup checklist is closed.** Checking Ollama, starting
@@ -9,6 +9,13 @@
   menu's "Setup checklist". Settings now has an **AI advice** area with the same row — state, Get Ollama /
   Start Ollama / Run pull — plus the model and server the Agent is configured to use, and a re-check
   button for after a pull finishes. It is checked again each time the area is opened.
+
+### Added
+- **Change the AI advice model in Settings › AI advice.** Type a model name, or click one of the models
+  already pulled on this PC, and save: it asks for administrator approval once, writes `llmAdvisor.model`
+  (nothing else in the config changes) and restarts the monitoring service. If the new model isn't pulled
+  yet, Run pull appears right above. Names are limited to the characters Ollama uses, so nothing else can
+  reach the pull command or the config.
 
 ## v0.42.2 — The tray closes cleanly, and a click while it closes no longer shows a ".NET" error
 

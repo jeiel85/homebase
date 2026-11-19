@@ -20,7 +20,12 @@ internal sealed record ReadinessSnapshot(
 internal sealed record TestSendResult(bool Ok, string Message);
 
 internal sealed record OllamaProbe(
-    OllamaReadiness Status, string Model, string Endpoint, string? Detail);
+    OllamaReadiness Status, string Model, string Endpoint, string? Detail,
+    IReadOnlyList<string>? InstalledModels = null)
+{
+    /// <summary>The models the server reported as pulled (none when it couldn't be reached).</summary>
+    public IReadOnlyList<string> Installed => InstalledModels ?? [];
+}
 
 /// <summary>
 /// Read-only view of whether this machine is ready to talk to Telegram, plus a one-shot
@@ -122,7 +127,7 @@ internal sealed class ConnectionReadiness
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
         var result = await new OllamaReadinessChecker(http).CheckAsync(endpoint, model, ct);
-        return new OllamaProbe(result.Status, model, endpoint, result.Detail);
+        return new OllamaProbe(result.Status, model, endpoint, result.Detail, result.InstalledModels);
     }
 
     private static string Redact(string message, string token) =>
