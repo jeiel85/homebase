@@ -215,6 +215,27 @@
         </Grid>
       </TabItem>
 
+      <!-- ═══ AI advice (local Ollama) — the setup checklist's AI row, kept here for after it is closed ═══ -->
+      <TabItem x:Name="AiTab" Header="{x:Static local:L.TabAi}" Tag="{x:Static local:L.TabAiSub}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <Border Style="{StaticResource SectionHeaderBar}">
+              <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.AiHeader}"/>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiWhat}"/>
+                <local:OllamaSetupPanel x:Name="OllamaPanel" Margin="0,12,0,0" Title="Ollama" ShowConfig="True"/>
+                <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,12,0,0"
+                           Text="{x:Static local:L.AiConfigHint}"/>
+                <Button x:Name="AiRecheckButton" Style="{StaticResource Button.Carbon}" HorizontalAlignment="Right"
+                        Margin="0,10,0,0" Content="{x:Static local:L.Recheck}" Click="AiRecheck_Click"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
       <!-- ═══ Updates & about ═══ -->
       <TabItem x:Name="UpdatesTab" Header="{x:Static local:L.TabUpdates}" Tag="{x:Static local:L.TabUpdatesSub}">
         <StackPanel>

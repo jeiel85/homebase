@@ -1,9 +1,6 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Navigation;
-using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
@@ -17,7 +14,6 @@ namespace LocalOpsBot.Tray;
 public partial class OnboardingWindow : ThemedWindow
 {
     private readonly ConnectionReadiness _readiness = new();
-    private string _ollamaModel = "llama3.2:1b";
 
     /// <summary>Raised when the user clicks "Get started"; the tray opens the dashboard.</summary>
     public event Action? GetStartedRequested;
@@ -47,16 +43,11 @@ public partial class OnboardingWindow : ThemedWindow
             // Transient probe failure — keep whatever was last shown.
         }
 
-        // AI advice is optional and network-bound: probe it separately with a short timeout so a
-        // slow or absent Ollama never blocks or fails the Telegram checklist above.
+        // AI advice is optional and probed separately (short timeout, never throws), so a slow or
+        // absent Ollama never blocks or fails the Telegram checklist above.
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
-            ApplyOllama(await _readiness.ProbeOllamaAsync(cts.Token));
-        }
-        catch
-        {
-            ApplyOllama(new OllamaProbe(OllamaReadiness.Unreachable, _ollamaModel, "", null));
+            await OllamaPanel.RefreshAsync();
         }
         finally
         {
@@ -101,89 +92,6 @@ public partial class OnboardingWindow : ThemedWindow
         TestButton.Style = (Style)FindResource(ready ? "Button.Signal" : "Button.Carbon");
     }
 
-    private void ApplyOllama(OllamaProbe p)
-    {
-        _ollamaModel = p.Model;
-        OllamaInstallHint.Visibility = Visibility.Collapsed;
-        OllamaStartButton.Visibility = Visibility.Collapsed;
-        OllamaPullHint.Visibility = Visibility.Collapsed;
-
-        switch (p.Status)
-        {
-            case OllamaReadiness.Ready:
-                SetChip(OllamaChip, OllamaChipText, Chip.Ready);
-                OllamaStatusText.Text = L.OllamaReady(p.Model);
-                break;
-            case OllamaReadiness.ModelMissing:
-                SetChip(OllamaChip, OllamaChipText, Chip.Setup);
-                OllamaStatusText.Text = L.OllamaModelMissing;
-                OllamaPullCommand.Text = $"ollama pull {p.Model}";
-                OllamaPullHint.Visibility = Visibility.Visible;
-                OllamaPullButton.IsEnabled = IsSafeModelName(p.Model);
-                break;
-            default: // Unreachable
-                OllamaChip.Background = (Brush)FindResource("Brush.Hairline");
-                OllamaChipText.Text = L.ChipOptional;
-                if (OllamaSetup.IsInstalled())
-                {
-                    // Installed but not running — the common case. One click starts it + autostart.
-                    OllamaStatusText.Text = L.OllamaNotRunning;
-                    OllamaStartButton.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    OllamaStatusText.Text = L.OllamaNotInstalled;
-                    OllamaInstallHint.Visibility = Visibility.Visible;
-                }
-                break;
-        }
-    }
-
-    private void OllamaPull_Click(object sender, RoutedEventArgs e)
-    {
-        if (!IsSafeModelName(_ollamaModel))
-        {
-            OllamaStatusText.Text = L.OllamaBadModel;
-            return;
-        }
-        try
-        {
-            // Open a console running the pull so the user can watch download progress; ollama is
-            // a user-level CLI, so this needs no elevation.
-            Process.Start(new ProcessStartInfo("cmd.exe", $"/k ollama pull {_ollamaModel}")
-            {
-                UseShellExecute = true
-            });
-        }
-        catch (Exception ex)
-        {
-            OllamaStatusText.Text = L.OllamaPullFailed(ex.Message);
-        }
-    }
-
-    // One click: register Ollama to run at login (the missing piece) and start it now, then re-probe.
-    private async void OllamaStart_Click(object sender, RoutedEventArgs e)
-    {
-        OllamaStartButton.IsEnabled = false;
-        OllamaStatusText.Text = L.OllamaStarting;
-        try
-        {
-            OllamaSetup.StartAndEnableAutostart();
-            await Task.Delay(4000); // give the server a moment to come up before re-probing
-            Refresh();
-        }
-        finally
-        {
-            OllamaStartButton.IsEnabled = true;
-        }
-    }
-
-    // Only shell out for model names built from the characters Ollama actually uses, so a stray
-    // llmAdvisor.model config value can't smuggle shell metacharacters into the pull command.
-    private static bool IsSafeModelName(string model) =>
-        !string.IsNullOrWhiteSpace(model)
-        && model.All(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-' or ':' or '/');
-
     private void SetChip(Border chip, TextBlock text, Chip level)
     {
         var (key, label) = level switch
@@ -227,19 +135,6 @@ public partial class OnboardingWindow : ThemedWindow
     {
         GetStartedRequested?.Invoke();
         Close();
-    }
-
-    private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-        }
-        catch
-        {
-            // No browser / handler available — nothing to do.
-        }
-        e.Handled = true;
     }
 
     // Onboarding is a once-shown, opt-in guide: mark it done on any close (X or Get started)

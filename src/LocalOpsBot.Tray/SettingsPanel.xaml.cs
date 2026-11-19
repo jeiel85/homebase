@@ -7,7 +7,7 @@ using LocalOpsBot.Tray.Services;
 
 namespace LocalOpsBot.Tray;
 
-public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Updates }
+public enum SettingsTab { Phone, Telegram, Forwarding, Monitors, Ai, Updates }
 
 /// <summary>
 /// Everything that changes how Homebase behaves, one area per item down the left — the dashboard's
@@ -44,6 +44,7 @@ public partial class SettingsPanel : UserControl
         SettingsTab.Telegram => TelegramTab,
         SettingsTab.Forwarding => ForwardingTab,
         SettingsTab.Monitors => MonitorsTab,
+        SettingsTab.Ai => AiTab,
         SettingsTab.Updates => UpdatesTab,
         _ => PhoneTab,
     };
@@ -68,6 +69,7 @@ public partial class SettingsPanel : UserControl
             }
         }
         SyncPhonePanel();
+        RefreshAiIfShown();
     }
 
     /// <summary>
@@ -93,6 +95,7 @@ public partial class SettingsPanel : UserControl
     {
         if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
         SyncPhonePanel();
+        RefreshAiIfShown();
     }
 
     private void SyncPhonePanel()
@@ -412,6 +415,23 @@ public partial class SettingsPanel : UserControl
 
     private static IEnumerable<string> Lines(TextBox box) =>
         box.Text.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
+
+    // ── AI advice (Ollama) ─────────────────────────────────────────────────────────────────────
+    // Ollama is probed each time the area is shown (it is started and stopped outside Homebase), and
+    // on "re-check" after a pull finishes in its console window.
+    private void RefreshAiIfShown()
+    {
+        if (_inView && Tabs.SelectedItem == AiTab) _ = RefreshAiAsync();
+    }
+
+    private async void AiRecheck_Click(object sender, RoutedEventArgs e) => await RefreshAiAsync();
+
+    private async Task RefreshAiAsync()
+    {
+        AiRecheckButton.IsEnabled = false;
+        try { await OllamaPanel.RefreshAsync(); }
+        finally { AiRecheckButton.IsEnabled = true; }
+    }
 
     // ── Updates ────────────────────────────────────────────────────────────────────────────────
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)

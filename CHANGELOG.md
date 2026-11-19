@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.42.3 — Ollama can be set up from Settings, not only the first-run checklist
+
+### Fixed
+- **Local AI (Ollama) setup is reachable after the setup checklist is closed.** Checking Ollama, starting
+  it (which also makes it run at sign-in) and pulling the model were only in the first-run checklist;
+  Settings had no place for them, so once the checklist was closed there was no way back short of the tray
+  menu's "Setup checklist". Settings now has an **AI advice** area with the same row — state, Get Ollama /
+  Start Ollama / Run pull — plus the model and server the Agent is configured to use, and a re-check
+  button for after a pull finishes. It is checked again each time the area is opened.
+
 ## v0.42.2 — The tray closes cleanly, and a click while it closes no longer shows a ".NET" error
 
 ### Fixed

@@ -89,6 +89,8 @@ public static class L
     public static string TabForwardingSub => T("This PC's notifications to your phone", "이 PC의 알림을 휴대폰으로");
     public static string TabMonitors => T("Watch list", "감시 대상");
     public static string TabMonitorsSub => T("Processes · services · HTTP · TCP", "프로세스 · 서비스 · HTTP · TCP");
+    public static string TabAi => T("AI advice", "AI 조언");
+    public static string TabAiSub => T("Local Ollama · model", "로컬 Ollama · 모델 상태");
     public static string TabUpdates => T("Updates", "업데이트");
     public static string TabUpdatesSub => T("Check for updates · about", "업데이트 확인 · 정보");
 
@@ -155,6 +157,14 @@ public static class L
         enable ? "Forwarding is on. Restart the tray now to start listening?" : "Forwarding is off. Restart the tray now to stop listening?",
         enable ? "알림 전달을 켰습니다. 수신을 시작하려면 트레이를 다시 시작해야 합니다. 지금 다시 시작할까요?" : "알림 전달을 껐습니다. 수신을 멈추려면 트레이를 다시 시작해야 합니다. 지금 다시 시작할까요?");
 
+    public static string AiHeader => T("AI ADVICE (OLLAMA)", "AI 조언 (Ollama)");
+    public static string AiWhat => T(
+        "Send /advise in Telegram and a local AI model on this PC (Ollama) explains the PC's state in plain words. When turned on, error alerts and automatic health advice use it too. The model must be downloaded to this PC first.",
+        "텔레그램에서 /advise를 보내면 이 PC의 로컬 AI(Ollama)가 PC 상태를 쉬운 말로 풀어 줍니다. 켜 두면 오류 알림 해석과 자동 점검 조언에도 씁니다. 모델은 이 PC에 먼저 받아 둬야 합니다.");
+    public static string AiConfigHint => T(
+        $"The model and server address come from llmAdvisor in the Agent config ({Services.TrayConfig.ConfigPath}). Starting Ollama here also makes it run when you sign in, without administrator approval.",
+        $"모델과 서버 주소는 Agent 설정 파일({Services.TrayConfig.ConfigPath})의 llmAdvisor에서 정합니다. 여기서 Ollama를 시작하면 로그인할 때 자동 실행도 함께 등록되며, 관리자 승인은 필요 없습니다.");
+
     public static string MonHeader => T("WATCH LIST", "감시 대상");
     public static string MonWhat => T(
         "Send /process, /services, /http or /ports in Telegram and the bot reports whether each item below is alive. One per line.",
@@ -216,6 +226,7 @@ public static class L
     public static string OllamaStarting => T("Starting Ollama…", "Ollama를 시작하는 중…");
     public static string OllamaBadModel => T("Model name has unexpected characters — pull it manually.", "모델 이름에 예상하지 못한 문자가 있습니다 — 직접 받으세요.");
     public static string OllamaPullFailed(string m) => T($"Couldn't start the pull: {m}", $"모델 받기를 시작하지 못했습니다: {m}");
+    public static string OllamaConfig(string model, string endpoint) => T($"Model {model} · server {endpoint}", $"모델 {model} · 서버 {endpoint}");
 
     // ── Test message (ConnectionReadiness) ───────────────────────────────────
     public static string TestNoToken => T("Bot token is not configured yet.", "봇 토큰이 아직 설정되지 않았습니다.");
