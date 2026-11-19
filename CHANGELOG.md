@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.47.0 — Pick the AI advice model from a list
+
+### Changed
+- **Settings › AI advice picks the model from a list instead of a text field.** The list holds the models
+  Ollama has pulled on this PC (as of the last check), by name, with the one in use marked; SAVE is offered
+  only once a different one is picked. A configured model that isn't pulled yet is still listed first,
+  marked as such, so the list never hides what is set. With Ollama not running or no model pulled the list
+  is greyed out and says what to do. To add a model, pull it (`ollama pull <name>`) and press Re-check —
+  typing a name that isn't on the PC is gone, and with it saving a model that would fail at the next
+  advice. A pick that isn't saved yet survives a re-check while the server still has it.
+- Homebase's windows have a themed drop-down list (the text field's look, with a chevron), used here first.
+
 ## v0.46.0 — Ask the PC's AI for advice from the app
 
 ### Added
@@ -14,6 +26,7 @@
   asking twice, don't keep the PC's GPU busy. The model's text is always shown as plain text.
 - PC: `POST /api/v1/advise` for paired devices (DECISIONS M-60). A PC on v0.45.0 or older doesn't have it;
   the app then asks you to update the PC.
+
 ## v0.45.0 — A linked PC that moved is reached again; Refresh on the Devices page
 
 ### Fixed

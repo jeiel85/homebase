@@ -264,14 +264,19 @@
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock Style="{StaticResource Type.Label}" Text="{x:Static local:L.AiModelLabel}"/>
-                <TextBox x:Name="ModelInput" Margin="0,3,0,0" FontFamily="Consolas"/>
-                <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,2,0,0" Text="{x:Static local:L.AiModelHint}"/>
-
-                <!-- What the server already has: a click puts it in the field above. -->
-                <StackPanel x:Name="InstalledModelsRow" Margin="0,8,0,0" Visibility="Collapsed">
-                  <TextBlock Style="{StaticResource Type.Micro}" Text="{x:Static local:L.AiModelInstalled}"/>
-                  <WrapPanel x:Name="InstalledModelsPanel" Margin="0,2,0,0"/>
-                </StackPanel>
+                <!-- Only what the server has pulled can be picked; filled in by each probe. -->
+                <ComboBox x:Name="ModelPicker" Margin="0,3,0,0" IsEnabled="False"
+                          AutomationProperties.Name="{x:Static local:L.AiModelLabel}"
+                          SelectionChanged="ModelPicker_SelectionChanged">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type local:ModelPick}">
+                      <TextBlock><Run Text="{Binding Name, Mode=OneWay}" FontFamily="Consolas"/><Run Text="{Binding Note, Mode=OneWay}" FontSize="11" Foreground="{StaticResource Brush.InkSoft}"/></TextBlock>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock x:Name="AiModelNoneText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,4,0,0"
+                           FontWeight="Bold" Visibility="Collapsed" Text="{x:Static local:L.AiModelNone}"/>
+                <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,4,0,0" Text="{x:Static local:L.AiModelHint}"/>
 
                 <Border Style="{StaticResource AdminNote}" Margin="0,12,0,0">
                   <DockPanel><Image Source="{x:Static local:UacShield.Source}" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock Style="{StaticResource Type.Body}" TextWrapping="Wrap" Text="{x:Static local:L.AiModelSaveNote}"/></DockPanel>
