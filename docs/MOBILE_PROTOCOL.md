@@ -191,8 +191,8 @@ PC의 트레이가 보낸 파일(2b). 다른 PC로는 Agent가 위 "파일"(2a) 
 휴대폰이 PC가 켠 고정 명령을 요청한다. 설계는 [`REMOTE_COMMANDS.md`](REMOTE_COMMANDS.md), 견본 [`commands.v1.json`](mobile-protocol/commands.v1.json)(목록, 요청 평문과 클립보드 픽스처 키로 봉인한 봉투, 답).
 
 - **목록** `GET /api/v1/commands` → `{schema, commands: [{name, label, kind, confirm}], wake?: {macs: ["aa:bb:…"]}, pending?: {name: "restart", at}}`. `kind`는 `session`·`system`·`custom`, `confirm`이면 앱이 확인과 잠금 해제를 거친다. 이름: `lock`, `screen_off`, `mute`, `volume_up`, `volume_down`, `media_play_pause`, `media_next`, `media_previous`, `restart`, `sleep`, `custom:<id>`. 404면 옛 PC다.
-- **요청** `POST /api/v1/commands`: 클립보드 봉투(M-62 합의 키, 새 id) 안에 `{schema, command, ts}`. 답 `{schema, ok, state?, at?, error?}` — `state`는 `done`·`scheduled`(다시 시작, `at`에)·`cancelled`. 오류는 403 `not_allowed`(꺼짐, 또는 PC가 요청), 400 `invalid_command`, 409 `replayed`(같은 id, `ts` ±2분 밖), 429 `busy`(1분 10번), 409 `no_user_session`, 409 `clip_key_needed`(다시 합의하고 새 id로), 500 `failed`.
-- **취소** `POST /api/v1/commands/cancel`: 같은 봉투에 `command: "restart"` → `cancelled` 또는 409 `nothing_pending`.
+- **요청** `POST /api/v1/commands`: 클립보드 봉투(M-62 합의 키, 새 id) 안에 `{schema, id, command, op, ts}` — `id`는 봉투의 id와 같아야 하고 `op`는 `run`(이 경로)·`cancel`(취소 경로)이다. 둘 다 봉인 안에 있어, 중간에서 요청을 본 쪽이 id만 바꿔 다시 보내거나 취소를 실행으로 돌리지 못한다. 답 `{schema, ok, state?, at?, error?}` — `state`는 `done`·`scheduled`(다시 시작, `at`에)·`cancelled`. 오류는 403 `not_allowed`(꺼짐, 또는 PC가 요청), 400 `invalid_command`, 409 `replayed`(같은 id, `ts` ±2분 밖), 429 `busy`(1분 10번), 409 `no_user_session`, 409 `clip_key_needed`(다시 합의하고 새 id로), 500 `failed`.
+- **취소** `POST /api/v1/commands/cancel`: 같은 봉투에 `command: "restart"`, `op: "cancel"` → `cancelled` 또는 409 `nothing_pending`.
 - **다시 켜짐**: 다시 시작을 요청한 휴대폰에 PC가 일반 푸시("다시 시작을 마쳤습니다", 범주 `commands`)를 보낸다. PC에서 취소되면 "다시 시작이 취소됐습니다".
 - **깨우기**: `wake.macs`로 휴대폰이 같은 LAN에 매직 패킷(0xFF×6 + MAC×16, UDP 9·7, 브로드캐스트)을 보낸다.
 

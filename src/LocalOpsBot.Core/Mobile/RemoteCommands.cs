@@ -99,8 +99,18 @@ public sealed record CommandWake(IReadOnlyList<string> Macs);
 
 public sealed record CommandPending(string Name, DateTimeOffset At);
 
-/// <summary>Sealed (M-62 key) in <c>POST /api/v1/commands</c> and <c>/cancel</c>.</summary>
-public sealed record CommandRequest(int Schema, string Command, DateTimeOffset Ts);
+/// <summary>
+/// Sealed (M-62 key) in <c>POST /api/v1/commands</c> and <c>/cancel</c>. <see cref="Id"/> is the envelope's id and
+/// <see cref="Op"/> (<see cref="CommandOps"/>) says which of the two it is for — both inside the seal, so whoever sees a
+/// request in between can neither replay it under another id nor turn a cancel into a run (Codex review on #104).
+/// </summary>
+public sealed record CommandRequest(int Schema, string Id, string Command, string Op, DateTimeOffset Ts);
+
+public static class CommandOps
+{
+    public const string Run = "run";
+    public const string Cancel = "cancel";
+}
 
 /// <summary>
 /// Answer. <see cref="State"/>: <c>done</c>, <c>scheduled</c> (a restart at <see cref="At"/>), <c>cancelled</c>.
@@ -134,21 +144,26 @@ public static class CommandMessages
 {
     private static readonly JsonSerializerOptions Json = ClipProtocol.ContentJson;
 
-    public static ClipEnvelope Seal(byte[] key, string id, CommandRequest request, byte[]? nonce = null)
+    /// <summary>Sealed with the agreed <paramref name="key"/>, under the request's own id.</summary>
+    public static ClipEnvelope Seal(byte[] key, CommandRequest request, byte[]? nonce = null)
     {
         var (n, data) = ClipCrypto.Seal(key, JsonSerializer.SerializeToUtf8Bytes(request, Json), nonce);
-        return new ClipEnvelope(MobileProtocol.Schema, id, n, data);
+        return new ClipEnvelope(MobileProtocol.Schema, request.Id, n, data);
     }
 
-    /// <summary>The request, or null when it isn't ours, doesn't open with <paramref name="key"/>, or names no known command.</summary>
-    public static CommandRequest? Open(byte[] key, ClipEnvelope? envelope)
+    /// <summary>
+    /// The request, or null when it isn't ours, doesn't open with <paramref name="key"/>, names no known command, carries
+    /// another id than its envelope, or is for another operation than <paramref name="op"/>.
+    /// </summary>
+    public static CommandRequest? Open(byte[] key, ClipEnvelope? envelope, string op)
     {
         if (envelope is null || envelope.Schema != MobileProtocol.Schema || !ClipProtocol.IsValidId(envelope.Id)) return null;
         var plain = ClipCrypto.Open(key, envelope.Nonce, envelope.Data);
         if (plain is null) return null;
         try
         {
-            return JsonSerializer.Deserialize<CommandRequest>(plain, Json) is { Schema: MobileProtocol.Schema } r && RemoteCommandNames.IsKnown(r.Command)
+            return JsonSerializer.Deserialize<CommandRequest>(plain, Json) is { Schema: MobileProtocol.Schema } r
+                && r.Id == envelope.Id && r.Op == op && RemoteCommandNames.IsKnown(r.Command)
                 ? r
                 : null;
         }

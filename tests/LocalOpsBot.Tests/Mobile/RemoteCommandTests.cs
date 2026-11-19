@@ -60,8 +60,8 @@ public class RemoteCommandTests : IDisposable
         return (token, key, device);
     }
 
-    private ClipEnvelope Request(byte[] key, string command, DateTimeOffset? ts = null, string? id = null) =>
-        CommandMessages.Seal(key, id ?? ClipProtocol.NewId(), new CommandRequest(MobileProtocol.Schema, command, ts ?? _time.GetUtcNow()));
+    private ClipEnvelope Request(byte[] key, string command, DateTimeOffset? ts = null, string op = CommandOps.Run) =>
+        CommandMessages.Seal(key, new CommandRequest(MobileProtocol.Schema, ClipProtocol.NewId(), command, op, ts ?? _time.GetUtcNow()));
 
     [Fact]
     public void By_default_lock_screen_and_media_are_offered_and_restart_and_sleep_are_not()
@@ -96,6 +96,25 @@ public class RemoteCommandTests : IDisposable
         (status, result) = await _commands.RunAsync(phone, envelope, default);
         Assert.Equal((409, CommandErrors.Replayed), (status, result.Error));
         Assert.Single(_tray);
+    }
+
+    [Fact]
+    public async Task A_request_cannot_be_replayed_under_another_id_or_turned_from_cancel_into_run()
+    {
+        // Codex review on #104: what someone in between (the Cloudflare edge) could do with a request it saw.
+        var (_, key, phone) = Phone();
+        _options.Commands.Restart = true;
+        var lockRequest = Request(key, RemoteCommandNames.Lock);
+        Assert.Equal(200, (await _commands.RunAsync(phone, lockRequest, default)).Status);
+
+        var renamed = lockRequest with { Id = ClipProtocol.NewId() };
+        Assert.Equal((400, CommandErrors.Invalid), Outcome(await _commands.RunAsync(phone, renamed, default)));
+
+        var cancel = Request(key, RemoteCommandNames.Restart, op: CommandOps.Cancel);
+        Assert.Equal((400, CommandErrors.Invalid), Outcome(await _commands.RunAsync(phone, cancel, default)));
+        Assert.Equal((400, CommandErrors.Invalid), Outcome(await _commands.CancelAsync(phone, Request(key, RemoteCommandNames.Restart))));
+        Assert.Single(_tray);
+        Assert.Empty(_power.Calls);
     }
 
     [Fact]
@@ -150,14 +169,14 @@ public class RemoteCommandTests : IDisposable
         Assert.Equal(new CommandPending("restart", _time.GetUtcNow().AddSeconds(60)), _commands.List(phone).Pending);
         Assert.True(File.Exists(Path.Combine(_dir, "restart.json")));
 
-        (status, result) = await _commands.CancelAsync(phone, Request(key, "restart"));
+        (status, result) = await _commands.CancelAsync(phone, Request(key, "restart", op: CommandOps.Cancel));
         Assert.Equal((200, CommandStates.Cancelled), (status, result.State));
         Assert.Equal(new[] { "restart 60", "abort" }, _power.Calls);
         Assert.Null(_commands.List(phone).Pending);
         Assert.False(File.Exists(Path.Combine(_dir, "restart.json")));
         Assert.Equal(2, notices.Count);
         Assert.Null(notices[1]);
-        Assert.Equal((409, CommandErrors.NothingPending), Outcome(await _commands.CancelAsync(phone, Request(key, "restart"))));
+        Assert.Equal((409, CommandErrors.NothingPending), Outcome(await _commands.CancelAsync(phone, Request(key, "restart", op: CommandOps.Cancel))));
     }
 
     [Fact]
@@ -197,7 +216,7 @@ public class RemoteCommandTests : IDisposable
             JsonSerializer.SerializeToUtf8Bytes(Request(key, "media_play_pause"), MobileProtocol.Json), default);
         Assert.Equal((200, true), (status, JsonSerializer.Deserialize<CommandResult>(json, MobileProtocol.Json)!.Ok));
         (status, json) = await api.HandleRestAsync(Req("POST", RemoteCommandProtocol.CancelPath),
-            JsonSerializer.SerializeToUtf8Bytes(Request(key, "restart"), MobileProtocol.Json), default);
+            JsonSerializer.SerializeToUtf8Bytes(Request(key, "restart", op: CommandOps.Cancel), MobileProtocol.Json), default);
         Assert.Equal((409, CommandErrors.NothingPending), (status, JsonSerializer.Deserialize<CommandResult>(json, MobileProtocol.Json)!.Error));
     }
 

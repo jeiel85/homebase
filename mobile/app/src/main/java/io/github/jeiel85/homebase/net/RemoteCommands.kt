@@ -159,34 +159,49 @@ data class CommandList(val commands: List<CommandInfo>, val wakeMacs: List<Strin
     }
 }
 
-/** The sealed part of `POST /api/v1/commands` and `/cancel`: `{schema, command, ts}`, [ts] this phone's clock. */
-data class CommandRequest(val command: String, val ts: String) {
-    fun toJson(): JSONObject = JSONObject().put("schema", SCHEMA).put("command", command).put("ts", ts)
+/** Which route a [CommandRequest] is for — sealed in, so a cancel can't be sent on as a run. */
+object CommandOps {
+    const val RUN = "run"
+    const val CANCEL = "cancel"
+}
 
-    /** Sealed with [key] (the one agreed with that PC) under a fresh [id] — one per request, never reused. [nonce]: tests only. */
-    fun seal(key: ByteArray, id: String, nonce: ByteArray? = null): ClipEnvelope {
+/**
+ * The sealed part of `POST /api/v1/commands` and `/cancel`: `{schema, id, command, op, ts}`, [ts] this phone's clock.
+ * [id] is also the envelope's id and [op] the route ([CommandOps]): both are inside the seal, so whoever sees a request in
+ * between can't replay it under another id or turn a cancel into a run (Codex review on #104).
+ */
+data class CommandRequest(val id: String, val command: String, val op: String, val ts: String) {
+    fun toJson(): JSONObject =
+        JSONObject().put("schema", SCHEMA).put("id", id).put("command", command).put("op", op).put("ts", ts)
+
+    /** Sealed with [key] (the one agreed with that PC) under its own [id] — one per request, never reused. [nonce]: tests only. */
+    fun seal(key: ByteArray, nonce: ByteArray? = null): ClipEnvelope {
         val (n, data) = ClipCrypto.seal(key, toJson().toString().toByteArray(Charsets.UTF_8), nonce)
         return ClipEnvelope(id, n, data)
     }
 
     companion object {
-        fun of(command: String, nowMillis: Long = System.currentTimeMillis()) = CommandRequest(command, Instant.ofEpochMilli(nowMillis).toString())
+        fun of(command: String, op: String = CommandOps.RUN, nowMillis: Long = System.currentTimeMillis(), id: String = ClipProtocol.newId()) =
+            CommandRequest(id, command, op, Instant.ofEpochMilli(nowMillis).toString())
 
         /** Null for another schema or a malformed payload. */
         fun parse(json: String): CommandRequest? = try {
             val o = JSONObject(json)
+            val id = o.text("id")
             val command = o.text("command")
+            val op = o.text("op")
             val ts = o.text("ts")
-            if (o.optInt("schema") != SCHEMA || command == null || ts == null) null else CommandRequest(command, ts)
+            if (o.optInt("schema") != SCHEMA || id == null || command == null || op == null || ts == null) null
+            else CommandRequest(id, command, op, ts)
         } catch (_: Exception) {
             null
         }
 
-        /** The request in [envelope], or null when it doesn't open with [key]. */
+        /** The request in [envelope], or null when it doesn't open with [key] or carries another id than its envelope. */
         fun open(key: ByteArray, envelope: ClipEnvelope): CommandRequest? {
             if (!ClipProtocol.isValidId(envelope.id)) return null
             val plain = ClipCrypto.open(key, envelope.nonce, envelope.data) ?: return null
-            return parse(plain.toString(Charsets.UTF_8))
+            return parse(plain.toString(Charsets.UTF_8))?.takeIf { it.id == envelope.id }
         }
     }
 }

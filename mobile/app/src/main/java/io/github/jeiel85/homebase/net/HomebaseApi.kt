@@ -320,7 +320,7 @@ class HomebaseApi(
      * [CommandOutcome].
      */
     suspend fun sendCommand(pc: PcEntry, key: ByteArray, command: String, cancel: Boolean = false, budgetMillis: Long? = null): CommandOutcome {
-        val envelope = CommandRequest.of(command).seal(key, ClipProtocol.newId())
+        val envelope = CommandRequest.of(command, if (cancel) CommandOps.CANCEL else CommandOps.RUN).seal(key)
         val body = envelope.toJson().toString().toRequestBody(JSON)
         val path = if (cancel) RemoteCommandProtocol.CANCEL_PATH else RemoteCommandProtocol.PATH
         return authedCall(pc, path, Request.Builder().post(body), budgetMillis, base = clipClient) { code, answer ->

@@ -39,14 +39,16 @@
   },
   "request": {
     "schema": 1,
+    "id": "5b2c8d1e0f3a4b6c9d7e1f2a3b4c5d6e",
     "command": "lock",
+    "op": "run",
     "ts": "2026-11-20T01:00:00+00:00"
   },
   "envelope": {
     "schema": 1,
     "id": "5b2c8d1e0f3a4b6c9d7e1f2a3b4c5d6e",
     "nonce": "AAECAwQFBgcICQoL",
-    "data": "xvmpgvRuPjhJhwdymykSG2E_4ZXg4piu2wUkP23ZitPnStNZIms9aaKUanjmACBhnjWzk5abRp_oM8RdCA2DIt1cob5oJM46xQYlnwt1"
+    "data": "xvmpgvRuPjhJhwdymyMZVDZ8upPwu4KmhQN_e3KaysLzE8gPJTw6IqHEdCjiNyU0kmChhYTIAsK1aJoJCErPWe5L-8XY5NtCGjmMRBsTbKcWpxlcaiRT4AMsZ7UA7pAkkFxsbFSKofHyfPpGzEsLaIWLQyP0PVpXQcA5LGfPnhyQ"
   },
   "resultDone": {
     "schema": 1,

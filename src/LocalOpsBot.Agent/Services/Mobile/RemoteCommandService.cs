@@ -121,8 +121,8 @@ public sealed class RemoteCommandService : BackgroundService
     /// <summary><c>POST /api/v1/commands</c>: the HTTP status and the answer.</summary>
     public async Task<(int Status, CommandResult Result)> RunAsync(MobileDeviceInfo device, ClipEnvelope? envelope, CancellationToken ct)
     {
-        if (Admit(device, envelope) is { } refused) return refused;
-        var request = CommandMessages.Open(_keys.Get(ClipTargetKeys.Device(device.DeviceId))!, envelope)!;
+        if (Admit(device, envelope, CommandOps.Run) is { } refused) return refused;
+        var request = CommandMessages.Open(_keys.Get(ClipTargetKeys.Device(device.DeviceId))!, envelope, CommandOps.Run)!;
         var name = request.Command;
         (int, CommandResult) result;
         if (!Allowed(name))
@@ -142,7 +142,7 @@ public sealed class RemoteCommandService : BackgroundService
     /// <summary><c>POST /api/v1/commands/cancel</c>: calls off a restart under way.</summary>
     public async Task<(int Status, CommandResult Result)> CancelAsync(MobileDeviceInfo device, ClipEnvelope? envelope)
     {
-        if (Admit(device, envelope) is { } refused) return refused;
+        if (Admit(device, envelope, CommandOps.Cancel) is { } refused) return refused;
         var result = Cancel(device.Name);
         await RecordAsync(device, "restart-cancel", result.Item2);
         return result;
@@ -152,14 +152,14 @@ public sealed class RemoteCommandService : BackgroundService
     public bool CancelFromTray() => Cancel("이 PC").Item2.Ok;
 
     /// <summary>
-    /// Phones only; the agreed key opens it; a known command; not seen before and not too old or new; not too many. The
-    /// request is remembered here, so a repeat is refused whatever it asked.
+    /// Phones only; the agreed key opens it; a known command, for this <paramref name="op"/>, its id sealed in; not seen
+    /// before and not too old or new; not too many. The request is remembered here, so a repeat is refused whatever it asked.
     /// </summary>
-    private (int, CommandResult)? Admit(MobileDeviceInfo device, ClipEnvelope? envelope)
+    private (int, CommandResult)? Admit(MobileDeviceInfo device, ClipEnvelope? envelope, string op)
     {
         if (device.Kind == DeviceKind.Pc) return (403, Error(CommandErrors.NotAllowed));
         if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return (409, Error(ClipErrors.KeyNeeded));
-        if (CommandMessages.Open(key, envelope) is not { } request) return (400, Error(CommandErrors.Invalid));
+        if (CommandMessages.Open(key, envelope, op) is not { } request) return (400, Error(CommandErrors.Invalid));
         var now = _time.GetUtcNow();
         if ((now - request.Ts).Duration() > RemoteCommandProtocol.MaxSkew) return (409, Error(CommandErrors.Replayed));
         foreach (var (k, at) in _seen)

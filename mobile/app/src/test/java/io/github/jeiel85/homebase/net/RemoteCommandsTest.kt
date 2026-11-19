@@ -84,6 +84,10 @@ class RemoteCommandsTest {
         val opened = CommandRequest.open(clipKey(), envelope)!!
         val request = o.getJSONObject("request")
         assertEquals(1, request.getInt("schema"))
+        assertEquals(request.getString("id"), opened.id)
+        assertEquals(envelope.id, opened.id)
+        assertEquals(request.getString("op"), opened.op)
+        assertEquals(CommandOps.RUN, opened.op)
         assertEquals(request.getString("command"), opened.command)
         assertEquals(instant(request.getString("ts")), instant(opened.ts))
         assertEquals(CommandRequest.parse(request.toString()), opened)
@@ -95,20 +99,24 @@ class RemoteCommandsTest {
     @Test
     fun a_request_this_phone_seals_has_the_shape_the_pc_reads() {
         val key = clipKey()
-        val request = CommandRequest.of(RemoteCommandNames.RESTART, nowMillis = 1_795_000_000_000L)
-        assertEquals(setOf("schema", "command", "ts"), request.toJson().keys().asSequence().toSet())
+        val request = CommandRequest.of(RemoteCommandNames.RESTART, CommandOps.CANCEL, nowMillis = 1_795_000_000_000L)
+        assertEquals(setOf("schema", "id", "command", "op", "ts"), request.toJson().keys().asSequence().toSet())
         assertEquals(1, request.toJson().getInt("schema"))
+        assertEquals(CommandOps.CANCEL, request.toJson().getString("op"))
+        assertTrue(ClipProtocol.isValidId(request.id))
         assertEquals(Instant.ofEpochMilli(1_795_000_000_000L), instant(request.ts))
 
-        val id = ClipProtocol.newId()
-        val envelope = request.seal(key, id)
-        assertEquals(id, envelope.id)
+        val envelope = request.seal(key)
+        assertEquals(request.id, envelope.id)
         assertEquals(setOf("schema", "id", "nonce", "data"), envelope.toJson().keys().asSequence().toSet())
         val opened = CommandRequest.open(key, ClipEnvelope.parse(envelope.toJson().toString())!!)
         assertEquals(request, opened)
 
+        // The id is sealed in: the same data under another id opens to nothing.
+        assertNull(CommandRequest.open(key, envelope.copy(id = ClipProtocol.newId())))
+
         // A fresh nonce every time: the same request never seals to the same data.
-        assertFalse(envelope.data == request.seal(key, id).data)
+        assertFalse(envelope.data == request.seal(key).data)
     }
 
     @Test
