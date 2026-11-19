@@ -334,6 +334,7 @@ public partial class DashboardWindow : ThemedWindow
 
     private static string? RoleLine(DeviceItem d) => d.Role switch
     {
+        DeviceRole.Hub or DeviceRole.LinkedHere when d.TwoWay => L.RoleBoth,
         DeviceRole.Hub => L.RoleHub,
         DeviceRole.LinkedHere => L.RoleLinkedHere,
         DeviceRole.ViaHub => L.DevVia(d.Via ?? ""),
@@ -511,6 +512,7 @@ public partial class DashboardWindow : ThemedWindow
         parts.Add(d.Role switch
         {
             DeviceRole.Self => L.HeadSelf,
+            DeviceRole.Hub or DeviceRole.LinkedHere when d.TwoWay => L.HeadBoth,
             DeviceRole.Hub => L.HeadHub,
             DeviceRole.LinkedHere => L.HeadLinkedHere,
             DeviceRole.Phone => L.HeadPhone,
@@ -531,7 +533,7 @@ public partial class DashboardWindow : ThemedWindow
                 WarningBox.Visibility = Visibility.Visible;
             }
         }
-        else if (d.Role == DeviceRole.Hub && d.Phones > 0)
+        else if (d.Phones > 0) // a linked PC's own phones (only a link from this PC knows them)
         {
             Chip(L.DevHubPhones(d.Phones), ChipTone.Off, SettingsTab.Phone);
         }

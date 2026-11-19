@@ -36,13 +36,14 @@ internal static class DeviceText
     public static string Entry(DeviceEntry d, string? via = null) =>
         $"{Seen(d.LastSeenAt, d.Online)} · {Status(d.Status, d.Kind)}" + (via is null ? "" : $" · {L.DevVia(via)}");
 
-    public static string Hub(LinkedHubView h)
+    /// <summary>A linked PC on Settings › Phone, either way it is linked (M-47).</summary>
+    public static string Pc(LinkedPc p)
     {
-        var state = h.Online ? L.DevOnline
-            : h.Error == "rejected" ? L.DevHubRejected
-            : h.LastContactAt is { } at ? L.DevSeen(Ago(DateTimeOffset.UtcNow - at)) : L.DevHubConnecting;
-        var others = h.Devices.Count(d => d.Kind == DeviceKind.Phone);
-        return $"{state} · {Status(h.Status, DeviceKind.Pc)}" + (others > 0 ? $" · {L.DevHubPhones(others)}" : "");
+        var state = p.Online ? L.DevOnline
+            : p.Rejected ? L.DevHubRejected
+            : p.LastSeen is { } at ? L.DevSeen(Ago(DateTimeOffset.UtcNow - at))
+            : p.Hub ? L.DevHubConnecting : L.DevOffline;
+        return $"{state} · {Status(p.Status, DeviceKind.Pc)}" + (p.Phones > 0 ? $" · {L.DevHubPhones(p.Phones)}" : "");
     }
 
     private static string Gb(long bytes) => (bytes / (1024.0 * 1024 * 1024)).ToString("0.0", CultureInfo.InvariantCulture);
