@@ -66,6 +66,10 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | POST | `/api/v1/live-snapshot` | `Authorization: Bearer <token>` (PC만) | 200 `{schema, live}` · 400 `invalid_snapshot` · 401 · 403 (M-46) |
 | POST | `/api/v1/clip/key` | `Authorization: Bearer <token>` | 본문 `{schema, pub}`(기기의 새 P-256 공개키) → 200 `{schema, pub}`(PC의 새 공개키) · 400 `invalid_key` · 401 — 클립보드 키 합의 (M-62, [`clip-key.v1.json`](mobile-protocol/clip-key.v1.json)). v0.48.0 이하 PC 는 404 |
 | POST | `/api/v1/clip` | `Authorization: Bearer <token>` (토큰 확인 뒤 본문 최대 1MiB) | 본문 [`clip.v1.json`](mobile-protocol/clip.v1.json) → 200 `{schema, accepted: true}` · 400 `invalid_clip` · 401 · 409 `clip_key_needed`·`no_user_session` · 503 `clipboard_busy` (M-62, 아래 "클립보드"). v0.48.0 이하 PC 는 404 |
+| POST | `/api/v1/transfer` | `Authorization: Bearer <token>` (토큰 확인 뒤 256KiB) | 파일 보내기 시작(M-64, 아래 "파일"): 봉투(전송 id, 메타데이터) → 200 `{schema, id, state, chunkBytes, have}` · 400 `invalid_transfer` · 409 `clip_key_needed` · 413 `too_large` · 503 `busy` · 507 `insufficient_storage`. v0.49.0 이하 PC 는 404 |
+| POST | `/api/v1/transfer/chunk?id=&f=&n=` | `Authorization: Bearer <token>` (토큰 확인 뒤 4MiB + 16) | 봉인한 조각 → 200 · 400 `bad_chunk` · 409 `unknown_transfer` · 503 `busy` |
+| GET · DELETE | `/api/v1/transfer?id=` | `Authorization: Bearer <token>` | 상태(받은 조각) · 취소. 409 `unknown_transfer` |
+| POST | `/api/v1/transfer/done?id=` | `Authorization: Bearer <token>` | 봉투(파일별 SHA-256) → 200 `{schema, saved}`(`tray`·`waiting`) · 409 `incomplete`·`hash_mismatch`·`unknown_transfer` |
 | GET | `/api/v1/clip?id=<id>` | `Authorization: Bearer <token>` | 200 봉투(그 기기 키로 봉인) · 404 `clip_gone` — PC가 그 기기에 알린 긴 텍스트, 10분 (M-62) |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
@@ -158,6 +162,18 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 - **앱에서 보내기**: 공유 메뉴의 Homebase(받은 텍스트 — 다른 앱이 연 것이므로 PC가 하나여도 고르게 함), 빠른 설정 타일(창에 포커스가 온 뒤 클립보드를 읽어 마지막으로 보낸 PC로), PC 카드 메뉴 "클립보드 보내기". 휴대폰 → PC 의 `ts`는 `Instant.toString()`(UTC `Z`, 밀리초가 있으면 소수점) 형식이다.
 - 텍스트는 PC 로그·DB·알림 센터에 남기지 않는다(길이와 보낸 기기만 로그에).
 
+### 파일 (M-64)
+
+기기가 PC로 파일 1~20개를 보낸다(2a). 설계는 [`FILE_SHARE.md`](FILE_SHARE.md). 픽스처 [`transfer.v1.json`](mobile-protocol/transfer.v1.json)을 .NET과 Kotlin이 함께 연다.
+
+- **시작** `POST /api/v1/transfer`: 본문은 클립보드 봉투 `{schema, id, nonce, data}` — `id`는 기기가 정한 전송 id(소문자 hex 32자), `data`는 M-62 합의 키로 봉인한 `{schema, files: [{name, size, mime?}], ts}`. 같은 id로 다시 보내면 그 상태를 돌려준다. 한도: 20개, 파일 2GiB, 합계 4GiB; PC 보관 10GiB, 디스크 여유가 (크기 + 2GiB) 미만이면 507; 기기당 진행 중 4개(넘으면 503 `busy`). 답 `TransferStatus {schema, id, state, chunkBytes, have}` — `state`는 `receiving`·`complete`, `have`는 파일마다 받은 조각 번호 범위(`"0-127,130"`, 없으면 `""`).
+- **조각** `POST /api/v1/transfer/chunk?id=&f=&n=`: 평문 조각은 4,194,304바이트(마지막은 나머지, 빈 파일은 조각 없음). 전송 키 = HKDF-SHA256(IKM = 합의 키, salt = 0 32바이트, info = `"homebase transfer v1"` ‖ 전송 id 16바이트, 32바이트); 본문 = AES-256-GCM(nonce = 파일 번호 4바이트 ‖ 조각 번호 8바이트, 빅엔디언, 추가 데이터 없음)의 암호문 ‖ 태그. 위치가 다르거나 길이가 맞지 않으면 400 `bad_chunk`. PC는 조각을 동시에 4개까지 처리하고, 30초 안에 차례가 오지 않으면 503 `busy`(잠시 뒤 같은 조각을 다시).
+- **이어 보내기** `GET /api/v1/transfer?id=`: 끊긴 뒤 `have`에 없는 조각만 보낸다. PC가 전송을 잃었으면(409 `unknown_transfer`) 같은 id로 다시 시작한다.
+- **끝** `POST /api/v1/transfer/done?id=`: 봉투(같은 id) 안에 `{schema, sha256: [파일별 소문자 hex]}`. 모든 조각과 해시가 맞으면 200 `{schema, saved}` — `tray`(로그인한 사용자의 트레이가 저장 중) 또는 `waiting`(아무도 로그인하지 않음, 24시간 보관). 빠진 조각이 있으면 409 `incomplete`, 해시가 다르면 409 `hash_mismatch`(전송을 버림).
+- **취소** `DELETE /api/v1/transfer?id=`. 끝나지 않았거나 저장되지 않은 전송은 24시간 뒤 PC가 지운다.
+- **PC 안**: Agent가 `ProgramData\Homebase\mobile\transfers\<id>`에 복호화해 두고, 끝나면 트레이에 넘긴다(브리지 `transfer.ready`). 트레이는 파이프 `Homebase.Transfer`로 읽어 사용자의 다운로드`\Homebase`에 저장한다(이름 정리, `Zone.Identifier` ZoneId=3, 자동으로 열지 않음).
+- 모든 요청 본문은 120초 안에 다 와야 한다(그렇지 않으면 400).
+
 ### 앱 쪽 UnifiedPush 규약 (AND_3.1.0, 라이브러리 없이)
 
 - 배포자 찾기: `queryBroadcastReceivers(org.unifiedpush.android.distributor.REGISTER)`(매니페스트 `<queries>`). 하나면 자동으로 쓰고, 여럿이면 고르게 하고, 없으면 ntfy 설치를 안내한다.
@@ -202,7 +218,7 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 ## Tray ↔ Agent (`\\.\pipe\Homebase.MobileBridge`)
 
 프레임은 4바이트 LE 길이 + UTF-8 JSON `{op, id?, payload?}`이고 최대 1MiB다.
-- Agent → Tray: `clip.set {text, source, sourceKind, sensitive}`(M-62, 프레임 `id` 포함, `clip.ready`를 보낸 트레이에만): 다른 기기가 보낸 클립보드 텍스트 — 트레이가 `clip.done`으로 답할 때까지 최대 10초 기다린다. `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?, source?, sourceKind?, app?}`(다른 기기 알림을 이 PC에 띄움, M-28. `title`은 "보낸 기기 · 앱", v0.38.0부터 보낸 기기·종류·앱을 따로 실어 트레이가 그룹 별칭으로 바꿔 보인다, M-51), `aliases {aliases}`(그룹 별칭 표 전체, 연결 직후와 바뀔 때마다, M-51), `response {id, ok, payload?, error?}`.
+- Agent → Tray: `transfer.ready {id, source, sourceKind, files: [{index, name, size, mime}]}`(M-64, `files.ready`를 보낸 트레이 하나에): 확인을 마친 받은 파일. 트레이는 `\\.\pipe\Homebase.Transfer`(같은 ACL)에 연결해 프레임 `{id, file}`을 쓰고, 프레임 `{ok, size, error?}`와 원시 바이트 `size`개를 읽는다(연결당 파일 하나). `clip.set {text, source, sourceKind, sensitive}`(M-62, 프레임 `id` 포함, `clip.ready`를 보낸 트레이에만): 다른 기기가 보낸 클립보드 텍스트 — 트레이가 `clip.done`으로 답할 때까지 최대 10초 기다린다. `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?, source?, sourceKind?, app?}`(다른 기기 알림을 이 PC에 띄움, M-28. `title`은 "보낸 기기 · 앱", v0.38.0부터 보낸 기기·종류·앱을 따로 실어 트레이가 그룹 별칭으로 바꿔 보인다, M-51), `aliases {aliases}`(그룹 별칭 표 전체, 연결 직후와 바뀔 때마다, M-51), `response {id, ok, payload?, error?}`.
 - Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`,
   `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`),
   `devices.overview`(→ `{here: DevicesResponse, hubs: [{pcId, pcName, online, lastContactAt?, status?, devices[], error?, selfDeviceId?}]}`),
@@ -212,6 +228,7 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
   `aliases.set {key, name, alias?}`(M-51): 트레이에서 정한 별칭 → `true`. Agent가 바로 저장하고 그룹의 PC에 백그라운드로 보내며, 바뀐 표는 `aliases` 푸시로 돌아온다.
   `approval.ask` ApprovalRequest `{id, app, session, project?, toolTitle, detail, expiresAt}` → `{decision}`(M-48, 최대 10분 대기, `null`이면 PC에서 묻기): Tray의 훅 수신기가 보낸다. Agent는 연결의 읽기 루프와 따로 처리해 그동안 다른 메시지가 막히지 않는다. `approval.cancel {id}`(응답 없음): 사용자가 PC로 돌아와 Tray가 기다리기를 그만둠.
   `advise`(M-60) → `advice.v1.json` 과 같은 `AdviceResponse`: 휴대폰과 같은 조언(한 번에 하나, 60초 재사용)을 트레이 설정 › AI 조언에 보인다. 읽기 루프와 따로 처리한다. 이 op 를 모르는 Agent 는 `unsupported`.
+  `files.ready`(M-64, 응답 없음): 연결 직후 — 받은 파일을 저장하는 트레이. Agent는 이때 기다리던 전송을 넘긴다. `transfer.saved {id, ok, error?}`(M-64, 응답 없음): `transfer.ready`의 파일을 모두 저장했는지 — 저장했으면 Agent가 지우고, 아니면 다음 트레이 연결 때 다시 넘긴다.
   `clip.done {id, ok}`(M-62, 응답 없음): `clip.set`을 클립보드에 넣었는지. `clip.ready`(M-62, 응답 없음): 연결 직후 트레이가 보낸다 — 받은 클립보드 텍스트를 클립보드에 넣는 트레이라는 뜻. Agent는 이 연결에만 `clip.set`을 보낸다(옛 트레이는 버리므로). `clip.targets` → `{targets: [{key, name, kind}]}`: 보낼 수 있는 곳 — `device:<deviceId>`(여기 페어링되고 `features`에 `clip`이 있는 휴대폰), `pc:<pcId>`(이 PC가 토큰을 가진 PC). `clip.send {targets, text, sensitive}` → `{results: [{key, name, ok, error?}]}`(최대 30초, 읽기 루프와 따로). `error`: `no_user_session`·`clipboard_busy`·`unreachable`·`unsupported`(그 PC가 옛 버전)·`rejected`·`push_failed`·`unknown_target`·`invalid_clip`·`failed`.
   `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.

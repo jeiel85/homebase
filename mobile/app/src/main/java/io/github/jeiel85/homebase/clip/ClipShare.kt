@@ -44,7 +44,7 @@ object ClipShare {
     /** The PC this phone last sent text to, offered first next time. */
     fun lastPcId(context: Context): String? = prefs(context).getString(KEY_LAST_PC, null)
 
-    private fun remember(context: Context, pcId: String) = prefs(context).edit().putString(KEY_LAST_PC, pcId).apply()
+    internal fun remember(context: Context, pcId: String) = prefs(context).edit().putString(KEY_LAST_PC, pcId).apply()
 
     /** [pcs] with the last used one first, the rest in list order. */
     fun ordered(pcs: List<PcEntry>, lastPcId: String?): List<PcEntry> {
@@ -109,7 +109,7 @@ object ClipShare {
      * The key to use with [pc]: under that PC's lock, the stored one when there is one other than [stale] (another
      * flow agreed it meanwhile), else a newly agreed and stored one. Null when the PC is too old for clipboard sharing.
      */
-    private suspend fun keyFor(context: Context, api: HomebaseApi, pc: PcEntry, stale: ByteArray?): ByteArray? =
+    internal suspend fun keyFor(context: Context, api: HomebaseApi, pc: PcEntry, stale: ByteArray?): ByteArray? =
         agreeing.getOrPut(pc.pcId) { Mutex() }.withLock {
             val stored = withContext(Dispatchers.IO) { PcStore(context).get(pc.pcId) }?.let { ClipCrypto.decodeKey(it.clipKey) }
             if (stored != null && (stale == null || !stored.contentEquals(stale))) return@withLock stored

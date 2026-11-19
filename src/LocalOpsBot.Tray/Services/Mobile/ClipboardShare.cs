@@ -95,6 +95,52 @@ internal static class ClipboardShare
         }
     }
 
+    /// <summary>
+    /// Puts a received picture file on the clipboard (M-64): as PNG (keeps transparency, what browsers and chat apps
+    /// paste) and as a bitmap (everything else). False when it can't be decoded or the clipboard stayed busy.
+    /// </summary>
+    public static async Task<bool> PutImageAsync(string path)
+    {
+        System.Windows.Media.Imaging.BitmapSource image;
+        byte[] png;
+        try
+        {
+            await using var file = File.OpenRead(path);
+            var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(file,
+                System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            image = decoder.Frames[0];
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+            using var buffer = new MemoryStream();
+            encoder.Save(buffer);
+            png = buffer.ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or NotSupportedException or System.IO.FileFormatException or ArgumentException
+                                       or InvalidOperationException or UnauthorizedAccessException or ExternalException)
+        {
+            return false; // a format Windows can't decode (HEIC without its codec, …): the file is saved anyway
+        }
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                var data = new WpfDataObject();
+                data.SetImage(image);
+                data.SetData("PNG", new MemoryStream(png));
+                WpfClipboard.SetDataObject(data, true);
+                return true;
+            }
+            catch (ExternalException) when (attempt < BusyRetries)
+            {
+                await Task.Delay(BusyPause);
+            }
+            catch (ExternalException)
+            {
+                return false;
+            }
+        }
+    }
+
     /// <summary>Where this PC can send (phones that take clipboard pushes, linked PCs); null when the Agent can't say.</summary>
     public static async Task<IReadOnlyList<ClipTarget>?> TargetsAsync()
     {

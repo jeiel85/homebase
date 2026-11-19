@@ -1,8 +1,14 @@
 package io.github.jeiel85.homebase.ui
 
+import android.content.ClipData
 import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
+import io.github.jeiel85.homebase.clip.ClipActionActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -117,6 +123,25 @@ fun PcListScreen(
     LifecycleResumeEffect(Unit) {
         needsAttention = pushNeedsAttention(context)
         onPauseOrDispose { }
+    }
+
+    // "파일 보내기" on a PC card (DECISIONS M-64): the system picker, then the shared send flow for that PC. The
+    // picked documents are readable by this app; the intent's ClipData hands them on to the flow and its job.
+    var filesFor by rememberSaveable { mutableStateOf<String?>(null) }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val pcId = filesFor
+        filesFor = null
+        if (pcId != null && uris.isNotEmpty()) {
+            val clip = ClipData.newRawUri("Homebase", uris.first())
+            uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+            context.startActivity(
+                Intent(context, ClipActionActivity::class.java)
+                    .setAction(ClipActionActivity.ACTION_SEND_FILES)
+                    .putExtra(ClipActionActivity.EXTRA_PC_ID, pcId)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    .also { it.clipData = clip },
+            )
+        }
     }
 
     // One /info round over every listed PC. [forcePresence]: report this phone's state even if unchanged.
@@ -253,6 +278,10 @@ fun PcListScreen(
                                         Toast.makeText(context, outcome, Toast.LENGTH_SHORT).show()
                                     }
                                 }
+                            },
+                            onSendFiles = {
+                                filesFor = pc.pcId
+                                filePicker.launch(arrayOf("*/*"))
                             },
                         )
                         Spacer(Modifier.height(12.dp))
@@ -417,6 +446,7 @@ private fun PcBay(
     onRename: () -> Unit,
     onRemove: () -> Unit,
     onSendClipboard: () -> Unit,
+    onSendFiles: () -> Unit,
 ) {
     val hb = Hb.colors
     var menu by remember { mutableStateOf(false) }
@@ -450,6 +480,8 @@ private fun PcBay(
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         // The phone's clipboard text onto this PC's clipboard (DECISIONS M-62).
                         DropdownMenuItem(text = { Text("클립보드 보내기") }, onClick = { menu = false; onSendClipboard() })
+                        // Files and pictures to this PC (DECISIONS M-64).
+                        DropdownMenuItem(text = { Text("파일 보내기") }, onClick = { menu = false; onSendFiles() })
                         DropdownMenuItem(
                             text = { Text(if (pc.alias == null) "별칭 지정" else "별칭 바꾸기") },
                             onClick = { menu = false; onRename() },

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "transferId": "0c1d2e3f405162738495a6b7c8d9eafb",
+  "meta": {
+    "schema": 1,
+    "id": "0c1d2e3f405162738495a6b7c8d9eafb",
+    "nonce": "QEFCQ0RFRkdISUpL",
+    "data": "yVNjB-ZHwfVisPlYkKrOp3GJMab1yGex-4LdOsBsDUaRtFMNUbiEwgm_fnoCoUDdQvAHaSltPo0lnVFakruRSWHUDKkZZ2KiUusNlFJnL4Iv4t_64v5FHVuVsQ-2TKG-2WOrjZG8NJBCkILMEPdq47eX7ZFknCI8eX2k8eViKSPHSDZavimzmSPpGbTJuPnTJkLuR1nW5wVirjNBXei3--4P7vaTBAVwRTDaZgAiW8dgb9RVOrk"
+  },
+  "chunks": [
+    {
+      "f": 0,
+      "n": 0,
+      "plain": "7JWI6rG0OiDtgbTrpr3rs7Trk5wgMuuLqOqzhArqsrDsoJU6IO2ctOuMgO2PsCDihpIgUEMg66i87KCACg",
+      "data": "F3bFtnzvSzAK1lMS9RA96SwmJYYDJFlhiFrFFlySQJzvV4mlZNzVhD15g-HJpgQCzzY5fzpkamBqMYiU0D-CIpah63momEIZ6WKLFgc"
+    },
+    {
+      "f": 1,
+      "n": 0,
+      "plain": "iVBORw0KGgo",
+      "data": "G5uZqnVWTWfNUl0Scv0KweMsa7In8zos"
+    }
+  ],
+  "hashes": {
+    "schema": 1,
+    "id": "0c1d2e3f405162738495a6b7c8d9eafb",
+    "nonce": "UFFSU1RVVldYWVpb",
+    "data": "CN1guF1y-B59kfx55jtui41Akn9r903fe6wdRCH3Q2PYDPEm3LbRgawbxDIamjdn9R2Tcw5CDb3_4j3-6Ohp3uXZ4hVemzLtxXJswrCfGhMvMX-Gwt4VDcI0EE6XtNHTGEec7x8tJ79ozEfkXCh7yIboYviKYdEMKpTnL0KFHHNQZAkMNInD2r4ziOjBLuca0VKOoMDnKeNcjkO3FV-A3V6hV7N4wYXb-iqlYMY"
+  }
+}

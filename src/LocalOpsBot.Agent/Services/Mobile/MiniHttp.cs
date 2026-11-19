@@ -158,9 +158,12 @@ public static class MiniHttp
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
         410 => "Gone",
+        413 => "Content Too Large",
         429 => "Too Many Requests",
         503 => "Service Unavailable",
+        507 => "Insufficient Storage",
         _ => "Error",
     };
 }

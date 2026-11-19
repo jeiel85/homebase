@@ -33,6 +33,13 @@ public sealed class MobileApiServer : BackgroundService
 {
     private static readonly TimeSpan RebindInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan HeadTimeout = TimeSpan.FromSeconds(10);
+    /// <summary>
+    /// How long a request body may take to arrive (a 4 MiB chunk over a 0.5 Mbps uplink takes about 70 s). Without it a
+    /// slow sender could hold one of the connections indefinitely.
+    /// </summary>
+    internal static readonly TimeSpan BodyTimeout = TimeSpan.FromSeconds(120);
+    /// <summary>Body cap for a transfer's description and hashes (M-64): 20 names of up to 1024 characters, sealed.</summary>
+    internal const int TransferInfoBodyBytes = 256 * 1024;
     private const int MaxConnections = 32;
 
     private enum PathKind { Tailnet, Lan, Loopback }
@@ -53,6 +60,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly ApprovalBroker? _approvals;
     private readonly OnDemandAdvice? _advice;
     private readonly ClipShareService? _clips;
+    private readonly FileShareService? _files;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -76,9 +84,11 @@ public sealed class MobileApiServer : BackgroundService
         DeviceHub? deviceHub = null,
         ApprovalBroker? approvals = null,
         OnDemandAdvice? advice = null,
-        ClipShareService? clips = null)
+        ClipShareService? clips = null,
+        FileShareService? files = null)
     {
         _clips = clips;
+        _files = files;
         _deviceHub = deviceHub;
         _approvals = approvals;
         _advice = advice;
@@ -365,41 +375,82 @@ public sealed class MobileApiServer : BackgroundService
         }
 
         byte[]? body = null;
-        if (r.Head.Method == "POST")
+        var chunkTurn = false;
+        try
         {
-            var maxBody = MiniHttp.MaxBodyBytes;
-            if (r.Head.Path == LiveSharePath)
+            if (r.Head.Method == "POST")
             {
-                // The one large body: only a paired device may make us read it (M-46).
-                if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
+                var maxBody = MiniHttp.MaxBodyBytes;
+                if (r.Head.Path == LiveSharePath)
                 {
-                    await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                    // The one large body: only a paired device may make us read it (M-46).
+                    if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
+                    {
+                        await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                        return;
+                    }
+                    maxBody = MiniHttp.MaxSnapshotBodyBytes;
+                }
+                else if (r.Head.Path == ClipProtocol.Path)
+                {
+                    // Clipboard text (M-62) can be long; read it only for a paired device.
+                    if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
+                    {
+                        await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                        return;
+                    }
+                    maxBody = ClipProtocol.MaxBodyBytes;
+                }
+                else if (r.Head.Path is TransferProtocol.Path or TransferProtocol.ChunkPath or TransferProtocol.DonePath)
+                {
+                    // Files from a device (M-64): read only for a paired device, a chunk only on its turn.
+                    if (_files is null)
+                    {
+                        await MiniHttp.WriteResponseAsync(stream, 404, Error("not_found", "Not found."), ct);
+                        return;
+                    }
+                    if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
+                    {
+                        await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                        return;
+                    }
+                    if (r.Head.Path == TransferProtocol.ChunkPath)
+                    {
+                        if (!await _files.EnterChunkAsync(ct))
+                        {
+                            await MiniHttp.WriteResponseAsync(stream, 503, Error(TransferErrors.Busy, "Busy with other chunks; send this one again shortly."), ct);
+                            return;
+                        }
+                        chunkTurn = true;
+                        maxBody = TransferProtocol.MaxChunkBodyBytes;
+                    }
+                    else
+                    {
+                        maxBody = TransferInfoBodyBytes;
+                    }
+                }
+                using (var bodyLimit = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    bodyLimit.CancelAfter(BodyTimeout);
+                    try { body = await MiniHttp.ReadBodyAsync(stream, r.Head, r.Leftover, bodyLimit.Token, maxBody); }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested) { body = null; }
+                }
+                if (body is null)
+                {
+                    await MiniHttp.WriteResponseAsync(stream, 400, Error("bad_request", "Missing, oversized or too slow body."), ct);
                     return;
                 }
-                maxBody = MiniHttp.MaxSnapshotBodyBytes;
             }
-            else if (r.Head.Path == ClipProtocol.Path)
-            {
-                // Clipboard text (M-62) can be long; read it only for a paired device.
-                if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
-                {
-                    await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
-                    return;
-                }
-                maxBody = ClipProtocol.MaxBodyBytes;
-            }
-            body = await MiniHttp.ReadBodyAsync(stream, r.Head, r.Leftover, ct, maxBody);
-            if (body is null)
-            {
-                await MiniHttp.WriteResponseAsync(stream, 400, Error("bad_request", "Missing or oversized body."), ct);
-                return;
-            }
-        }
 
-        // Loopback is where the Cloudflare connector delivers internet traffic (M-17).
-        var viaTunnel = kind == PathKind.Loopback && (_options.Cloudflare.Enabled || CameThroughCloudflare(r.Head));
-        var (status, json) = await HandleRestAsync(r.Head, body, ct, viaTunnel);
-        await MiniHttp.WriteResponseAsync(stream, status, json, ct);
+            // Loopback is where the Cloudflare connector delivers internet traffic (M-17).
+            var viaTunnel = kind == PathKind.Loopback && (_options.Cloudflare.Enabled || CameThroughCloudflare(r.Head));
+            var (status, json) = await HandleRestAsync(r.Head, body, ct, viaTunnel);
+            await MiniHttp.WriteResponseAsync(stream, status, json, ct);
+        }
+        finally
+        {
+            if (chunkTurn) _files!.LeaveChunk();
+        }
     }
 
     /// <summary>
@@ -676,6 +727,24 @@ public sealed class MobileApiServer : BackgroundService
                 return _clips.Fetch(device, head.QueryValue("id")) is { } envelope
                     ? (200, Json(envelope))
                     : (404, Error("clip_gone", "This text is no longer here (it is kept for 10 minutes)."));
+            }
+
+            case (_, TransferProtocol.Path or TransferProtocol.ChunkPath or TransferProtocol.DonePath) when _files is not null:
+            {
+                // Files from a phone or a linked PC (M-64): checked here, saved by the signed-in user's Tray.
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                var id = head.QueryValue("id");
+                var reply = (head.Method, head.Path) switch
+                {
+                    ("POST", TransferProtocol.Path) => _files.Create(device, Read<ClipEnvelope>(body)),
+                    ("GET", TransferProtocol.Path) => _files.Get(device, id),
+                    ("DELETE", TransferProtocol.Path) => _files.Cancel(device, id),
+                    ("POST", TransferProtocol.ChunkPath) => await _files.ChunkAsync(device, id, head.QueryValue("f"), head.QueryValue("n"), body, ct),
+                    ("POST", TransferProtocol.DonePath) => await _files.DoneAsync(device, id, Read<ClipEnvelope>(body), ct),
+                    _ => new TransferReply(405, Error("method_not_allowed", "Method not allowed.")),
+                };
+                return (reply.Status, reply.Json);
             }
 
             case ("DELETE", "/api/v1/device"):

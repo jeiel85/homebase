@@ -70,6 +70,16 @@ class HomebaseApi(
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * File transfer calls (DECISIONS M-64): a 4 MiB chunk on a slow mobile link takes a while to go up, and the PC
+     * waits up to 120 s for it.
+     */
+    private val transferClient: OkHttpClient = client.newBuilder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     private val pinnedClients = ConcurrentHashMap<String, OkHttpClient>()
 
     /** The HTTP client for [e]: a pinned TLS client for LAN, the normal client otherwise. */
@@ -298,6 +308,33 @@ class HomebaseApi(
                 code == 404 || code == 405 -> null
                 else -> throw IOException(errorMessage(body) ?: "텍스트 받기 실패 (HTTP $code)")
             }
+        }
+
+    /**
+     * One call of a file transfer (DECISIONS M-64) over [pc]'s paths, [prefer] first when given — the path that
+     * answered the last call, so a transfer of many chunks doesn't wait for a dead path's timeout on each one.
+     * Returns what the PC answered and the path it came over. Throws [UnauthorizedException] on 401 and
+     * [IOException] when no path answered.
+     */
+    suspend fun transfer(pc: PcEntry, path: String, builder: Request.Builder, prefer: Endpoint? = null): TransferAnswer =
+        withContext(Dispatchers.IO) {
+            val ordered = pc.orderedEndpoints(networks())
+            val paths = if (prefer != null && prefer in ordered) listOf(prefer) + ordered.filter { it != prefer } else ordered
+            var last: Exception = IOException("no endpoints")
+            for (e in paths) {
+                val req = builder.url(e.url(path)).header("Authorization", "Bearer ${pc.token}").build()
+                val res = try {
+                    clientFor(e, transferClient).newCall(req).execute()
+                } catch (ex: IOException) {
+                    last = IOException("${e.label}: ${describe(ex)}")
+                    continue
+                }
+                res.use {
+                    if (it.code == 401) throw UnauthorizedException()
+                    return@withContext TransferAnswer(it.code, it.body?.string(), e)
+                }
+            }
+            throw last
         }
 
     /**

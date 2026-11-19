@@ -2,8 +2,10 @@ package io.github.jeiel85.homebase.clip
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.service.quicksettings.Tile
@@ -34,7 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.IntentCompat
 import io.github.jeiel85.homebase.data.PcEntry
+import io.github.jeiel85.homebase.share.FileSendFlow
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
@@ -45,14 +49,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * "Homebase" in the share sheet for text (DECISIONS M-62): pick a PC, and the text goes onto its
- * clipboard. Always one tap on a PC, even with only one paired: any app can open this with any text,
- * and only the user should decide that it lands on a PC's clipboard.
+ * "Homebase" in the share sheet: text goes onto a PC's clipboard (DECISIONS M-62), files and pictures are sent to
+ * it (M-64). Always one tap on a PC, even with only one paired: any app can open this with any text or file, and
+ * only the user should decide that it lands on a PC.
  */
 class ClipShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeSetting.load(this)
         super.onCreate(savedInstanceState)
+        val streams = sharedStreams(intent)
+        if (streams.isNotEmpty()) {
+            setContent {
+                HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
+                    FileSendFlow(streams, presetPcId = null, pickAlways = true, onDone = { finish() })
+                }
+            }
+            return
+        }
         val text = if (intent?.action == Intent.ACTION_SEND) intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() else null
         if (text.isNullOrEmpty()) {
             toast(this, "보낼 텍스트가 없습니다")
@@ -68,12 +81,16 @@ class ClipShareActivity : ComponentActivity() {
 }
 
 /**
- * Not exported. [ACTION_SEND_CLIPBOARD] (the quick settings tile): reads the clipboard once this window
- * has focus — Android 10+ allows nothing earlier — and sends it to the PC used last (asking when there is
- * none). [ACTION_FETCH] (a "long text" notification): fetches what the PC kept and copies it.
+ * Not exported.
+ * - [ACTION_SEND_CLIPBOARD] (the quick settings tile): reads the clipboard once this window has focus — Android
+ *   10+ allows nothing earlier — and sends it to the PC used last (asking when there is none): a picture as a file
+ *   (M-64), text onto the PC's clipboard (M-62).
+ * - [ACTION_FETCH] (a "long text" notification): fetches what the PC kept and copies it.
+ * - [ACTION_SEND_FILES] (a PC card's "파일 보내기"): the picked files, in the intent's ClipData, to [EXTRA_PC_ID].
  */
 class ClipActionActivity : ComponentActivity() {
     private var clip by mutableStateOf<ClipText?>(null)
+    private var picture by mutableStateOf<Uri?>(null)
     private var asked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,16 +99,31 @@ class ClipActionActivity : ComponentActivity() {
         val action = intent?.action
         val pcId = intent?.getStringExtra(EXTRA_PC_ID)
         val clipId = intent?.getStringExtra(EXTRA_CLIP_ID)
-        if (action != ACTION_SEND_CLIPBOARD && (action != ACTION_FETCH || pcId == null || clipId == null)) {
+        val picked = if (action == ACTION_SEND_FILES) clipUris(intent?.clipData) else emptyList()
+        val valid = when (action) {
+            ACTION_SEND_CLIPBOARD -> true
+            ACTION_FETCH -> pcId != null && clipId != null
+            ACTION_SEND_FILES -> pcId != null && picked.isNotEmpty()
+            else -> false
+        }
+        if (!valid) {
             finish()
             return
         }
         setContent {
             HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
-                if (action == ACTION_FETCH && pcId != null && clipId != null) {
-                    ClipFetchFlow(pcId, clipId, onDone = { finish() })
-                } else {
-                    clip?.let { ClipSendFlow(it.text, it.sensitive, pickAlways = false, onDone = { finish() }) }
+                when {
+                    action == ACTION_FETCH && pcId != null && clipId != null -> ClipFetchFlow(pcId, clipId, onDone = { finish() })
+                    action == ACTION_SEND_FILES -> FileSendFlow(picked, presetPcId = pcId, pickAlways = false, onDone = { finish() })
+                    else -> {
+                        val image = picture
+                        val text = clip
+                        if (image != null) {
+                            FileSendFlow(listOf(image), presetPcId = null, pickAlways = false, onDone = { finish() })
+                        } else if (text != null) {
+                            ClipSendFlow(text.text, text.sensitive, pickAlways = false, onDone = { finish() })
+                        }
+                    }
                 }
             }
         }
@@ -101,9 +133,15 @@ class ClipActionActivity : ComponentActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus || asked || intent?.action != ACTION_SEND_CLIPBOARD) return
         asked = true
+        // A copied picture goes as a file (M-64); anything else is the text path of M-62.
+        val image = PhoneClipboard.readImage(this)
+        if (image != null) {
+            picture = image
+            return
+        }
         val read = PhoneClipboard.read(this)
         if (read == null) {
-            toast(this, "클립보드에 보낼 텍스트가 없습니다")
+            toast(this, "클립보드에 보낼 텍스트나 사진이 없습니다")
             finish()
         } else {
             clip = read
@@ -113,6 +151,7 @@ class ClipActionActivity : ComponentActivity() {
     companion object {
         const val ACTION_SEND_CLIPBOARD = "io.github.jeiel85.homebase.action.SEND_CLIPBOARD"
         const val ACTION_FETCH = "io.github.jeiel85.homebase.action.FETCH_CLIP"
+        const val ACTION_SEND_FILES = "io.github.jeiel85.homebase.action.SEND_FILES"
         const val EXTRA_PC_ID = "io.github.jeiel85.homebase.CLIP_PC_ID"
         const val EXTRA_CLIP_ID = "io.github.jeiel85.homebase.CLIP_ID"
     }
@@ -235,3 +274,22 @@ private fun ClipFetchFlow(pcId: String, clipId: String, onDone: () -> Unit) {
 }
 
 private fun toast(context: Context, text: String) = Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show()
+
+/** The URIs in [clip], in order. */
+internal fun clipUris(clip: ClipData?): List<Uri> =
+    if (clip == null) emptyList() else (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+
+/**
+ * The files a share intent carries (M-64): `EXTRA_STREAM` of `ACTION_SEND` (one) or `ACTION_SEND_MULTIPLE` (a
+ * list), else the URIs of its ClipData, which some apps fill instead. Empty for a text share.
+ */
+private fun sharedStreams(intent: Intent?): List<Uri> {
+    if (intent == null) return emptyList()
+    val streams = when (intent.action) {
+        Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+        Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        else -> emptyList()
+    }
+    if (streams.isNotEmpty()) return streams
+    return if (intent.action == Intent.ACTION_SEND_MULTIPLE) clipUris(intent.clipData) else emptyList()
+}
