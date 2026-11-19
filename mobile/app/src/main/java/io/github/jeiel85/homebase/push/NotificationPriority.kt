@@ -94,15 +94,20 @@ object NotificationPriority {
     val TEST_PROFILE = AlertProfile(popup = true, bundle = false)
 
     /**
-     * The default of a group ([NotificationGroup.key]; null for a category no group knows). App
-     * notifications — this PC's Windows ones and other devices' — arrive in bursts, so they ring
-     * without popping up; so does an AI session that finished. PC alerts, and an AI session waiting
-     * for the user, pop up. Everything is bundled.
+     * Groups that ring by default: something is down, or an AI session is stuck until the user
+     * answers (DECISIONS M-58). They pop up with sound and vibration.
      */
-    fun defaultFor(groupKey: String?): AlertProfile = when (groupKey) {
-        "toast", "device", "agent-done" -> AlertLevel.NORMAL.applyTo(AlertProfile())
-        else -> AlertLevel.URGENT.applyTo(AlertProfile())
-    }
+    val URGENT_GROUPS = setOf("watch", "agent-approval", "agent-waiting")
+
+    /**
+     * The default of a group ([NotificationGroup.key]; null for a category no group knows). Only
+     * [URGENT_GROUPS] — and a category no group knows, which may be a newer PC's alert — pop up with
+     * sound and vibration. Everything else (app notifications, which arrive in bursts, an AI session
+     * that finished, event log, advisor, boot) goes to the shade silently (M-58). Everything is bundled.
+     */
+    fun defaultFor(groupKey: String?): AlertProfile =
+        if (groupKey == null || groupKey in URGENT_GROUPS) AlertLevel.URGENT.applyTo(AlertProfile())
+        else AlertLevel.QUIET.applyTo(AlertProfile())
 
     /** Categories whose notifications get per-app choices: their `source` names an app. */
     fun hasApps(category: String): Boolean = category == NotificationGroups.TOAST || category == NotificationGroups.DEVICE
