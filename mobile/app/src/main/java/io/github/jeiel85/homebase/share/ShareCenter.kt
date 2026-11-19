@@ -46,7 +46,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -480,8 +479,9 @@ private fun Thumb(file: OutgoingFile, onRemove: () -> Unit) {
     val hb = Hb.colors
     val context = LocalContext.current
     val visual = file.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
-    val bitmap by produceState<ImageBitmap?>(null, file.uri) {
-        value = if (visual) withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap() else null
+    var bitmap by remember(file.uri) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file.uri) {
+        if (visual) bitmap = withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap()
     }
     Column(Modifier.width(THUMB.dp)) {
         Box(Modifier.size(THUMB.dp).clip(RoundedCornerShape(6.dp)).background(hb.slabRaised)) {
