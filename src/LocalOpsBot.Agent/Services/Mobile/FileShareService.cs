@@ -113,8 +113,14 @@ public sealed class FileShareService : BackgroundService
     /// </summary>
     public Func<ForwardedFiles, string?>? Forwarder { get; set; }
 
-    /// <summary>Transfers already passed on, by device and id, so a repeated <c>done</c> gets the same answer.</summary>
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _forwarded = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Transfers already passed on, by device and id, with their final status: a phone that missed the answer and starts
+    /// over (create, status, done) is told it is all here and gets <c>forwarded</c> again — nothing is uploaded twice.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, (DateTimeOffset At, TransferStatus Status)> _forwarded = new(StringComparer.Ordinal);
+
+    private TransferStatus? ForwardedStatus(MobileDeviceInfo device, string? id) =>
+        id is not null && _forwarded.TryGetValue(device.DeviceId + ":" + id, out var done) ? done.Status : null;
 
     // ── API (DECISIONS M-64) ────────────────────────────────────────────────────
 
@@ -122,6 +128,8 @@ public sealed class FileShareService : BackgroundService
     public TransferReply Create(MobileDeviceInfo device, ClipEnvelope? envelope)
     {
         if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return Error(409, ClipErrors.KeyNeeded, "Agree a clipboard key first.");
+        // Passed on already (M-67): the phone resumed after losing the answer to done (Codex review on #103).
+        if (ForwardedStatus(device, envelope?.Id) is { } forwarded) return Ok(forwarded);
         if (envelope is { Id: { } existingId } && ClipProtocol.IsValidId(existingId) && _entries.TryGetValue(existingId, out var known))
             return known.State.DeviceId == device.DeviceId ? Ok(Status(known)) : Error(400, TransferErrors.Invalid, "Pick another transfer id.");
         var meta = TransferMessages.OpenMeta(key, envelope);
@@ -168,7 +176,7 @@ public sealed class FileShareService : BackgroundService
 
     /// <summary><c>GET /api/v1/transfer?id=</c>.</summary>
     public TransferReply Get(MobileDeviceInfo device, string? id) =>
-        Find(device, id) is { } entry ? Ok(Status(entry)) : Unknown();
+        Find(device, id) is { } entry ? Ok(Status(entry)) : ForwardedStatus(device, id) is { } forwarded ? Ok(forwarded) : Unknown();
 
     /// <summary><c>POST /api/v1/transfer/chunk?id=&amp;f=&amp;n=</c>: decrypts and writes one chunk.</summary>
     public async Task<TransferReply> ChunkAsync(MobileDeviceInfo device, string? id, string? f, string? n, byte[]? body, CancellationToken ct)
@@ -210,7 +218,7 @@ public sealed class FileShareService : BackgroundService
     /// </summary>
     public async Task<TransferReply> DoneAsync(MobileDeviceInfo device, string? id, ClipEnvelope? envelope, CancellationToken ct)
     {
-        if (id is not null && _forwarded.ContainsKey(device.DeviceId + ":" + id))
+        if (ForwardedStatus(device, id) is not null)
             return Ok(new TransferDone(MobileProtocol.Schema, ShareRelay.Forwarded));
         if (Find(device, id) is not { } entry) return Unknown();
         if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return Error(409, ClipErrors.KeyNeeded, "Agree a clipboard key first.");
@@ -260,13 +268,14 @@ public sealed class FileShareService : BackgroundService
     {
         var state = entry.State;
         var paths = state.Files.Select((_, i) => FilePath(entry.Dir, i)).ToList();
+        var final = Status(entry);
         var error = Forwarder is { } forward
             ? forward(new ForwardedFiles(state.Id, state.Files, paths, state.Sha256 ?? new List<string>(), state.To!, state.DeviceName, state.DeviceId))
             : ClipErrors.UnknownTarget;
         Remove(entry);
         if (error is null)
         {
-            _forwarded[state.DeviceId + ":" + state.Id] = _time.GetUtcNow();
+            _forwarded[state.DeviceId + ":" + state.Id] = (_time.GetUtcNow(), final);
             _logger.LogInformation("Transfer {Id} from {Name} passed on to {Count} phone(s).", state.Id, state.DeviceName, state.To!.Count);
             return Ok(new TransferDone(MobileProtocol.Schema, ShareRelay.Forwarded));
         }
@@ -360,8 +369,8 @@ public sealed class FileShareService : BackgroundService
     internal void Sweep()
     {
         var now = _time.GetUtcNow();
-        foreach (var (key, at) in _forwarded)
-            if (now - at > TransferProtocol.KeepFor) _forwarded.TryRemove(key, out _);
+        foreach (var (key, done) in _forwarded)
+            if (now - done.At > TransferProtocol.KeepFor) _forwarded.TryRemove(key, out _);
         foreach (var entry in _entries.Values.ToList())
         {
             var since = entry.State.CompletedAt ?? entry.State.CreatedAt;

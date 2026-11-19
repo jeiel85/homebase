@@ -187,11 +187,21 @@ public class ShareRelayTests : IDisposable
         var notice = FileSendMessages.OpenNotice(keyTab, push)!;
         Assert.Equal((1, (long)photo.Length, "IMG_0412.jpg", "Galaxy S24"), (notice.Count, notice.TotalBytes, notice.Name, notice.From));
 
-        // A repeated done (the phone didn't hear the answer) gets the same answer, and nothing is sent twice.
+        // The phone missed the answer and starts over as it resumes any upload: create and status say it is all here
+        // (no chunk to send again, no new transfer), and done answers forwarded again — nothing goes out twice.
+        foreach (var (method, body) in new[] { ("POST", Body(TransferMessages.SealMeta(keyA, id, meta))), ("GET", (byte[]?)null) })
+        {
+            (status, json) = await api.HandleRestAsync(Req(method, TransferProtocol.Path, tokenA, method == "GET" ? $"id={id}" : null), body, default);
+            Assert.Equal(200, status);
+            var resumed = JsonSerializer.Deserialize<TransferStatus>(json, MobileProtocol.Json)!;
+            Assert.Equal((TransferStates.Complete, "0"), (resumed.State, Assert.Single(resumed.Have)));
+        }
+        Assert.Empty(_files.Ids());
         (status, json) = await api.HandleRestAsync(Req("POST", TransferProtocol.DonePath, tokenA, $"id={id}"),
             Body(TransferMessages.SealHashes(keyA, id, hashes)), default);
         Assert.Equal((200, ShareRelay.Forwarded), (status, JsonSerializer.Deserialize<TransferDone>(json, MobileProtocol.Json)!.Saved));
         Assert.Single(_sends.Ids());
+        Assert.Single(_pushed);
     }
 
     [Fact]

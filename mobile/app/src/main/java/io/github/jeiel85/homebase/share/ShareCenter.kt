@@ -142,7 +142,7 @@ internal fun ShareCenterFlow(shared: List<Uri>, text: String?, presetPcId: Strin
     val chosenPhones = phones.filter { it.key in checked }
     val problem = if (forFiles) files?.let { TransferProtocol.problem(it.map { f -> f.toTransferFile() }) } else null
     val ready = !starting && (chosenPcs.isNotEmpty() || chosenPhones.isNotEmpty()) &&
-        (!forFiles || (files != null && problem == null))
+        (!forFiles || (files?.size == uris.size && problem == null))
 
     fun toggle(key: String, on: Boolean) {
         checked = if (on) checked + key else checked - key
@@ -280,6 +280,9 @@ internal fun ShareCenterFlow(shared: List<Uri>, text: String?, presetPcId: Strin
     // Name, size and type of each file; one that can't be read is taken out (and said so) rather than stopping it all.
     LaunchedEffect(uris) {
         if (!forFiles) return@LaunchedEffect
+        // Until every file now in the list is read, there is nothing to send: [공유 시작] waits rather than sending the
+        // previous list without the ones just added (Codex review on #103).
+        if (uris.any { it !in described }) files = null
         for ((index, uri) in uris.withIndex()) {
             if (uri in described) continue
             try {
