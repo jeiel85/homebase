@@ -51,7 +51,8 @@ public sealed class OllamaLlmClient : ILlmClient
             {
                 // Ollama replies 404 with a helpful "model not found, try pulling it" body.
                 var body = await response.Content.ReadAsStringAsync(cts.Token);
-                var missing = (int)response.StatusCode == 404 || body.Contains("not found", StringComparison.OrdinalIgnoreCase);
+                // Ollama's own "model 'x' not found"; a bare 404 is more likely a wrong endpoint than a missing model.
+                var missing = (int)response.StatusCode == 404 && body.Contains("not found", StringComparison.OrdinalIgnoreCase);
                 return new LlmResult(false, "",
                     $"LLM server returned {(int)response.StatusCode}. {Summarize(body, _options.Model)}",
                     missing ? AdviceErrors.ModelMissing : AdviceErrors.ServerError);

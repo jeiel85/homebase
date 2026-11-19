@@ -466,7 +466,16 @@ public partial class SettingsPanel : UserControl
             if (advice is null) { SetResult(AdviceStatusText, L.Failed("?"), false); return; }
             ShowAdvice(advice);
         }
-        catch (Exception ex) when (ex is System.IO.IOException or OperationCanceledException or JsonException)
+        catch (OperationCanceledException)
+        {
+            // Our own 90 s limit: the Agent is there, the model is just slow.
+            SetResult(AdviceStatusText, L.AiAskError(AdviceErrors.Timeout, null), false);
+        }
+        catch (JsonException ex)
+        {
+            SetResult(AdviceStatusText, L.Failed(ex.Message), false);
+        }
+        catch (System.IO.IOException)
         {
             SetResult(AdviceStatusText, L.AiAskNoAgent, false);
         }

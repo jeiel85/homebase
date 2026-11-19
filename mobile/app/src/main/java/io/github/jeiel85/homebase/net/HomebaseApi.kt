@@ -238,7 +238,11 @@ class HomebaseApi(
     suspend fun advise(pc: PcEntry): AdviceReply? =
         authedCall(pc, "/api/v1/advise", Request.Builder().post("{\"schema\":1}".toRequestBody(JSON)), base = patient) { code, text ->
             when {
-                code in 200..299 -> AdviceReply.parse(text!!)
+                code in 200..299 -> try {
+                    AdviceReply.parse(text ?: "")
+                } catch (_: org.json.JSONException) {
+                    throw IOException("PC의 응답을 읽지 못했습니다.")
+                }
                 code == 404 || code == 405 -> null
                 else -> throw IOException(errorMessage(text) ?: "조언 요청 실패 (HTTP $code)")
             }

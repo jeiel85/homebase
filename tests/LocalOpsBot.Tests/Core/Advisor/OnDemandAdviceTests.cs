@@ -56,6 +56,21 @@ public sealed class OnDemandAdviceTests
     }
 
     [Fact]
+    public async Task A_clock_set_back_does_not_keep_old_advice()
+    {
+        var time = new ManualTimeProvider();
+        var advisor = new GatedAdvisor { Immediate = new AdvisoryResult(true, "All fine.", null) };
+        var advice = new OnDemandAdvice(advisor, Options, time);
+
+        await advice.GetAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromMinutes(-10));
+        var after = await advice.GetAsync(CancellationToken.None);
+
+        Assert.False(after.Cached);
+        Assert.Equal(2, advisor.Calls);
+    }
+
+    [Fact]
     public async Task A_failure_is_not_kept_so_asking_again_tries_again()
     {
         var advisor = new GatedAdvisor

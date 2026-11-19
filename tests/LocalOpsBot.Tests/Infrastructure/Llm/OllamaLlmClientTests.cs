@@ -78,6 +78,18 @@ public sealed class OllamaLlmClientTests
     }
 
     [Fact]
+    public async Task A_bare_404_is_not_taken_for_a_missing_model()
+    {
+        // Another HTTP server at llmAdvisor.endpoint: pulling a model wouldn't help.
+        var handler = new FakeHttpMessageHandler();
+        handler.QueueResponse(HttpStatusCode.NotFound, "<html>404 Page</html>");
+
+        var result = await Client(handler).GenerateAsync("hi", CancellationToken.None);
+
+        Assert.Equal(AdviceErrors.ServerError, result.Code);
+    }
+
+    [Fact]
     public async Task Generate_on_another_server_error_says_so()
     {
         var handler = new FakeHttpMessageHandler();

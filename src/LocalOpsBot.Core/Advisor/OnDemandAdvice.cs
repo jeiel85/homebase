@@ -79,7 +79,8 @@ public sealed class OnDemandAdvice
         Task<AdviceReply> running;
         lock (_gate)
         {
-            if (_last is { } last && _time.GetUtcNow() - last.GeneratedAt < ReuseFor)
+            // A negative age (the clock was set back) is not "fresh": generate anew.
+            if (_last is { } last && _time.GetUtcNow() - last.GeneratedAt is var age && age >= TimeSpan.Zero && age < ReuseFor)
                 return Task.FromResult(last with { Cached = true });
             running = _running ??= GenerateAsync();
         }
