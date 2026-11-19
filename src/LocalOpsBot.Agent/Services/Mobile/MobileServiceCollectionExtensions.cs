@@ -109,6 +109,15 @@ public static class MobileServiceCollectionExtensions
         // Claude Code permission prompts waiting for a phone (M-48).
         services.AddSingleton(sp => new ApprovalBroker(sp.GetRequiredService<ILogger<ApprovalBroker>>(), sp.GetService<IOutboundRouter>(),
             devices: sp.GetRequiredService<IMobileDeviceStore>()));
+        // Clipboard text sent by hand (M-62): in by the API, out by push or over a PC link.
+        services.AddSingleton(sp =>
+        {
+            var push = sp.GetRequiredService<UnifiedPushOutboundChannel>();
+            return new ClipShareService(sp.GetRequiredService<IMobileDeviceStore>(),
+                (target, plaintext, ct) => push.SendDirectAsync(target, plaintext, ClipProtocol.PushTtlSeconds, "high", ct),
+                sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILogger<ClipShareService>>());
+        });
         services.AddSingleton(sp =>
         {
             var api = new MobileApiServer(
@@ -117,7 +126,7 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<LanAddressResolver>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MobileOptions>>(),
                 sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
                 deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>(),
-                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>());
+                advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>(), clips: sp.GetRequiredService<ClipShareService>());
             api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
             return api;
         });

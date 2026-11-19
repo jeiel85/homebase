@@ -24,6 +24,9 @@ internal static class MobileHost
     /// <summary>A relayed notification to show (DECISIONS M-28). Background thread.</summary>
     public static event Action<LocalOpsBot.Core.Mobile.TrayToast>? ToastRequested;
 
+    /// <summary>Text another device sent, for the clipboard (DECISIONS M-62). Background thread.</summary>
+    public static event Action<LocalOpsBot.Core.Mobile.TrayClip>? ClipReceived;
+
     public static bool IsEnabled() => TrayConfig.Load().GetSection("mobile").GetValue<bool>("enabled");
 
     public static MobileBridgeClient EnsureStarted()
@@ -33,6 +36,7 @@ internal static class MobileHost
         _client = new MobileBridgeClient(claude);
         _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
         _client.ToastRequested += t => ToastRequested?.Invoke(t);
+        _client.ClipReceived += c => ClipReceived?.Invoke(c);
         _client.AliasesReceived += DeviceNames.Apply;
         // The client connects from its constructor: the first table may already be in (Apply is idempotent).
         if (_client.LastAliases is { } aliases) DeviceNames.Apply(aliases);

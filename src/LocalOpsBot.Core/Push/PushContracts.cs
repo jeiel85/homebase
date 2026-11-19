@@ -9,21 +9,27 @@ namespace LocalOpsBot.Core.Push;
 /// keys, both base64url without padding (<c>docs/MOBILE_PROTOCOL.md</c>, fixture
 /// <c>push-subscription.v1.json</c>). <see cref="MutedCategories"/> lists the notification
 /// categories the phone does not want (DECISIONS M-25); absent means everything, so apps from
-/// before M-25 keep receiving all of them.
+/// before M-25 keep receiving all of them. <see cref="Features"/> (v0.49.0) lists the pushes beyond
+/// notifications the app can read, such as <c>clip</c> (DECISIONS M-62); absent means none.
 /// </summary>
 public sealed record PushSubscriptionRequest(
-    int Schema, string Endpoint, string P256dh, string Auth, IReadOnlyList<string>? MutedCategories = null);
+    int Schema, string Endpoint, string P256dh, string Auth, IReadOnlyList<string>? MutedCategories = null,
+    IReadOnlyList<string>? Features = null);
 
 /// <summary>Answer to <c>POST</c>/<c>DELETE /api/v1/push</c>.</summary>
 public sealed record PushSubscriptionResponse(int Schema, string DeviceId, bool Registered);
 
 /// <summary>A stored subscription (in <c>state.json</c>, next to the paired device it belongs to).</summary>
 public sealed record PushSubscription(
-    string Endpoint, string P256dh, string Auth, DateTimeOffset UpdatedAt, IReadOnlyList<string>? MutedCategories = null)
+    string Endpoint, string P256dh, string Auth, DateTimeOffset UpdatedAt, IReadOnlyList<string>? MutedCategories = null,
+    IReadOnlyList<string>? Features = null)
 {
     /// <summary>Whether this phone asked not to receive <paramref name="category"/>. The Tray test always goes through.</summary>
     public bool Mutes(string category) =>
         category != PushCategories.Test && MutedCategories is { Count: > 0 } muted && muted.Contains(category, StringComparer.Ordinal);
+
+    /// <summary>Whether the app said it reads <paramref name="feature"/> pushes (DECISIONS M-62).</summary>
+    public bool Supports(string feature) => Features is { Count: > 0 } f && f.Contains(feature, StringComparer.Ordinal);
 }
 
 /// <summary>Notification categories a phone can turn off (DECISIONS M-25).</summary>
@@ -232,6 +238,10 @@ public static class PushPayload
         if (request.MutedCategories is { } muted
             && (muted.Count > PushCategories.MaxMuted || !muted.All(PushCategories.IsValid)))
             return "Muted categories are invalid.";
+        // Same id rules as categories; a newer app may list features this PC does not know, which is fine.
+        if (request.Features is { } features
+            && (features.Count > PushCategories.MaxMuted || !features.All(PushCategories.IsValid)))
+            return "Features are invalid.";
         return null;
     }
 

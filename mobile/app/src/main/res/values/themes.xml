@@ -16,4 +16,15 @@
     <style name="Theme.Homebase.Dark">
         <item name="android:windowBackground">@color/canvas_night</item>
     </style>
+
+    <!-- The clipboard share sheet and tile (DECISIONS M-62): only a dialog over whatever was on screen. -->
+    <style name="Theme.Homebase.Translucent" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

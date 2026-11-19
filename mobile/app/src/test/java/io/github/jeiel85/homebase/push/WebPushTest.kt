@@ -134,6 +134,8 @@ class PushProtocolTest {
             listOf("event_log", "advisor"),
         ).toJson()
         assertEquals(expected.toMap(), actual.toMap())
+        // The app says it reads clipboard pushes (M-62), so a PC offers to send it text.
+        assertEquals(listOf("clip"), expected.getJSONArray("features").toList())
         // The fixture's keys are the Appendix A phone key: a real P-256 point, a 16-byte secret.
         WebPush.publicKey(WebPush.unb64url(actual.getString("p256dh")))
         assertEquals(16, WebPush.unb64url(actual.getString("auth")).size)

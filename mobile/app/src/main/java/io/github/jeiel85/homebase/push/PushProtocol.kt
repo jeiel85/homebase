@@ -1,5 +1,6 @@
 package io.github.jeiel85.homebase.push
 
+import io.github.jeiel85.homebase.net.ClipProtocol
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.ProtocolException
 import io.github.jeiel85.homebase.net.SCHEMA
@@ -22,6 +23,11 @@ data class PushSubscription(
     val auth: String,
     /** Categories this phone does not want (M-25); the PC skips them. Sorted so equal choices compare equal. */
     val mutedCategories: List<String> = emptyList(),
+    /**
+     * Pushes beyond notifications this app reads (DECISIONS M-62): a PC only offers to send clipboard
+     * text to phones that list [ClipProtocol.FEATURE] — an older app would drop it without a word.
+     */
+    val features: List<String> = FEATURES,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
@@ -29,6 +35,11 @@ data class PushSubscription(
         .put("p256dh", p256dh)
         .put("auth", auth)
         .put("mutedCategories", JSONArray(mutedCategories.sorted()))
+        .put("features", JSONArray(features.sorted()))
+
+    companion object {
+        val FEATURES: List<String> = listOf(ClipProtocol.FEATURE)
+    }
 }
 
 data class PushSubscriptionResponse(val deviceId: String, val registered: Boolean) {

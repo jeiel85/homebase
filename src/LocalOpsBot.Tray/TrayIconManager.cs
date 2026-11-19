@@ -31,6 +31,7 @@ public sealed class TrayIconManager : IDisposable
     private DashboardWindow? _popup;
     private OnboardingWindow? _onboarding;
     private readonly ToolStripMenuItem _centerItem;
+    private readonly ToolStripMenuItem _clipItem;
     private readonly System.Windows.Threading.DispatcherTimer _unreadTimer;
     private readonly System.Windows.Threading.DispatcherTimer _updateTimer;
 
@@ -66,6 +67,14 @@ public sealed class TrayIconManager : IDisposable
         _centerItem.Click += (_, _) => ShowNotificationCenter();
         menu.Items.Add(_centerItem);
 
+        // Send this PC's clipboard text to a phone or another PC of the group (DECISIONS M-62). The targets
+        // are asked for each time the submenu opens; shown only while the phone feature is on.
+        _clipItem = new ToolStripMenuItem(L.MenuSendClipboard);
+        _clipItem.DropDownItems.Add(new ToolStripMenuItem(L.ClipLoading) { Enabled = false });
+        _clipItem.DropDownOpening += async (_, _) => await FillClipTargetsAsync();
+        menu.Items.Add(_clipItem);
+        menu.Opening += (_, _) => _clipItem.Visible = MobileHost.Client is not null;
+
         var settingsItem = new ToolStripMenuItem(L.MenuSettings);
         settingsItem.Click += (_, _) => ShowSettings(SettingsTab.Phone);
         menu.Items.Add(settingsItem);
@@ -97,6 +106,7 @@ public sealed class TrayIconManager : IDisposable
         MobileHost.WatchingChanged += OnWatchingChanged;
         ApplyWatching(MobileHost.IsWatching);
         MobileHost.ToastRequested += OnToastRequested;
+        MobileHost.ClipReceived += OnClipReceived;
 
         // A relayed notification's balloon opens the center; the unread count follows new arrivals
         // and is re-read every minute (this PC's alerts do not reach the Tray as balloons).
@@ -151,6 +161,122 @@ public sealed class TrayIconManager : IDisposable
         }));
 
     private static string Clip(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
+
+    /// <summary>
+    /// Text another device sent (M-62): onto the clipboard, then a balloon naming the sender. The balloon never
+    /// shows the text — Windows keeps balloons in its notification list, where anyone at the PC could read it.
+    /// </summary>
+    private void OnClipReceived(LocalOpsBot.Core.Mobile.TrayClip clip) =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            if (_disposed) return;
+            var from = DeviceNames.Show(clip.SourceKind, clip.Source);
+            bool ok;
+            try { ok = await ClipboardShare.PutAsync(clip.Text, clip.Sensitive); }
+            catch (Exception ex)
+            {
+                // Never let a clipboard failure take the tray down (this runs as an async void on the dispatcher).
+                TrayLog.Warn("Clipboard", $"Putting text from {from} on the clipboard failed: {ex.GetType().Name}");
+                ok = false;
+            }
+            TrayLog.Info("Clipboard", ok
+                ? $"Text from {from} ({clip.Text.Length} chars{(clip.Sensitive ? ", sensitive" : "")}) put on the clipboard"
+                : $"Text from {from} could not be put on the clipboard (busy)");
+            ShowBalloon(ok ? L.ClipReceivedTitle : L.ClipReceiveFailedTitle,
+                ok ? L.ClipReceivedBody(from, clip.Text.Length) : L.ClipReceiveFailedBody(from));
+        }));
+
+    /// <summary>The "Send clipboard" submenu: the devices the Agent can reach, asked for when it opens.</summary>
+    private async Task FillClipTargetsAsync()
+    {
+        var items = _clipItem.DropDownItems;
+        items.Clear();
+        items.Add(new ToolStripMenuItem(L.ClipLoading) { Enabled = false });
+        var targets = await ClipboardShare.TargetsAsync();
+        if (_disposed) return;
+        items.Clear();
+        if (targets is null)
+        {
+            items.Add(new ToolStripMenuItem(L.ClipAgentUnavailable) { Enabled = false });
+            return;
+        }
+        if (targets.Count == 0)
+        {
+            items.Add(new ToolStripMenuItem(L.ClipNoTargets) { Enabled = false });
+            return;
+        }
+        foreach (var t in targets)
+        {
+            var target = t;
+            items.Add(new ToolStripMenuItem(ClipTargetLabel(target), null, async (_, _) => await SendClipboardAsync(new[] { target })));
+        }
+        if (targets.Count > 1)
+        {
+            items.Add(new ToolStripSeparator());
+            items.Add(new ToolStripMenuItem(L.ClipSendAll(targets.Count), null, async (_, _) => await SendClipboardAsync(targets)));
+        }
+    }
+
+    private static string ClipTargetLabel(LocalOpsBot.Core.Mobile.ClipTarget t)
+    {
+        var isPc = t.Kind == LocalOpsBot.Core.Mobile.DeviceKind.Pc;
+        var name = DeviceNames.Show(t.Kind, t.Name, isPc ? t.Key : null);
+        return isPc ? L.ClipTargetPc(name) : L.ClipTargetPhone(name);
+    }
+
+    /// <summary>Reads the clipboard now and sends its text to <paramref name="targets"/> (M-62).</summary>
+    private async Task SendClipboardAsync(IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget> targets)
+    {
+        if (Closing) return;
+        var snapshot = await ClipboardShare.ReadAsync();
+        if (snapshot is null)
+        {
+            ShowBalloon(L.ClipNotSentTitle, L.ClipBusy);
+            return;
+        }
+        if (snapshot.Text is not { } text)
+        {
+            ShowBalloon(L.ClipNotSentTitle, L.ClipNothing);
+            return;
+        }
+        if (text.Length > LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars)
+        {
+            ShowBalloon(L.ClipNotSentTitle, L.ClipTooLong(LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars));
+            return;
+        }
+        // A password manager copied it: send only when the user says so, and marked so the other end hides it.
+        if (snapshot.Sensitive && !MessageDialog.Show(L.ClipSensitiveTitle, L.ClipSensitiveBody, L.ClipSendAnyway, L.Cancel))
+            return;
+
+        var result = await ClipboardShare.SendAsync(targets.Select(t => t.Key).ToList(), text, snapshot.Sensitive);
+        if (_disposed) return;
+        if (result is null)
+        {
+            ShowBalloon(L.ClipNotSentTitle, L.ClipAgentUnavailable);
+            return;
+        }
+        string Name(LocalOpsBot.Core.Mobile.ClipSendOutcome o) =>
+            targets.FirstOrDefault(t => t.Key == o.Key) is { } t ? DeviceNames.Show(t.Kind, t.Name, t.Kind == LocalOpsBot.Core.Mobile.DeviceKind.Pc ? t.Key : null) : o.Name;
+        var sent = result.Results.Where(o => o.Ok).Select(Name).ToList();
+        var failed = result.Results.Where(o => !o.Ok).ToList();
+        TrayLog.Info("Clipboard", $"Sent {text.Length} chars{(snapshot.Sensitive ? " (sensitive)" : "")}: " +
+            string.Join(", ", result.Results.Select(o => o.Ok ? $"{o.Name} ok" : $"{o.Name} {o.Error}")));
+        if (failed.Count == 0)
+            ShowBalloon(L.ClipSentTitle, L.ClipSentBody(string.Join(", ", sent)));
+        else
+            ShowBalloon(sent.Count == 0 ? L.ClipNotSentTitle : L.ClipPartlySentTitle,
+                string.Join("\n", failed.Select(o => $"{Name(o)}: {L.ClipError(o.Error)}")));
+    }
+
+    /// <summary>A balloon of the tray's own (never forwarded to the phones as a Windows notification).</summary>
+    private void ShowBalloon(string title, string text)
+    {
+        if (_disposed) return;
+        title = Clip(title, 63);
+        OwnToasts.Remember(title);
+        try { _trayIcon.ShowBalloonTip(5000, title, Clip(string.IsNullOrWhiteSpace(text) ? " " : text, 255), ToolTipIcon.None); }
+        catch (Exception) { /* the shell refused (focus assist etc.) */ }
+    }
 
     private void OnWatchingChanged(bool on) =>
         Application.Current?.Dispatcher.BeginInvoke(new Action(() => ApplyWatching(on)));
@@ -457,6 +583,7 @@ public sealed class TrayIconManager : IDisposable
         _updateTimer.Stop();
         MobileHost.WatchingChanged -= OnWatchingChanged;
         MobileHost.ToastRequested -= OnToastRequested;
+        MobileHost.ClipReceived -= OnClipReceived;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _baseIcon.Dispose();

@@ -7,7 +7,9 @@ import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
+import io.github.jeiel85.homebase.clip.ClipShare
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.net.ClipProtocol
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import kotlinx.coroutines.launch
@@ -77,9 +79,16 @@ class PushReceiver : BroadcastReceiver() {
             Log.w(TAG, "dropped an undecryptable push: ${e.javaClass.simpleName}")
             return
         }
-        if (PushEndpointsUpdate.kindOf(plain) == PushEndpointsUpdate.KIND) {
-            handleEndpoints(context, plain)
-            return
+        when (PushEndpointsUpdate.kindOf(plain)) {
+            PushEndpointsUpdate.KIND -> {
+                handleEndpoints(context, plain)
+                return
+            }
+            // Text a PC sent by hand (DECISIONS M-62): onto the clipboard, never into the notification center.
+            ClipProtocol.PUSH_KIND -> {
+                ClipShare.receive(context, plain)
+                return
+            }
         }
         val message = try {
             PushMessage.parse(plain)

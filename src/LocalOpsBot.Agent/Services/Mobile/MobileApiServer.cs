@@ -52,6 +52,7 @@ public sealed class MobileApiServer : BackgroundService
     private DeviceGroupService? _group;
     private readonly ApprovalBroker? _approvals;
     private readonly OnDemandAdvice? _advice;
+    private readonly ClipShareService? _clips;
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
@@ -74,8 +75,10 @@ public sealed class MobileApiServer : BackgroundService
         X509Certificate2? lanCertificate = null,
         DeviceHub? deviceHub = null,
         ApprovalBroker? approvals = null,
-        OnDemandAdvice? advice = null)
+        OnDemandAdvice? advice = null,
+        ClipShareService? clips = null)
     {
+        _clips = clips;
         _deviceHub = deviceHub;
         _approvals = approvals;
         _advice = advice;
@@ -375,6 +378,16 @@ public sealed class MobileApiServer : BackgroundService
                 }
                 maxBody = MiniHttp.MaxSnapshotBodyBytes;
             }
+            else if (r.Head.Path == ClipProtocol.Path)
+            {
+                // Clipboard text (M-62) can be long; read it only for a paired device.
+                if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
+                {
+                    await MiniHttp.WriteResponseAsync(stream, 401, Error("unauthorized", "This device is not paired with this PC."), ct);
+                    return;
+                }
+                maxBody = ClipProtocol.MaxBodyBytes;
+            }
             body = await MiniHttp.ReadBodyAsync(stream, r.Head, r.Leftover, ct, maxBody);
             if (body is null)
             {
@@ -484,17 +497,20 @@ public sealed class MobileApiServer : BackgroundService
 
                 var existing = _devices.PushTargets().FirstOrDefault(t => t.DeviceId == device.DeviceId)?.Subscription;
                 var muted = PushCategories.Normalize(req!.MutedCategories);
+                // Same normal form as the muted list: sorted, distinct, null when empty (M-62).
+                var features = PushCategories.Normalize(req.Features);
                 var unchanged = existing is not null && existing.Endpoint == req.Endpoint
                     && existing.P256dh == req.P256dh && existing.Auth == req.Auth
-                    && PushCategories.SameMuted(existing.MutedCategories, muted);
+                    && PushCategories.SameMuted(existing.MutedCategories, muted)
+                    && PushCategories.SameMuted(existing.Features, features);
                 if (!unchanged)
                 {
                     // The app re-registers on every reconnect; only a real change rewrites state.json.
                     _devices.SetPushSubscription(device.DeviceId,
-                        new PushSubscription(req.Endpoint, req.P256dh, req.Auth, DateTimeOffset.UtcNow, muted));
-                    _logger.LogInformation("Push subscription {Action} for {Name} ({DeviceId}) at {Host}; muted: {Muted}.",
+                        new PushSubscription(req.Endpoint, req.P256dh, req.Auth, DateTimeOffset.UtcNow, muted, features));
+                    _logger.LogInformation("Push subscription {Action} for {Name} ({DeviceId}) at {Host}; muted: {Muted}; features: {Features}.",
                         existing is null ? "registered" : "updated", device.Name, device.DeviceId, new Uri(req.Endpoint).Host,
-                        muted is null ? "none" : string.Join(",", muted));
+                        muted is null ? "none" : string.Join(",", muted), features is null ? "none" : string.Join(",", features));
                 }
                 return (200, Json(new PushSubscriptionResponse(MobileProtocol.Schema, device.DeviceId, true)));
             }
@@ -624,6 +640,33 @@ public sealed class MobileApiServer : BackgroundService
                 return (200, Json(AdviceResponse.From(reply)));
             }
 
+            case ("POST", ClipProtocol.Path):
+            {
+                // Clipboard text from a phone or a linked PC (M-62): the Tray puts it on this PC's clipboard.
+                if (_clips is null) return (404, Error("not_found", "Not found."));
+                var token = head.BearerToken() ?? "";
+                var device = _devices.Authenticate(token);
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return _clips.Accept(device, token, Read<ClipEnvelope>(body)) switch
+                {
+                    ClipAcceptOutcome.Accepted => (200, "{\"schema\":1,\"accepted\":true}"),
+                    ClipAcceptOutcome.NoUserSession => (409, Error(ClipErrors.NoUserSession, "Nobody is signed in to this PC to receive it.")),
+                    _ => (400, Error(ClipErrors.Invalid, "Invalid clipboard text.")),
+                };
+            }
+
+            case ("GET", ClipProtocol.Path):
+            {
+                // Text too long for a push that this PC offered to the asking phone (M-62).
+                if (_clips is null) return (404, Error("not_found", "Not found."));
+                var token = head.BearerToken() ?? "";
+                var device = _devices.Authenticate(token);
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return _clips.Fetch(device, token, head.QueryValue("id")) is { } envelope
+                    ? (200, Json(envelope))
+                    : (404, Error("clip_gone", "This text is no longer here (it is kept for 10 minutes)."));
+            }
+
             case ("DELETE", "/api/v1/device"):
             {
                 if (_deviceHub is null) return (404, Error("not_found", "Not found."));
@@ -634,7 +677,7 @@ public sealed class MobileApiServer : BackgroundService
 
             case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"
                 or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"
-                or LiveSharePath or "/api/v1/approval" or "/api/v1/advise"):
+                or LiveSharePath or "/api/v1/approval" or "/api/v1/advise" or ClipProtocol.Path):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

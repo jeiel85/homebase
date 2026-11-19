@@ -66,6 +66,9 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>The group's aliases (M-51): sent on connect and whenever they change. Background thread.</summary>
     public event Action<IReadOnlyList<DeviceAlias>>? AliasesReceived;
 
+    /// <summary>Text another device sent, for this PC's clipboard (M-62). Background thread.</summary>
+    public event Action<TrayClip>? ClipReceived;
+
     /// <summary>The last table received, for a listener that subscribes after the first push arrived.</summary>
     public IReadOnlyList<DeviceAlias>? LastAliases { get; private set; }
 
@@ -131,6 +134,9 @@ internal sealed class MobileBridgeClient : IDisposable
                 await pipe.ConnectAsync(3000, ct);
                 _pipe = pipe;
                 connectedAt = DateTime.UtcNow;
+                // Tells the Agent this tray puts received clipboard text on the clipboard (M-62). An older
+                // Agent answers nothing to a push it doesn't know, and the connection stays.
+                await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipReady), ct);
                 using var watchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 var watcher = Task.Run(() => WatchSessionsAsync(pipe, watchCts.Token));
                 try { await ReadLoopAsync(pipe, ct); }
@@ -213,6 +219,9 @@ internal sealed class MobileBridgeClient : IDisposable
                 break;
             case MobileBridge.OpToast:
                 if (msg["payload"]?.Deserialize<TrayToast>(MobileProtocol.Json) is { } toast) ToastRequested?.Invoke(toast);
+                break;
+            case MobileBridge.OpClipSet:
+                if (msg["payload"]?.Deserialize<TrayClip>(MobileProtocol.Json) is { Text.Length: > 0 } clip) ClipReceived?.Invoke(clip);
                 break;
             case MobileBridge.OpAliases:
                 try

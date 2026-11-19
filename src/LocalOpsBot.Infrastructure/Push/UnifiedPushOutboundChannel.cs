@@ -142,6 +142,17 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
     /// <summary>Paths stay valid until the next restart; a day covers a phone that was off overnight.</summary>
     internal const int EndpointsTtlSeconds = 24 * 3600;
 
+    /// <summary>
+    /// Sends one ready plaintext to one phone, such as clipboard text (DECISIONS M-62). Mutes and relay rules
+    /// don't apply: the user picked this phone. <c>Error</c> says why it failed, for the sender to show.
+    /// </summary>
+    public async Task<(bool Ok, string? Error)> SendDirectAsync(
+        PushTarget target, byte[] plaintext, int ttlSeconds, string urgency, CancellationToken ct)
+    {
+        var (ok, kind, error) = await SendOneAsync(target, plaintext, ttlSeconds, urgency, ct);
+        return ok ? (true, null) : (false, $"{kind}: {error}");
+    }
+
     private async Task<(bool Ok, OutboundFailureKind Kind, string? Error)> SendOneAsync(
         PushTarget target, byte[] plaintext, int ttlSeconds, string urgency, CancellationToken ct)
     {

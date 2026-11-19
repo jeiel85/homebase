@@ -1,0 +1,145 @@
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using LocalOpsBot.Core.Mobile;
+using WpfClipboard = System.Windows.Clipboard;
+using WpfDataFormats = System.Windows.DataFormats;
+using WpfDataObject = System.Windows.DataObject;
+using WpfTextDataFormat = System.Windows.TextDataFormat;
+
+namespace LocalOpsBot.Tray.Services.Mobile;
+
+/// <summary>
+/// Clipboard text sent by hand between this PC and the group's devices (DECISIONS M-62). The tray reads the
+/// clipboard only when the user picks "Send clipboard", and writes it only when another device sent text —
+/// nothing watches the clipboard. The Agent does the network part over the mobile bridge.
+/// Call <see cref="ReadAsync"/> and <see cref="PutAsync"/> on the UI (STA) thread.
+/// </summary>
+internal static class ClipboardShare
+{
+    // Clipboard formats Windows documents for keeping content private: password managers set them so that
+    // clipboard history, cloud sync and other monitors leave the content alone.
+    internal const string ExcludeMonitor = "ExcludeClipboardContentFromMonitorProcessing";
+    internal const string ViewerIgnore = "Clipboard Viewer Ignore";
+    internal const string CanIncludeInHistory = "CanIncludeInClipboardHistory";
+    internal const string CanUploadToCloud = "CanUploadToCloudClipboard";
+
+    private const int BusyRetries = 5;
+    private static readonly TimeSpan BusyPause = TimeSpan.FromMilliseconds(60);
+
+    /// <summary>What the clipboard holds: its text (null when none) and whether a password manager marked it.</summary>
+    public sealed record Snapshot(string? Text, bool Sensitive);
+
+    /// <summary>
+    /// Whether the clipboard's formats mark the content as private (a password manager copied it):
+    /// <paramref name="dword"/> reads a format's DWORD value, or null when it has none.
+    /// </summary>
+    public static bool IsSensitive(IReadOnlyCollection<string> formats, Func<string, int?> dword) =>
+        formats.Contains(ExcludeMonitor)
+        || formats.Contains(ViewerIgnore)
+        || (formats.Contains(CanIncludeInHistory) && dword(CanIncludeInHistory) == 0)
+        || (formats.Contains(CanUploadToCloud) && dword(CanUploadToCloud) == 0);
+
+    /// <summary>The clipboard's text, or null when the clipboard stayed busy (another app holds it open).</summary>
+    public static async Task<Snapshot?> ReadAsync()
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                var data = WpfClipboard.GetDataObject();
+                if (data is null) return new Snapshot(null, false);
+                var formats = data.GetFormats(false);
+                var text = data.GetDataPresent(WpfDataFormats.UnicodeText, true) ? data.GetData(WpfDataFormats.UnicodeText, true) as string : null;
+                return new Snapshot(string.IsNullOrEmpty(text) ? null : text, IsSensitive(formats, f => Dword(data, f)));
+            }
+            catch (ExternalException) when (attempt < BusyRetries)
+            {
+                await Task.Delay(BusyPause);
+            }
+            catch (ExternalException)
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Puts text another device sent on the clipboard. <paramref name="sensitive"/> keeps it out of clipboard
+    /// history (Win+V) and cloud sync, as the sender's password manager asked. False when the clipboard stayed busy.
+    /// </summary>
+    public static async Task<bool> PutAsync(string text, bool sensitive)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                var data = new WpfDataObject();
+                data.SetText(text, WpfTextDataFormat.UnicodeText);
+                if (sensitive)
+                {
+                    data.SetData(CanIncludeInHistory, new MemoryStream(BitConverter.GetBytes(0)));
+                    data.SetData(CanUploadToCloud, new MemoryStream(BitConverter.GetBytes(0)));
+                }
+                WpfClipboard.SetDataObject(data, true);
+                return true;
+            }
+            catch (ExternalException) when (attempt < BusyRetries)
+            {
+                await Task.Delay(BusyPause);
+            }
+            catch (ExternalException)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Where this PC can send (phones that take clipboard pushes, linked PCs); null when the Agent can't say.</summary>
+    public static async Task<IReadOnlyList<ClipTarget>?> TargetsAsync()
+    {
+        if (MobileHost.Client is not { IsConnected: true } client) return null;
+        try
+        {
+            var reply = await client.RequestAsync(MobileBridge.OpClipTargets);
+            if ((bool?)reply["ok"] != true) return null;
+            return reply["payload"]?.Deserialize<ClipTargetList>(MobileProtocol.Json)?.Targets ?? Array.Empty<ClipTarget>();
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Sends text to <paramref name="keys"/>; null when the Agent is not reachable or too old.</summary>
+    public static async Task<ClipSendResult?> SendAsync(IReadOnlyList<string> keys, string text, bool sensitive)
+    {
+        if (MobileHost.Client is not { IsConnected: true } client) return null;
+        try
+        {
+            // The Agent waits up to 45 s for every target; a little longer here so its answer arrives.
+            var reply = await client.RequestAsync(MobileBridge.OpClipSend, new ClipSendRequest(keys, text, sensitive),
+                timeout: TimeSpan.FromSeconds(50));
+            if ((bool?)reply["ok"] != true) return null;
+            return reply["payload"]?.Deserialize<ClipSendResult>(MobileProtocol.Json);
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static int? Dword(System.Windows.IDataObject data, string format)
+    {
+        try
+        {
+            if (data.GetData(format) is MemoryStream { Length: >= 4 } stream)
+            {
+                var bytes = stream.ToArray();
+                return BitConverter.ToInt32(bytes, 0);
+            }
+        }
+        catch (Exception ex) when (ex is ExternalException or InvalidOperationException or ArgumentException) { }
+        return null;
+    }
+}

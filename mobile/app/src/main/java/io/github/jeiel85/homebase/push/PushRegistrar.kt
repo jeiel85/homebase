@@ -33,7 +33,7 @@ object PushRegistrar {
     private val synced = ConcurrentHashMap<String, String>()
 
     private fun syncKey(pc: PcEntry, s: PushSubscription) =
-        "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}|${s.mutedCategories.joinToString(",")}"
+        "${pc.deviceId}|${s.endpoint}|${s.p256dh}|${s.auth}|${s.mutedCategories.joinToString(",")}|${s.features.joinToString(",")}"
 
     fun ensureAsync(context: Context, api: HomebaseApi, pc: PcEntry) {
         val app = context.applicationContext

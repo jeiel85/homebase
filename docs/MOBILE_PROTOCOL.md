@@ -64,6 +64,8 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | POST | `/api/v1/approval` | `Authorization: Bearer <token>` | 본문 `{schema, id, decision}`(`allow`·`deny`) → 200 `{schema, accepted}`. Claude Code 권한 요청(M-48, 푸시의 `approval.id`)에 답한다. 410 `approval_gone`: 이미 답했거나 PC가 더는 기다리지 않음(다른 휴대폰이 먼저 답함, 사용자가 PC로 돌아옴, 10분 지남), 400 잘못된 본문 |
 | POST | `/api/v1/advise` | `Authorization: Bearer <token>` | 본문 `{schema}` → 200 [`advice.v1.json`](mobile-protocol/advice.v1.json) `{schema, ok, text?, summary?, model?, generatedAt, cached, error?, message?}` · 401 (M-60). PC 의 로컬 AI(Ollama) 조언. 조언을 못 만든 것도 200 + `ok: false`: `error` 는 `disabled`·`unreachable`·`model_missing`·`timeout`·`server_error`·`empty`·`failed`, `message` 는 영어 설명. 생성은 한 번에 하나, 성공한 조언은 60초 동안 다시 줌(`cached: true`). 최대 `llmAdvisor.timeoutSeconds`(기본 60초) 걸리므로 읽기 대기를 길게(앱 90초). `text` 는 일반 텍스트로만 보인다. v0.45.0 이하 PC 는 404 |
 | POST | `/api/v1/live-snapshot` | `Authorization: Bearer <token>` (PC만) | 200 `{schema, live}` · 400 `invalid_snapshot` · 401 · 403 (M-46) |
+| POST | `/api/v1/clip` | `Authorization: Bearer <token>` (토큰 확인 뒤 본문 최대 1MiB) | 본문 [`clip.v1.json`](mobile-protocol/clip.v1.json) → 200 `{schema, accepted: true}` · 400 `invalid_clip` · 401 · 409 `no_user_session` (M-62, 아래 "클립보드"). v0.48.0 이하 PC 는 404 |
+| GET | `/api/v1/clip?id=<id>` | `Authorization: Bearer <token>` | 200 봉투(그 기기 키로 봉인) · 404 `clip_gone` — PC가 그 기기에 알린 긴 텍스트, 10분 (M-62) |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
 
@@ -97,6 +99,7 @@ PC는 알림마다 그 엔드포인트로 암호문을 POST하고, 배포자가 
 - **등록** `POST /api/v1/push` 본문([`push-subscription.v1.json`](mobile-protocol/push-subscription.v1.json)):
   `{schema: 1, endpoint, p256dh, auth, mutedCategories?}`. `endpoint`는 `https://` URL, 1000바이트 이하이며 사용자 정보(`user:pw@`)는 거부한다.
   `mutedCategories`(M-25)는 이 휴대폰이 받지 않을 `category` 목록이다(최대 32개, 각 `a-z0-9_-` 1~64자, 아니면 400). 없거나 비면 전부 받는다.
+  `features`(v0.49.0, M-62)는 알림 말고 이 앱이 읽는 푸시 종류다(형식은 `mutedCategories`와 같음). 지금은 `clip`(클립보드 텍스트) 하나이고, PC는 이 값이 있는 휴대폰에만 클립보드를 보낸다. 바뀌면 재등록을 갱신으로 본다.
   PC는 정렬·중복 제거해 저장하고, 이 목록만 바뀐 재등록도 갱신으로 본다. 해당 범주는 그 휴대폰에 보내지 않으며(`test`는 예외),
   모든 휴대폰이 끈 범주는 전송 성공으로 처리해 Telegram으로 넘기지 않는다.
   `p256dh`는 P-256 비압축 점 65바이트, `auth`는 16바이트이고 둘 다 패딩 없는 base64url이다. 곡선 위의 점이 아니면 400이다.
@@ -142,6 +145,17 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 - PC는 경로 목록이 15초 간격으로 두 번 같고 이전에 알리지 않은 경로가 있을 때만 보낸다. 경로가 빠지기만 하면 보내지 않는다. `TTL` 86400초, `Urgency: normal`. 휴대폰마다 따로 기억하며, 받지 못한 휴대폰에만 5분 뒤 다시 보낸다.
 - 이전 앱은 `id`·`title`이 없으므로 이 메시지를 버린다.
 
+### 클립보드 (M-62)
+
+사용자가 누를 때 한 번 보내는 텍스트다(감시 없음). 설계는 [`CLIPBOARD_SHARE.md`](CLIPBOARD_SHARE.md) 1단계.
+
+- **암호화**: 모든 경로에서 내용을 한 번 더 종단 암호화한다(Cloudflare 엣지는 TLS를 푼다). 키 = HKDF-SHA256(IKM = 그 기기 토큰 UTF-8의 SHA-256 원시 32바이트, salt = 0 32바이트, info = `"homebase clip v1"`, 32바이트) → AES-256-GCM. nonce는 메시지마다 12바이트 난수, `data`는 암호문 뒤에 16바이트 태그, 추가 데이터 없음, 둘 다 패딩 없는 base64url. 키는 기기·PC 쌍마다 다르다.
+- **봉투** [`clip.v1.json`](mobile-protocol/clip.v1.json): `{schema, id, nonce, data}`. `id`는 소문자 hex 32자(보낸 쪽이 만듦). 봉인한 내용은 UTF-8 JSON `{schema, text?, chars, ts, sensitive?}` — `chars`는 텍스트 길이(UTF-16 단위), `sensitive`는 비밀번호 관리자가 넣은 내용(받는 쪽은 클립보드 기록·미리보기에서 뺀다). 텍스트는 1~100,000자.
+- **휴대폰·PC → PC**: `POST /api/v1/clip`. PC는 그 기기 토큰의 키로 열고 트레이에 넘겨 클립보드에 넣는다. 같은 기기의 같은 `id`는 30분 동안 한 번만 넣고 200을 준다(다른 경로로 재시도해도 안전). 넘길 트레이가 없으면(로그인한 사용자 없음) 409 `no_user_session` — 기억하지 않으므로 나중에 같은 메시지를 다시 보내면 받는다. PC끼리는 그룹 링크의 토큰(M-47)으로 보낸다.
+- **PC → 휴대폰**: 복호화된 푸시 [`push-clip.v1.json`](mobile-protocol/push-clip.v1.json) `{schema, kind: "clip", pcId, id, nonce, data}`(`title` 없음 — 옛 앱은 버린다), 그 휴대폰과 그 PC 토큰의 키로 봉인, `TTL` 600초, `Urgency: high`. 평문이 한 푸시(3993바이트)를 넘으면 `text`를 빼고 보내며, PC가 10분 동안 메모리에 두어 그 휴대폰만 `GET /api/v1/clip?id=`로 받는다. 앱은 `pcId`가 페어링된 PC이고 그 PC 토큰으로 열릴 때만 받고, 같은 `id`는 한 번만, `ts`가 휴대폰 시계로 30분보다 오래됐으면 버린다(TTL을 넘겨 늦게 온 푸시가 클립보드를 바꾸지 않게). `text`가 있으면 바로 클립보드에 넣고 조용한 알림(채널 `hb.clip`, 2분 뒤 사라짐)을 띄우며, 없으면 "눌러서 복사" 알림(10분)을 띄운다. 받는 휴대폰은 `features`에 `clip`을 등록한 휴대폰뿐이다.
+- **앱에서 보내기**: 공유 메뉴의 Homebase(받은 텍스트 — 다른 앱이 연 것이므로 PC가 하나여도 고르게 함), 빠른 설정 타일(창에 포커스가 온 뒤 클립보드를 읽어 마지막으로 보낸 PC로), PC 카드 메뉴 "클립보드 보내기". 휴대폰 → PC 의 `ts`는 `Instant.toString()`(UTC `Z`, 밀리초가 있으면 소수점) 형식이다.
+- 텍스트는 PC 로그·DB·알림 센터에 남기지 않는다(길이와 보낸 기기만 로그에).
+
 ### 앱 쪽 UnifiedPush 규약 (AND_3.1.0, 라이브러리 없이)
 
 - 배포자 찾기: `queryBroadcastReceivers(org.unifiedpush.android.distributor.REGISTER)`(매니페스트 `<queries>`). 하나면 자동으로 쓰고, 여럿이면 고르게 하고, 없으면 ntfy 설치를 안내한다.
@@ -186,7 +200,7 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 ## Tray ↔ Agent (`\\.\pipe\Homebase.MobileBridge`)
 
 프레임은 4바이트 LE 길이 + UTF-8 JSON `{op, id?, payload?}`이고 최대 1MiB다.
-- Agent → Tray: `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?, source?, sourceKind?, app?}`(다른 기기 알림을 이 PC에 띄움, M-28. `title`은 "보낸 기기 · 앱", v0.38.0부터 보낸 기기·종류·앱을 따로 실어 트레이가 그룹 별칭으로 바꿔 보인다, M-51), `aliases {aliases}`(그룹 별칭 표 전체, 연결 직후와 바뀔 때마다, M-51), `response {id, ok, payload?, error?}`.
+- Agent → Tray: `clip.set {text, source, sourceKind, sensitive}`(M-62, `clip.ready`를 보낸 트레이에만): 다른 기기가 보낸 클립보드 텍스트. `watch {on, remote}`(`on`: 누군가 보는 중이니 창 목록을 보고, `remote`: 그게 이 PC의 트레이가 아닌 다른 기기라 "보는 중" 표시를 켬, M-46), `toast.show {title, body?, source?, sourceKind?, app?}`(다른 기기 알림을 이 PC에 띄움, M-28. `title`은 "보낸 기기 · 앱", v0.38.0부터 보낸 기기·종류·앱을 따로 실어 트레이가 그룹 별칭으로 바꿔 보인다, M-51), `aliases {aliases}`(그룹 별칭 표 전체, 연결 직후와 바뀔 때마다, M-51), `response {id, ok, payload?, error?}`.
 - Tray → Agent: `session.report`(watch on일 때 2초마다), `pairing.begin`, `devices.list`, `devices.revoke {deviceId}`, `status`,
   `notify.test`(Tray의 테스트 메시지를 Agent의 router로 보냄 → `{delivered, channel?, error?}`),
   `devices.overview`(→ `{here: DevicesResponse, hubs: [{pcId, pcName, online, lastContactAt?, status?, devices[], error?, selfDeviceId?}]}`),
@@ -196,5 +210,6 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
   `aliases.set {key, name, alias?}`(M-51): 트레이에서 정한 별칭 → `true`. Agent가 바로 저장하고 그룹의 PC에 백그라운드로 보내며, 바뀐 표는 `aliases` 푸시로 돌아온다.
   `approval.ask` ApprovalRequest `{id, app, session, project?, toolTitle, detail, expiresAt}` → `{decision}`(M-48, 최대 10분 대기, `null`이면 PC에서 묻기): Tray의 훅 수신기가 보낸다. Agent는 연결의 읽기 루프와 따로 처리해 그동안 다른 메시지가 막히지 않는다. `approval.cancel {id}`(응답 없음): 사용자가 PC로 돌아와 Tray가 기다리기를 그만둠.
   `advise`(M-60) → `advice.v1.json` 과 같은 `AdviceResponse`: 휴대폰과 같은 조언(한 번에 하나, 60초 재사용)을 트레이 설정 › AI 조언에 보인다. 읽기 루프와 따로 처리한다. 이 op 를 모르는 Agent 는 `unsupported`.
+  `clip.ready`(M-62, 응답 없음): 연결 직후 트레이가 보낸다 — 받은 클립보드 텍스트를 클립보드에 넣는 트레이라는 뜻. Agent는 이 연결에만 `clip.set`을 보낸다(옛 트레이는 버리므로). `clip.targets` → `{targets: [{key, name, kind}]}`: 보낼 수 있는 곳 — `device:<deviceId>`(여기 페어링되고 `features`에 `clip`이 있는 휴대폰), `pc:<pcId>`(이 PC가 토큰을 가진 PC). `clip.send {targets, text, sensitive}` → `{results: [{key, name, ok, error?}]}`(최대 30초, 읽기 루프와 따로). `error`: `no_user_session`·`unreachable`·`unsupported`(그 PC가 옛 버전)·`rejected`·`push_failed`·`unknown_target`·`invalid_clip`·`failed`.
   `agent.alert {kind, app, title, project?, detail?}`(M-45, 응답 없음): AI 세션이 입력을 기다리기 시작했거나(`agent-waiting`) 1분 넘게 하던 작업을 마쳤을 때(`agent-done`), 사용자가 60초 넘게 입력이 없으면 Tray가 보낸다. Agent는 길이를 자르고(앱 40, 제목 200, 폴더 260, 상세 300자) 같은 알림은 60초에 한 번, 하루 60건까지 암호화 채널(`EncryptedOnly`)로 푸시한다.
 - 그 밖의 op는 연결을 끊는다.

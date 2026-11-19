@@ -61,6 +61,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import io.github.jeiel85.homebase.clip.ClipShare
+import io.github.jeiel85.homebase.clip.PhoneClipboard
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.mesh.GroupSync
@@ -240,6 +242,18 @@ fun PcListScreen(
                             onClick = { onOpen(pc) },
                             onRename = { renaming = pc },
                             onRemove = { confirmRemove = pc },
+                            onSendClipboard = {
+                                // This screen has focus, so Android lets the app read the clipboard (M-62).
+                                val clip = PhoneClipboard.read(context)
+                                if (clip == null) {
+                                    Toast.makeText(context, "클립보드에 보낼 텍스트가 없습니다", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    scope.launch {
+                                        val outcome = ClipShare.send(context, api, pc, clip.text, clip.sensitive)
+                                        Toast.makeText(context, outcome, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -396,7 +410,14 @@ private fun EmptyBay(onAdd: () -> Unit) {
  * plate. The plate's first line is the connection status — the slot where the route is shown.
  */
 @Composable
-private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+private fun PcBay(
+    pc: PcEntry,
+    status: PcStatus,
+    onClick: () -> Unit,
+    onRename: () -> Unit,
+    onRemove: () -> Unit,
+    onSendClipboard: () -> Unit,
+) {
     val hb = Hb.colors
     var menu by remember { mutableStateOf(false) }
     val reading = LastSeen.get(pc.pcId)
@@ -427,6 +448,8 @@ private fun PcBay(pc: PcEntry, status: PcStatus, onClick: () -> Unit, onRename: 
                         Icon(Icons.Filled.MoreVert, contentDescription = "${pc.displayName} 메뉴", tint = hb.onSlabSoft)
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        // The phone's clipboard text onto this PC's clipboard (DECISIONS M-62).
+                        DropdownMenuItem(text = { Text("클립보드 보내기") }, onClick = { menu = false; onSendClipboard() })
                         DropdownMenuItem(
                             text = { Text(if (pc.alias == null) "별칭 지정" else "별칭 바꾸기") },
                             onClick = { menu = false; onRename() },

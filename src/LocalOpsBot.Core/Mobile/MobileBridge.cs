@@ -39,11 +39,15 @@ public static class MobileBridge
     public const string OpAliasesSet = "aliases.set";         // request AliasSetRequest → bool, shared with the group (M-51)
     public const string OpDevicesRefresh = "devices.refresh"; // request → DevicesRefreshResult: retry linked PCs now, group sync (M-59)
     public const string OpAdvise = "advise";                  // request → AdviceResponse, the local LLM's advice (M-60, takes up to a minute)
+    public const string OpClipReady = "clip.ready";           // push — this Tray puts received clipboard text on the clipboard (M-62)
+    public const string OpClipTargets = "clip.targets";       // request → ClipTargetList: where clipboard text can go (M-62)
+    public const string OpClipSend = "clip.send";             // request ClipSendRequest → ClipSendResult (M-62, waits for every target)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
     public const string OpToast = "toast.show";               // push {title, body} — a relayed notification to show (M-28)
     public const string OpAliases = "aliases";                // push AliasListPayload — the group's aliases, on connect and on change (M-51)
+    public const string OpClipSet = "clip.set";               // push TrayClip — text another device sent, for the clipboard (M-62)
     public const string OpResponse = "response";
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
@@ -51,6 +55,7 @@ public static class MobileBridge
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
         OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
         OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpDevicesRefresh, OpAdvise,
+        OpClipReady, OpClipTargets, OpClipSend,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>
