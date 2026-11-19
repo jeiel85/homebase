@@ -106,7 +106,7 @@ public sealed class TrayIconManager : IDisposable
         MobileHost.WatchingChanged += OnWatchingChanged;
         ApplyWatching(MobileHost.IsWatching);
         MobileHost.ToastRequested += OnToastRequested;
-        MobileHost.ClipReceived += OnClipReceived;
+        MobileHost.ClipHandler = OnClipReceivedAsync;
 
         // A relayed notification's balloon opens the center; the unread count follows new arrivals
         // and is re-read every minute (this PC's alerts do not reach the Tray as balloons).
@@ -163,19 +163,23 @@ public sealed class TrayIconManager : IDisposable
     private static string Clip(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 
     /// <summary>
-    /// Text another device sent (M-62): onto the clipboard, then a balloon naming the sender. The balloon never
-    /// shows the text — Windows keeps balloons in its notification list, where anyone at the PC could read it.
+    /// Text another device sent (M-62): onto the clipboard on the UI (STA) thread, then a balloon naming the sender.
+    /// The result goes back to the sender, which says "busy, send again" when it is false. The balloon never shows
+    /// the text — Windows keeps balloons in its notification list, where anyone at the PC could read it.
     /// </summary>
-    private void OnClipReceived(LocalOpsBot.Core.Mobile.TrayClip clip) =>
-        Application.Current?.Dispatcher.BeginInvoke(new Action(async () =>
+    private Task<bool> OnClipReceivedAsync(LocalOpsBot.Core.Mobile.TrayClip clip)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || _disposed) return Task.FromResult(false);
+        return dispatcher.InvokeAsync(async () =>
         {
-            if (_disposed) return;
+            if (_disposed) return false;
             var from = DeviceNames.Show(clip.SourceKind, clip.Source);
             bool ok;
             try { ok = await ClipboardShare.PutAsync(clip.Text, clip.Sensitive); }
             catch (Exception ex)
             {
-                // Never let a clipboard failure take the tray down (this runs as an async void on the dispatcher).
+                // A clipboard failure must not reach the bridge loop: it is reported as "not pasted".
                 TrayLog.Warn("Clipboard", $"Putting text from {from} on the clipboard failed: {ex.GetType().Name}");
                 ok = false;
             }
@@ -184,7 +188,9 @@ public sealed class TrayIconManager : IDisposable
                 : $"Text from {from} could not be put on the clipboard (busy)");
             ShowBalloon(ok ? L.ClipReceivedTitle : L.ClipReceiveFailedTitle,
                 ok ? L.ClipReceivedBody(from, clip.Text.Length) : L.ClipReceiveFailedBody(from));
-        }));
+            return ok;
+        }).Task.Unwrap();
+    }
 
     /// <summary>The "Send clipboard" submenu: the devices the Agent can reach, asked for when it opens.</summary>
     private async Task FillClipTargetsAsync()
@@ -583,7 +589,7 @@ public sealed class TrayIconManager : IDisposable
         _updateTimer.Stop();
         MobileHost.WatchingChanged -= OnWatchingChanged;
         MobileHost.ToastRequested -= OnToastRequested;
-        MobileHost.ClipReceived -= OnClipReceived;
+        MobileHost.ClipHandler = null;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _baseIcon.Dispose();

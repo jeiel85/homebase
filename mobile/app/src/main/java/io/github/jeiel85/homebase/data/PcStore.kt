@@ -29,6 +29,11 @@ data class PcEntry(
      * group's latest-wins rule (DECISIONS M-51); null for an alias set before aliases were shared.
      */
     val aliasAt: Long? = null,
+    /**
+     * The clipboard key this phone and the PC agreed by ECDH (DECISIONS M-62), base64url; null until
+     * agreed. Stored encrypted like [token], and never carried over to a new pairing of the same PC.
+     */
+    val clipKey: String? = null,
 ) {
     /** What the app shows for this PC: the alias when set, else the name the PC reported. */
     val displayName: String get() = alias ?: name
@@ -127,6 +132,15 @@ class PcStore(context: Context) {
     @Synchronized
     fun remove(pcId: String) = save(all().filterNot { it.pcId == pcId })
 
+    /** The clipboard key just agreed with [pcId] (DECISIONS M-62); false when the PC isn't listed. */
+    @Synchronized
+    fun setClipKey(pcId: String, clipKey: String?): Boolean {
+        val list = all()
+        if (list.none { it.pcId == pcId }) return false
+        save(list.map { if (it.pcId == pcId) it.copy(clipKey = clipKey) else it })
+        return true
+    }
+
     @Synchronized
     fun rememberGood(pcId: String, endpoint: Endpoint) {
         val list = all()
@@ -188,10 +202,13 @@ class PcStore(context: Context) {
         .apply { pc.alias?.let { put("alias", it) } }
         .apply { pc.color?.let { put("color", it) } }
         .apply { pc.aliasAt?.let { put("aliasAt", it) } }
+        .apply { pc.clipKey?.let { put("clipKey", encrypt(it)) } }
 
     private fun fromJson(o: JSONObject): PcEntry? {
         val token = decrypt(o.optString("token")) ?: return null
         val (endpoints, lastGood) = storedEndpoints(o)
+        // A key that can't be read is as good as none: the next send agrees a new one.
+        val clipKey = if (o.has("clipKey")) decrypt(o.optString("clipKey")) else null
         return PcEntry(
             pcId = o.optString("pcId"),
             name = o.optString("name"),
@@ -204,6 +221,7 @@ class PcStore(context: Context) {
             pushedEndpointsReceivedAt = if (o.has("pushedEndpointsReceivedAt")) o.optLong("pushedEndpointsReceivedAt") else null,
             color = PcMarks.validColor(if (o.has("color")) o.optInt("color", -1) else null),
             aliasAt = if (o.has("aliasAt")) o.optLong("aliasAt") else null,
+            clipKey = clipKey,
         )
     }
 
@@ -234,7 +252,8 @@ class PcStore(context: Context) {
 
         /**
          * [list] with [pc] added or replacing the same PC. A re-paired entry keeps the old alias and
-         * badge colour; a new PC gets a colour no other PC has (while there are free ones).
+         * badge colour; a new PC gets a colour no other PC has (while there are free ones). The clipboard
+         * key is [pc]'s own, never the old entry's: the PC dropped that key with the old pairing (M-62).
          */
         fun upserted(list: List<PcEntry>, pc: PcEntry): List<PcEntry> {
             val old = list.firstOrNull { it.pcId == pc.pcId }

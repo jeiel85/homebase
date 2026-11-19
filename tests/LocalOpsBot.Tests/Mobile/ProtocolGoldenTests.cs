@@ -224,16 +224,57 @@ public class ProtocolGoldenTests
     public const string ClipPushFixtureText = "택배 송장번호 6081-2345-6789";
 
     /// <summary>
-    /// <c>clip.v1.json</c> (M-62): a phone's <c>POST /api/v1/clip</c>, sealed for <see cref="EndpointsFixtureToken"/>.
-    /// The Kotlin test opens it with the same token and gets <see cref="ClipFixtureText"/> back.
+    /// The clipboard key of the fixtures (M-62): what a device holding the RFC 8291 Appendix A user-agent key and a PC
+    /// holding its application-server key agree. The Kotlin test derives it from the phone side.
+    /// </summary>
+    public static byte[] ClipFixtureKey()
+    {
+        using var pcKey = LocalOpsBot.Tests.Push.WebPushEncryptionTests.Key(
+            LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPrivate, LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPublic);
+        return ClipKeys.Answer(new ClipKeyExchange(MobileProtocol.Schema, LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic), pcKey)!.Value.Key;
+    }
+
+    /// <summary>
+    /// <c>clip-key.v1.json</c> (M-62): the two public keys of a <c>POST /api/v1/clip/key</c> exchange and the key they
+    /// agree. The Kotlin test computes the same key from the device's private key and the PC's public key.
+    /// </summary>
+    [Fact]
+    public void Clip_key_agreement_matches_the_shared_fixture()
+    {
+        using var pcKey = LocalOpsBot.Tests.Push.WebPushEncryptionTests.Key(
+            LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPrivate, LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPublic);
+        var (answer, key) = ClipKeys.Answer(new ClipKeyExchange(MobileProtocol.Schema, LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic), pcKey)!.Value;
+        Assert.Equal(LocalOpsBot.Tests.Push.WebPushEncryptionTests.AsPublic, answer.Pub);
+
+        var actual = new JsonObject
+        {
+            ["schema"] = MobileProtocol.Schema,
+            ["devicePublic"] = LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic,
+            ["pcPublic"] = answer.Pub,
+            ["key"] = Base64Url.Encode(key),
+        };
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "clip-key.v1.json");
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"clip-key.v1.json drifted:\n{actual}");
+        // The device's side agrees on the same key.
+        using var deviceKey = LocalOpsBot.Tests.Push.WebPushEncryptionTests.Key(
+            LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPrivate, LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic);
+        Assert.Equal(key, ClipKeys.Finish(deviceKey, answer));
+    }
+
+    /// <summary>
+    /// <c>clip.v1.json</c> (M-62): a phone's <c>POST /api/v1/clip</c>, sealed with <see cref="ClipFixtureKey"/>.
+    /// The Kotlin test opens it with the key it derives and gets <see cref="ClipFixtureText"/> back.
     /// </summary>
     [Fact]
     public void Clip_envelope_matches_the_shared_fixture()
     {
-        var tokenHash = PairingService.HashToken(EndpointsFixtureToken);
+        var key = ClipFixtureKey();
         var content = new ClipContent(MobileProtocol.Schema, ClipFixtureText, ClipFixtureText.Length,
             new DateTimeOffset(2026, 11, 19, 4, 0, 0, TimeSpan.Zero));
-        var envelope = ClipMessages.Seal(tokenHash, "7d3c9e1f2a4b4c5d8e6f0a1b2c3d4e5f", content, ClipFixtureNonce);
+        var envelope = ClipMessages.Seal(key, "7d3c9e1f2a4b4c5d8e6f0a1b2c3d4e5f", content, ClipFixtureNonce);
         var actual = JsonSerializer.SerializeToNode(envelope, MobileProtocol.Json)!;
         var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "clip.v1.json");
 
@@ -241,21 +282,21 @@ public class ProtocolGoldenTests
             File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
 
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"clip.v1.json drifted:\n{actual}");
-        var opened = ClipMessages.Open(tokenHash, JsonSerializer.Deserialize<ClipEnvelope>(File.ReadAllText(path), MobileProtocol.Json));
+        var opened = ClipMessages.Open(key, JsonSerializer.Deserialize<ClipEnvelope>(File.ReadAllText(path), MobileProtocol.Json));
         Assert.Equal(content, opened);
     }
 
     /// <summary>
-    /// <c>push-clip.v1.json</c> (M-62): the plaintext push carrying clipboard text to a phone, sealed for
-    /// <see cref="EndpointsFixtureToken"/>. The Kotlin test opens it and reads <see cref="ClipPushFixtureText"/>.
+    /// <c>push-clip.v1.json</c> (M-62): the plaintext push carrying clipboard text to a phone, sealed with
+    /// <see cref="ClipFixtureKey"/>. The Kotlin test opens it and reads <see cref="ClipPushFixtureText"/>.
     /// </summary>
     [Fact]
     public void Clip_push_matches_the_shared_fixture()
     {
-        var tokenHash = PairingService.HashToken(EndpointsFixtureToken);
+        var key = ClipFixtureKey();
         var content = new ClipContent(MobileProtocol.Schema, ClipPushFixtureText, ClipPushFixtureText.Length,
             new DateTimeOffset(2026, 11, 19, 4, 5, 0, TimeSpan.Zero), Sensitive: true);
-        var bytes = ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", tokenHash, "1a2b3c4d5e6f40718293a4b5c6d7e8f9", content, ClipPushFixtureNonce)!;
+        var bytes = ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", key, "1a2b3c4d5e6f40718293a4b5c6d7e8f9", content, ClipPushFixtureNonce)!;
         var actual = JsonNode.Parse(bytes)!;
         var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "push-clip.v1.json");
 
@@ -265,7 +306,7 @@ public class ProtocolGoldenTests
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"push-clip.v1.json drifted:\n{actual}");
         Assert.Null(actual["title"]); // an app from before M-62 drops it instead of showing an empty notification
         var push = JsonSerializer.Deserialize<ClipPushEnvelope>(bytes, MobileProtocol.Json)!;
-        var opened = ClipMessages.Open(tokenHash, new ClipEnvelope(push.Schema, push.Id, push.Nonce, push.Data));
+        var opened = ClipMessages.Open(key, new ClipEnvelope(push.Schema, push.Id, push.Nonce, push.Data));
         Assert.Equal(content, opened);
     }
 

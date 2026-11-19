@@ -56,8 +56,8 @@ public static class L
         $"{from}에서 받은 텍스트({chars:N0}자)입니다. Ctrl+V로 붙여 넣으세요.");
     public static string ClipReceiveFailedTitle => T("Couldn't copy received text", "받은 텍스트를 넣지 못했습니다");
     public static string ClipReceiveFailedBody(string from) => T(
-        $"{from} sent text, but another app was holding the clipboard. Ask for it again.",
-        $"{from}에서 텍스트를 보냈지만 다른 앱이 클립보드를 쓰고 있었습니다. 다시 보내 달라고 하세요.");
+        $"{from} sent text, but another app was holding the clipboard. {from} was told to send it again.",
+        $"{from}에서 텍스트를 보냈지만 다른 앱이 클립보드를 쓰고 있었습니다. 보낸 쪽에 다시 보내라고 알렸습니다.");
     public static string ClipError(string? code) => code switch
     {
         "no_user_session" => T("nobody is signed in there", "로그인한 사용자가 없습니다"),
@@ -65,6 +65,7 @@ public static class L
         "unsupported" => T("update Homebase there first", "그 PC의 Homebase를 먼저 업데이트하세요"),
         "rejected" => T("no longer connected — connect it again", "연결이 끊겼습니다 — 다시 연결하세요"),
         "push_failed" => T("the push didn't go out (is the phone's ntfy app running?)", "푸시를 보내지 못했습니다 (휴대폰의 ntfy 앱이 켜져 있는지 확인하세요)"),
+        "clipboard_busy" => T("its clipboard was busy — send again", "그 PC의 클립보드가 사용 중이었습니다 — 다시 보내세요"),
         "unknown_target" => T("no longer connected", "더 이상 연결되어 있지 않습니다"),
         _ => T("failed", "실패했습니다"),
     };

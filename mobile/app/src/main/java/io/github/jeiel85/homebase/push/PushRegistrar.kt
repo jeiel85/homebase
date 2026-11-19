@@ -2,6 +2,7 @@ package io.github.jeiel85.homebase.push
 
 import android.content.Context
 import android.util.Log
+import io.github.jeiel85.homebase.clip.ClipShare
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
@@ -52,16 +53,22 @@ object PushRegistrar {
         locks.getOrPut(pc.pcId) { Mutex() }.withLock {
             val subscription = state.subscription() ?: return
             val key = syncKey(pc, subscription)
-            if (synced[pc.pcId] == key) return
-            try {
-                api.registerPush(pc, subscription)
-                synced[pc.pcId] = key
-                state.markRegistered(pc.pcId, true)
-            } catch (e: UnauthorizedException) {
-                state.markRegistered(pc.pcId, false)
-            } catch (e: Exception) {
-                Log.i(TAG, "push registration with ${pc.name} deferred: ${e.message}")
+            if (synced[pc.pcId] != key) {
+                try {
+                    api.registerPush(pc, subscription)
+                    synced[pc.pcId] = key
+                    state.markRegistered(pc.pcId, true)
+                } catch (e: UnauthorizedException) {
+                    state.markRegistered(pc.pcId, false)
+                    return
+                } catch (e: Exception) {
+                    Log.i(TAG, "push registration with ${pc.name} deferred: ${e.message}")
+                    return
+                }
             }
+            // The PC offers this phone as a clipboard target only once they agreed a key (DECISIONS M-62).
+            // Checked on every pass, so a key that failed to agree is tried again on the next contact.
+            ClipShare.ensureKey(context, api, pc)
         }
     }
 

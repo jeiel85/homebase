@@ -14,9 +14,11 @@
 - **Passwords are handled with care.** When a password manager put the text on the clipboard, the tray
   asks before sending it, and the device that receives it keeps it out of clipboard history (Win+V, cloud
   sync) and out of notification previews.
-- Clipboard text is encrypted end to end with a key only that device and that PC hold, on every path —
-  including Cloudflare, whose edge would otherwise see it. It is never logged or stored; logs keep only the
-  length and the device.
+- Clipboard text is encrypted end to end with a key that device and that PC agree once (ECDH, only public
+  keys travel), on every path — including Cloudflare, whose edge would otherwise see it. It is never logged
+  or stored; logs keep only the length and the device.
+- The sender hears whether the text really reached the clipboard: a PC whose clipboard stayed busy says so,
+  and the same text can simply be sent again.
 
 ### Notes
 - This is sending by hand, not syncing: nothing watches the clipboard. Android does not let apps read the

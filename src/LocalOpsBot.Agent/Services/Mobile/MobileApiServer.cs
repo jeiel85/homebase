@@ -640,17 +640,29 @@ public sealed class MobileApiServer : BackgroundService
                 return (200, Json(AdviceResponse.From(reply)));
             }
 
+            case ("POST", ClipProtocol.KeyPath):
+            {
+                // A device agrees its clipboard key with this PC by ECDH (M-62): only public keys travel.
+                if (_clips is null) return (404, Error("not_found", "Not found."));
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
+                if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
+                return _clips.AgreeKey(device, Read<ClipKeyExchange>(body)) is { } answer
+                    ? (200, Json(answer))
+                    : (400, Error(ClipErrors.InvalidKey, "The public key is not a P-256 point."));
+            }
+
             case ("POST", ClipProtocol.Path):
             {
                 // Clipboard text from a phone or a linked PC (M-62): the Tray puts it on this PC's clipboard.
                 if (_clips is null) return (404, Error("not_found", "Not found."));
-                var token = head.BearerToken() ?? "";
-                var device = _devices.Authenticate(token);
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
                 if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
-                return _clips.Accept(device, token, Read<ClipEnvelope>(body)) switch
+                return await _clips.AcceptAsync(device, Read<ClipEnvelope>(body), ct) switch
                 {
                     ClipAcceptOutcome.Accepted => (200, "{\"schema\":1,\"accepted\":true}"),
+                    ClipAcceptOutcome.KeyNeeded => (409, Error(ClipErrors.KeyNeeded, "Agree a clipboard key first (POST /api/v1/clip/key).")),
                     ClipAcceptOutcome.NoUserSession => (409, Error(ClipErrors.NoUserSession, "Nobody is signed in to this PC to receive it.")),
+                    ClipAcceptOutcome.ClipboardBusy => (503, Error(ClipErrors.ClipboardBusy, "The clipboard was busy; nothing was pasted. Send it again.")),
                     _ => (400, Error(ClipErrors.Invalid, "Invalid clipboard text.")),
                 };
             }
@@ -659,10 +671,9 @@ public sealed class MobileApiServer : BackgroundService
             {
                 // Text too long for a push that this PC offered to the asking phone (M-62).
                 if (_clips is null) return (404, Error("not_found", "Not found."));
-                var token = head.BearerToken() ?? "";
-                var device = _devices.Authenticate(token);
+                var device = _devices.Authenticate(head.BearerToken() ?? "");
                 if (device is null) return (401, Error("unauthorized", "This device is not paired with this PC."));
-                return _clips.Fetch(device, token, head.QueryValue("id")) is { } envelope
+                return _clips.Fetch(device, head.QueryValue("id")) is { } envelope
                     ? (200, Json(envelope))
                     : (404, Error("clip_gone", "This text is no longer here (it is kept for 10 minutes)."));
             }
@@ -677,7 +688,7 @@ public sealed class MobileApiServer : BackgroundService
 
             case (_, "/api/v1/info" or "/api/v1/pair" or "/api/v1/endpoints" or "/api/v1/snapshot" or "/api/v1/live" or "/api/v1/push"
                 or "/api/v1/presence" or "/api/v1/devices" or "/api/v1/notifications" or "/api/v1/inbox" or "/api/v1/device"
-                or LiveSharePath or "/api/v1/approval" or "/api/v1/advise" or ClipProtocol.Path):
+                or LiveSharePath or "/api/v1/approval" or "/api/v1/advise" or ClipProtocol.Path or ClipProtocol.KeyPath):
                 return (405, Error("method_not_allowed", "Method not allowed."));
 
             default:

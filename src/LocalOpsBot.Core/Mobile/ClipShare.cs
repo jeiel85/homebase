@@ -14,13 +14,18 @@ namespace LocalOpsBot.Core.Mobile;
 /// Text too long for one push stays on the PC for <see cref="ClipProtocol.OfferLifetime"/>; the phone fetches it
 /// with <c>GET /api/v1/clip?id=</c>.</item>
 /// </list>
-/// The text is always encrypted end to end (<see cref="ClipCrypto"/>) with a key both ends already hold: the
-/// SHA-256 of that device's token at that PC. The Cloudflare path ends TLS at Cloudflare's edge, and every
-/// paired PC shares a phone's push keys, so neither the tunnel nor another PC reads or forges the text.
+/// The text is always encrypted end to end (<see cref="ClipCrypto"/>) with a key that device and that PC agreed
+/// once by ECDH (<c>POST /api/v1/clip/key</c>, <see cref="ClipKeys"/>). Only public keys cross the network, so
+/// the Cloudflare edge — which ends TLS and sees every bearer token — cannot derive it, and neither can another
+/// paired PC, which shares a phone's push keys. (An edge that actively rewrote that one exchange could; reading
+/// traffic is not enough.)
 /// </summary>
 public static class ClipProtocol
 {
     public const string Path = "/api/v1/clip";
+
+    /// <summary>Where a device and a PC agree their clipboard key (<see cref="ClipKeyExchange"/>).</summary>
+    public const string KeyPath = "/api/v1/clip/key";
 
     /// <summary><c>kind</c> of the push that carries clipboard text to a phone.</summary>
     public const string PushKind = "clip";
@@ -63,22 +68,36 @@ public static class ClipProtocol
 }
 
 /// <summary>
-/// AES-256-GCM with a per-device key: HKDF-SHA256 (RFC 5869) over the raw 32-byte SHA-256 of the device's token,
-/// salt 32 zero bytes, info <c>"homebase clip v1"</c>. A 12-byte random nonce per message; the data is the
-/// ciphertext followed by the 16-byte tag, as Java's <c>AES/GCM/NoPadding</c> writes it. No additional data.
+/// AES-256-GCM with the key a device and a PC agreed (<see cref="ClipKeys"/>): HKDF-SHA256 (RFC 5869) over the
+/// raw P-256 ECDH secret (the 32-byte x coordinate), salt 32 zero bytes, info <c>"homebase clip v1"</c> followed by
+/// the device's and then the PC's 65-byte uncompressed public key. A 12-byte random nonce per message; the data is
+/// the ciphertext followed by the 16-byte tag, as Java's <c>AES/GCM/NoPadding</c> writes it. No additional data.
 /// </summary>
 public static class ClipCrypto
 {
     public const int KeyBytes = 32;
     public const int NonceBytes = 12;
     public const int TagBytes = 16;
+    public const int PublicKeyBytes = 65;
 
     private static readonly byte[] Info = "homebase clip v1"u8.ToArray();
     private static readonly byte[] Salt = new byte[32];
 
-    /// <summary>The key for the device whose token hashes to <paramref name="tokenSha256Hex"/>.</summary>
-    public static byte[] Key(string tokenSha256Hex) =>
-        HKDF.DeriveKey(HashAlgorithmName.SHA256, Convert.FromHexString(tokenSha256Hex), KeyBytes, Salt, Info);
+    /// <summary>
+    /// The key from <paramref name="own"/> (this side's private key) and the other side's public key. Both sides
+    /// pass the two public keys in the same order — the device's, then the PC's — so they derive the same key.
+    /// Throws <see cref="ArgumentException"/> when <paramref name="peerPublic"/> is not a P-256 point.
+    /// </summary>
+    public static byte[] AgreedKey(ECDiffieHellman own, ReadOnlySpan<byte> peerPublic, ReadOnlySpan<byte> devicePublic, ReadOnlySpan<byte> pcPublic)
+    {
+        using var peer = WebPushEncryption.ImportPublic(peerPublic);
+        var secret = own.DeriveRawSecretAgreement(peer.PublicKey);
+        var info = new byte[Info.Length + devicePublic.Length + pcPublic.Length];
+        Info.CopyTo(info, 0);
+        devicePublic.CopyTo(info.AsSpan(Info.Length));
+        pcPublic.CopyTo(info.AsSpan(Info.Length + devicePublic.Length));
+        return HKDF.DeriveKey(HashAlgorithmName.SHA256, secret, KeyBytes, Salt, info);
+    }
 
     /// <summary>Encrypts; <paramref name="nonce"/> is for tests only (a fixed nonce makes a fixture).</summary>
     public static (string Nonce, string Data) Seal(byte[] key, ReadOnlySpan<byte> plaintext, byte[]? nonce = null)
@@ -111,6 +130,66 @@ public static class ClipCrypto
 }
 
 /// <summary>
+/// <c>POST /api/v1/clip/key</c> body (the device's public key) and answer (the PC's): a P-256 point, 65 bytes
+/// uncompressed, base64url. Each side makes a fresh key pair for the exchange and keeps only the agreed key.
+/// </summary>
+public sealed record ClipKeyExchange(int Schema, string Pub);
+
+/// <summary>The ECDH exchange behind the clipboard key (DECISIONS M-62).</summary>
+public static class ClipKeys
+{
+    /// <summary>
+    /// The PC's answer to a device's <c>POST /api/v1/clip/key</c>: its public key and the agreed key, or null when the
+    /// device's key is not a P-256 point. <paramref name="pcKey"/> is for tests; a fresh pair is made otherwise.
+    /// </summary>
+    public static (ClipKeyExchange Answer, byte[] Key)? Answer(ClipKeyExchange? request, ECDiffieHellman? pcKey = null)
+    {
+        if (request is not { Schema: MobileProtocol.Schema, Pub.Length: > 0 }) return null;
+        var ownKey = pcKey is null;
+        pcKey ??= ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        try
+        {
+            var devicePublic = Base64Url.Decode(request.Pub);
+            if (devicePublic.Length != ClipCrypto.PublicKeyBytes) return null;
+            var pcPublic = WebPushEncryption.ExportUncompressed(pcKey);
+            var key = ClipCrypto.AgreedKey(pcKey, devicePublic, devicePublic, pcPublic);
+            return (new ClipKeyExchange(MobileProtocol.Schema, Base64Url.Encode(pcPublic)), key);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or CryptographicException)
+        {
+            return null;
+        }
+        finally
+        {
+            if (ownKey) pcKey.Dispose();
+        }
+    }
+
+    /// <summary>A device's side (a PC sending to another PC): a fresh key pair and the request to send.</summary>
+    public static (ECDiffieHellman Key, ClipKeyExchange Request) Begin()
+    {
+        var key = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        return (key, new ClipKeyExchange(MobileProtocol.Schema, Base64Url.Encode(WebPushEncryption.ExportUncompressed(key))));
+    }
+
+    /// <summary>The agreed key from the PC's answer, or null when it is not a P-256 point.</summary>
+    public static byte[]? Finish(ECDiffieHellman deviceKey, ClipKeyExchange? answer)
+    {
+        if (answer is not { Schema: MobileProtocol.Schema, Pub.Length: > 0 }) return null;
+        try
+        {
+            var pcPublic = Base64Url.Decode(answer.Pub);
+            if (pcPublic.Length != ClipCrypto.PublicKeyBytes) return null;
+            return ClipCrypto.AgreedKey(deviceKey, pcPublic, WebPushEncryption.ExportUncompressed(deviceKey), pcPublic);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or CryptographicException)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>
 /// <c>POST /api/v1/clip</c> body and <c>GET /api/v1/clip?id=</c> answer (fixture <c>clip.v1.json</c>):
 /// <see cref="Data"/> is <see cref="ClipContent"/> sealed with <see cref="ClipCrypto"/>.
 /// </summary>
@@ -131,21 +210,21 @@ public sealed record ClipContent(int Schema, string? Text, int Chars, DateTimeOf
 
 public static class ClipMessages
 {
-    /// <summary>A sealed <see cref="ClipEnvelope"/> for the device whose token hashes to <paramref name="tokenSha256Hex"/>.</summary>
-    public static ClipEnvelope Seal(string tokenSha256Hex, string id, ClipContent content, byte[]? nonce = null)
+    /// <summary>A <see cref="ClipEnvelope"/> sealed with the agreed <paramref name="key"/>.</summary>
+    public static ClipEnvelope Seal(byte[] key, string id, ClipContent content, byte[]? nonce = null)
     {
-        var (n, data) = ClipCrypto.Seal(ClipCrypto.Key(tokenSha256Hex), Serialize(content), nonce);
+        var (n, data) = ClipCrypto.Seal(key, Serialize(content), nonce);
         return new ClipEnvelope(MobileProtocol.Schema, id, n, data);
     }
 
     /// <summary>
-    /// The content of <paramref name="envelope"/>, or <c>null</c> when it is not ours, does not decrypt with this
-    /// device's key, or is out of bounds (no text, longer than <see cref="ClipProtocol.MaxChars"/>).
+    /// The content of <paramref name="envelope"/>, or <c>null</c> when it is not ours, does not decrypt with the
+    /// agreed <paramref name="key"/>, or is out of bounds (no text, longer than <see cref="ClipProtocol.MaxChars"/>).
     /// </summary>
-    public static ClipContent? Open(string tokenSha256Hex, ClipEnvelope? envelope)
+    public static ClipContent? Open(byte[] key, ClipEnvelope? envelope)
     {
         if (envelope is null || envelope.Schema != MobileProtocol.Schema || !ClipProtocol.IsValidId(envelope.Id)) return null;
-        var plain = ClipCrypto.Open(ClipCrypto.Key(tokenSha256Hex), envelope.Nonce, envelope.Data);
+        var plain = ClipCrypto.Open(key, envelope.Nonce, envelope.Data);
         if (plain is null) return null;
         ClipContent? content;
         try { content = JsonSerializer.Deserialize<ClipContent>(plain, ClipProtocol.ContentJson); }
@@ -158,9 +237,9 @@ public static class ClipMessages
     /// The plaintext push for one phone, or <c>null</c> when it does not fit in one push (at most
     /// <see cref="WebPushEncryption.MaxPlaintextBytes"/>): the caller then sends it without the text.
     /// </summary>
-    public static byte[]? PushPlaintext(string pcId, string tokenSha256Hex, string id, ClipContent content, byte[]? nonce = null)
+    public static byte[]? PushPlaintext(string pcId, byte[] key, string id, ClipContent content, byte[]? nonce = null)
     {
-        var (n, data) = ClipCrypto.Seal(ClipCrypto.Key(tokenSha256Hex), Serialize(content), nonce);
+        var (n, data) = ClipCrypto.Seal(key, Serialize(content), nonce);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(
             new ClipPushEnvelope(MobileProtocol.Schema, ClipProtocol.PushKind, pcId, id, n, data), MobileProtocol.Json);
         return bytes.Length <= WebPushEncryption.MaxPlaintextBytes ? bytes : null;
@@ -169,8 +248,14 @@ public static class ClipMessages
     public static byte[] Serialize(ClipContent content) => JsonSerializer.SerializeToUtf8Bytes(content, ClipProtocol.ContentJson);
 }
 
-/// <summary>Bridge op payload <c>clip.set</c>: text another device sent, for the Tray to put on the clipboard.</summary>
+/// <summary>
+/// Bridge op payload <c>clip.set</c>: text another device sent, for the Tray to put on the clipboard. The Tray answers
+/// <c>clip.done {id, ok}</c> with the frame's <c>id</c> once it has (or could not), so the sender hears the truth.
+/// </summary>
 public sealed record TrayClip(string Text, string Source, string SourceKind, bool Sensitive);
+
+/// <summary>Bridge op payload <c>clip.done</c>: whether the Tray put <c>clip.set</c> <see cref="Id"/> on the clipboard.</summary>
+public sealed record TrayClipDone(string Id, bool Ok);
 
 /// <summary>
 /// A device the Tray can send clipboard text to: <see cref="Key"/> is <c>device:&lt;deviceId&gt;</c> for a phone
@@ -220,8 +305,14 @@ public static class ClipErrors
     public const string PushFailed = "push_failed";
     /// <summary>The target is no longer paired or linked.</summary>
     public const string UnknownTarget = "unknown_target";
-    /// <summary>The text is empty or longer than <see cref="ClipProtocol.MaxChars"/>.</summary>
+    /// <summary>The text is empty or longer than <see cref="ClipProtocol.MaxChars"/>, or doesn't open with the agreed key.</summary>
     public const string Invalid = "invalid_clip";
+    /// <summary>That PC has no clipboard key for this device: agree one (<c>POST /api/v1/clip/key</c>) and send again.</summary>
+    public const string KeyNeeded = "clip_key_needed";
+    /// <summary>The public key sent to <c>POST /api/v1/clip/key</c> is not a P-256 point.</summary>
+    public const string InvalidKey = "invalid_key";
+    /// <summary>That PC's clipboard stayed busy (another app held it): nothing was pasted, send again.</summary>
+    public const string ClipboardBusy = "clipboard_busy";
     /// <summary>Any other failure.</summary>
     public const string Failed = "failed";
 }

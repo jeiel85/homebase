@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LocalOpsBot.Agent.Services.Mobile;
@@ -12,22 +13,58 @@ using Xunit;
 
 namespace LocalOpsBot.Tests.Mobile;
 
-/// <summary>The sealed text itself (DECISIONS M-62): only the device's key opens it, untouched.</summary>
+internal sealed class InMemoryClipKeys : IClipKeyStore
+{
+    private readonly Dictionary<string, byte[]> _keys = new(StringComparer.Ordinal);
+    public byte[]? Get(string key) { lock (_keys) return _keys.TryGetValue(key, out var v) ? v : null; }
+    public void Set(string key, byte[] value) { lock (_keys) _keys[key] = value; }
+}
+
+/// <summary>The sealed text and its key (DECISIONS M-62): only the agreed key opens it, untouched.</summary>
 public class ClipCryptoTests
 {
-    private static readonly string HashA = PairingService.HashToken("token-a");
-    private static readonly string HashB = PairingService.HashToken("token-b");
+    private static readonly byte[] KeyA = RandomNumberGenerator.GetBytes(32);
+    private static readonly byte[] KeyB = RandomNumberGenerator.GetBytes(32);
 
     private static ClipContent Content(string text) =>
         new(MobileProtocol.Schema, text, text.Length, new DateTimeOffset(2026, 11, 19, 4, 0, 0, TimeSpan.Zero));
 
     [Fact]
-    public void Sealed_text_opens_with_the_same_device_key_only()
+    public void Both_sides_of_the_exchange_agree_on_a_key_the_wire_does_not_reveal()
     {
-        var envelope = ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content("안녕하세요 😀"));
+        var (deviceKey, request) = ClipKeys.Begin();
+        using (deviceKey)
+        {
+            var (answer, pcSide) = ClipKeys.Answer(request)!.Value;
+            var deviceSide = ClipKeys.Finish(deviceKey, answer);
 
-        Assert.Equal("안녕하세요 😀", ClipMessages.Open(HashA, envelope)?.Text);
-        Assert.Null(ClipMessages.Open(HashB, envelope));
+            Assert.Equal(pcSide, deviceSide);
+            Assert.Equal(ClipCrypto.KeyBytes, pcSide.Length);
+            // A fresh exchange gives a new key.
+            var (other, again) = ClipKeys.Begin();
+            using (other) Assert.NotEqual(pcSide, ClipKeys.Answer(again)!.Value.Key);
+        }
+    }
+
+    [Fact]
+    public void A_public_key_that_is_not_a_p256_point_is_refused()
+    {
+        Assert.Null(ClipKeys.Answer(new ClipKeyExchange(1, Base64Url.Encode(new byte[65]))));
+        Assert.Null(ClipKeys.Answer(new ClipKeyExchange(1, "AAAA")));
+        Assert.Null(ClipKeys.Answer(new ClipKeyExchange(1, "!!")));
+        Assert.Null(ClipKeys.Answer(new ClipKeyExchange(2, LocalOpsBot.Tests.Push.WebPushEncryptionTests.UaPublic)));
+        Assert.Null(ClipKeys.Answer(null));
+        var (deviceKey, _) = ClipKeys.Begin();
+        using (deviceKey) Assert.Null(ClipKeys.Finish(deviceKey, new ClipKeyExchange(1, Base64Url.Encode(new byte[65]))));
+    }
+
+    [Fact]
+    public void Sealed_text_opens_with_the_same_key_only()
+    {
+        var envelope = ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content("안녕하세요 😀"));
+
+        Assert.Equal("안녕하세요 😀", ClipMessages.Open(KeyA, envelope)?.Text);
+        Assert.Null(ClipMessages.Open(KeyB, envelope));
     }
 
     [Fact]
@@ -35,10 +72,10 @@ public class ClipCryptoTests
     {
         // The app writes ts with Instant.toString() (UTC "Z", milliseconds when there are any), puts "sensitive"
         // only when true, and keeps non-ASCII as UTF-8 (org.json).
-        var plain = System.Text.Encoding.UTF8.GetBytes("{\"schema\":1,\"text\":\"휴대폰에서 \\\"복사\\\"\\n둘째 줄\",\"chars\":15,\"ts\":\"2026-11-19T04:00:00.123Z\"}");
-        var (nonce, data) = ClipCrypto.Seal(ClipCrypto.Key(HashA), plain);
+        var plain = Encoding.UTF8.GetBytes("{\"schema\":1,\"text\":\"휴대폰에서 \\\"복사\\\"\\n둘째 줄\",\"chars\":15,\"ts\":\"2026-11-19T04:00:00.123Z\"}");
+        var (nonce, data) = ClipCrypto.Seal(KeyA, plain);
 
-        var content = ClipMessages.Open(HashA, new ClipEnvelope(1, ClipProtocol.NewId(), nonce, data));
+        var content = ClipMessages.Open(KeyA, new ClipEnvelope(1, ClipProtocol.NewId(), nonce, data));
 
         Assert.NotNull(content);
         Assert.Equal("휴대폰에서 \"복사\"\n둘째 줄", content!.Text);
@@ -49,8 +86,8 @@ public class ClipCryptoTests
     [Fact]
     public void Every_message_gets_its_own_nonce()
     {
-        var one = ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content("same"));
-        var two = ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content("same"));
+        var one = ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content("same"));
+        var two = ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content("same"));
         Assert.NotEqual(one.Nonce, two.Nonce);
         Assert.NotEqual(one.Data, two.Data);
     }
@@ -58,55 +95,55 @@ public class ClipCryptoTests
     [Fact]
     public void Altered_or_malformed_messages_do_not_open()
     {
-        var envelope = ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content("hello"));
+        var envelope = ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content("hello"));
         var data = Base64Url.Decode(envelope.Data);
         data[0] ^= 1;
 
-        Assert.Null(ClipMessages.Open(HashA, envelope with { Data = Base64Url.Encode(data) }));
-        Assert.Null(ClipMessages.Open(HashA, envelope with { Nonce = "AAAA" }));
-        Assert.Null(ClipMessages.Open(HashA, envelope with { Data = "!!" }));
-        Assert.Null(ClipMessages.Open(HashA, envelope with { Id = "not-an-id" }));
-        Assert.Null(ClipMessages.Open(HashA, envelope with { Schema = 2 }));
-        Assert.Null(ClipMessages.Open(HashA, null));
+        Assert.Null(ClipMessages.Open(KeyA, envelope with { Data = Base64Url.Encode(data) }));
+        Assert.Null(ClipMessages.Open(KeyA, envelope with { Nonce = "AAAA" }));
+        Assert.Null(ClipMessages.Open(KeyA, envelope with { Data = "!!" }));
+        Assert.Null(ClipMessages.Open(KeyA, envelope with { Id = "not-an-id" }));
+        Assert.Null(ClipMessages.Open(KeyA, envelope with { Schema = 2 }));
+        Assert.Null(ClipMessages.Open(KeyA, null));
     }
 
     [Fact]
     public void Empty_or_too_long_text_is_refused_when_opened()
     {
-        Assert.Null(ClipMessages.Open(HashA, ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content(""))));
+        Assert.Null(ClipMessages.Open(KeyA, ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content(""))));
         var tooLong = new string('x', ClipProtocol.MaxChars + 1);
-        Assert.Null(ClipMessages.Open(HashA, ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content(tooLong))));
+        Assert.Null(ClipMessages.Open(KeyA, ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content(tooLong))));
         var longest = new string('가', ClipProtocol.MaxChars);
-        Assert.Equal(longest, ClipMessages.Open(HashA, ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content(longest)))?.Text);
+        Assert.Equal(longest, ClipMessages.Open(KeyA, ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content(longest)))?.Text);
     }
 
     [Fact]
     public void The_longest_text_still_fits_the_request_body_cap()
     {
         // Worst case for the JSON escaping inside: control characters cost 6 bytes each.
-        var envelope = ClipMessages.Seal(HashA, ClipProtocol.NewId(), Content(new string('\u0001', ClipProtocol.MaxChars)));
+        var envelope = ClipMessages.Seal(KeyA, ClipProtocol.NewId(), Content(new string('\u0001', ClipProtocol.MaxChars)));
         Assert.True(JsonSerializer.SerializeToUtf8Bytes(envelope, MobileProtocol.Json).Length <= ClipProtocol.MaxBodyBytes);
     }
 
     [Fact]
     public void A_push_carries_about_a_thousand_korean_characters_and_says_when_it_cannot()
     {
-        var fits = new string('가', 900);
-        var push = ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", HashA, ClipProtocol.NewId(), Content(fits));
+        var push = ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", KeyA, ClipProtocol.NewId(), Content(new string('가', 900)));
         Assert.NotNull(push);
         Assert.True(push!.Length <= WebPushEncryption.MaxPlaintextBytes);
 
         var tooLong = Content(new string('가', 2000));
-        Assert.Null(ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", HashA, ClipProtocol.NewId(), tooLong));
-        Assert.NotNull(ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", HashA, ClipProtocol.NewId(), tooLong with { Text = null }));
+        Assert.Null(ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", KeyA, ClipProtocol.NewId(), tooLong));
+        Assert.NotNull(ClipMessages.PushPlaintext("6f1c0d2e9b8a4c7d", KeyA, ClipProtocol.NewId(), tooLong with { Text = null }));
     }
 }
 
-/// <summary><c>POST</c>/<c>GET /api/v1/clip</c> and the Tray's sends (DECISIONS M-62).</summary>
+/// <summary><c>POST /api/v1/clip/key</c>, <c>POST</c>/<c>GET /api/v1/clip</c> and the Tray's sends (DECISIONS M-62).</summary>
 public class ClipShareApiTests
 {
     private readonly ManualTimeProvider _time = new();
     private readonly InMemoryDeviceStore _store = new("6f1c0d2e9b8a4c7d");
+    private readonly InMemoryClipKeys _keys = new();
     private readonly PairingService _pairing;
     private readonly List<TrayClip> _tray = new();
     private readonly List<(PushTarget Target, byte[] Plaintext)> _pushed = new();
@@ -115,14 +152,20 @@ public class ClipShareApiTests
     public ClipShareApiTests()
     {
         _pairing = new PairingService(_store, _time);
-        _clips = new ClipShareService(_store, (t, p, _) =>
+        _clips = new ClipShareService(_store, _keys, (t, p, _) =>
         {
             lock (_pushed) _pushed.Add((t, p));
             return Task.FromResult((true, (string?)null));
         }, hubs: null, _time, NullLogger.Instance)
         {
-            Tray = c => { _tray.Add(c); return true; },
+            Tray = Taken,
         };
+    }
+
+    private Task<bool?> Taken(TrayClip c, CancellationToken _)
+    {
+        lock (_tray) _tray.Add(c);
+        return Task.FromResult<bool?>(true);
     }
 
     private MobileApiServer Api()
@@ -148,26 +191,42 @@ public class ClipShareApiTests
         return new HttpRequestHead(method, path, headers, query);
     }
 
-    private ClipEnvelope Sealed(string token, string text, bool sensitive = false, string? id = null) =>
-        ClipMessages.Seal(PairingService.HashToken(token), id ?? ClipProtocol.NewId(),
+    /// <summary>The device's side of <c>POST /api/v1/clip/key</c> through the API, as the app does it.</summary>
+    private async Task<byte[]> Agree(MobileApiServer api, string token)
+    {
+        var (deviceKey, request) = ClipKeys.Begin();
+        using (deviceKey)
+        {
+            var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.KeyPath, token), Body(request), default);
+            Assert.Equal(200, status);
+            return ClipKeys.Finish(deviceKey, JsonSerializer.Deserialize<ClipKeyExchange>(json, MobileProtocol.Json))!;
+        }
+    }
+
+    private ClipEnvelope Sealed(byte[] key, string text, bool sensitive = false) =>
+        ClipMessages.Seal(key, ClipProtocol.NewId(),
             new ClipContent(MobileProtocol.Schema, text, text.Length, _time.GetUtcNow(), sensitive ? true : null));
 
     private static byte[] Body<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value, MobileProtocol.Json);
 
-    private PushTarget Phone(string token, string name, bool clip = true)
+    private (PushTarget Target, byte[] Key) Phone(string name, bool clip = true, bool keyed = true)
     {
-        var device = _store.Add(name, "SM-S921N", PairingService.HashToken(token));
+        var device = _store.Add(name, "SM-S921N", PairingService.HashToken(name + "-token"));
         _store.SetPushSubscription(device.DeviceId, new PushSubscription("https://ntfy.sh/up" + device.DeviceId, "k", "a",
             _time.GetUtcNow(), Features: clip ? [ClipProtocol.Feature] : null));
-        return _store.PushTargets().Single(t => t.DeviceId == device.DeviceId);
+        var key = RandomNumberGenerator.GetBytes(32);
+        if (keyed) _keys.Set(ClipTargetKeys.Device(device.DeviceId), key);
+        return (_store.PushTargets().Single(t => t.DeviceId == device.DeviceId), key);
     }
 
     [Fact]
     public async Task Text_from_a_phone_goes_to_the_tray_with_its_sender()
     {
         var token = Pair("Galaxy S24");
+        var api = Api();
+        var key = await Agree(api, token);
 
-        var (status, json) = await Api().HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(token, "택배 6081-2345", sensitive: true)), default);
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(key, "택배 6081-2345", sensitive: true)), default);
 
         Assert.Equal(200, status);
         Assert.Contains("\"accepted\":true", json);
@@ -175,11 +234,57 @@ public class ClipShareApiTests
     }
 
     [Fact]
+    public async Task The_token_alone_cannot_open_or_forge_the_text()
+    {
+        // The Cloudflare edge sees the bearer token: a key derived from it must not be the agreed one.
+        var token = Pair("Galaxy");
+        var api = Api();
+        var key = await Agree(api, token);
+        var fromToken = HKDF.DeriveKey(HashAlgorithmName.SHA256, Convert.FromHexString(PairingService.HashToken(token)), 32,
+            new byte[32], "homebase clip v1"u8.ToArray());
+
+        Assert.NotEqual(key, fromToken);
+        Assert.Equal(400, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(fromToken, "forged")), default)).Status);
+        Assert.Empty(_tray);
+    }
+
+    [Fact]
+    public async Task Without_an_agreed_key_the_sender_is_told_to_agree_one()
+    {
+        var token = Pair("Galaxy");
+        var api = Api();
+
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(new byte[32], "x")), default);
+        Assert.Equal(409, status);
+        Assert.Contains(ClipErrors.KeyNeeded, json);
+
+        // A new exchange replaces the key: text sealed with the old one no longer opens.
+        var first = await Agree(api, token);
+        var second = await Agree(api, token);
+        Assert.Equal(400, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(first, "old")), default)).Status);
+        Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(second, "new")), default)).Status);
+    }
+
+    [Fact]
+    public async Task The_key_exchange_needs_the_token_and_a_real_point()
+    {
+        var token = Pair("Galaxy");
+        var api = Api();
+        var (_, request) = ClipKeys.Begin();
+
+        Assert.Equal(401, (await api.HandleRestAsync(Req("POST", ClipProtocol.KeyPath, "nope"), Body(request), default)).Status);
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.KeyPath, token),
+            Body(new ClipKeyExchange(1, Base64Url.Encode(new byte[65]))), default);
+        Assert.Equal(400, status);
+        Assert.Contains(ClipErrors.InvalidKey, json);
+    }
+
+    [Fact]
     public async Task The_same_message_again_is_pasted_once()
     {
         var token = Pair("Galaxy");
-        var envelope = Sealed(token, "once");
         var api = Api();
+        var envelope = Sealed(await Agree(api, token), "once");
 
         Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
         Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
@@ -192,16 +297,16 @@ public class ClipShareApiTests
     }
 
     [Fact]
-    public async Task Text_sealed_for_another_device_or_unpaired_is_refused()
+    public async Task Unpaired_or_malformed_text_is_refused()
     {
         var token = Pair("Galaxy");
         var api = Api();
+        var key = await Agree(api, token);
 
-        Assert.Equal(401, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, "nope"), Body(Sealed("nope", "x")), default)).Status);
-        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed("other-token", "x")), default);
+        Assert.Equal(401, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, "nope"), Body(Sealed(key, "x")), default)).Status);
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Encoding.UTF8.GetBytes("{}"), default);
         Assert.Equal(400, status);
         Assert.Contains(ClipErrors.Invalid, json);
-        Assert.Equal(400, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Encoding.UTF8.GetBytes("{}"), default)).Status);
         Assert.Empty(_tray);
     }
 
@@ -209,17 +314,35 @@ public class ClipShareApiTests
     public async Task Without_a_tray_the_sender_hears_nobody_is_signed_in_and_can_retry()
     {
         var token = Pair("Galaxy");
-        var envelope = Sealed(token, "later");
+        var api = Api();
+        var envelope = Sealed(await Agree(api, token), "later");
         _clips.Tray = null;
 
-        var (status, json) = await Api().HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
         Assert.Equal(409, status);
         Assert.Contains(ClipErrors.NoUserSession, json);
 
         // Not remembered as taken: the same message is pasted once a tray is back.
-        _clips.Tray = c => { _tray.Add(c); return true; };
-        Assert.Equal(200, (await Api().HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
+        _clips.Tray = Taken;
+        Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
         Assert.Single(_tray);
+    }
+
+    [Fact]
+    public async Task A_busy_clipboard_is_reported_and_the_same_message_is_tried_again()
+    {
+        var token = Pair("Galaxy");
+        var api = Api();
+        var envelope = Sealed(await Agree(api, token), "busy first");
+        _clips.Tray = (_, _) => Task.FromResult<bool?>(false);
+
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
+        Assert.Equal(503, status);
+        Assert.Contains(ClipErrors.ClipboardBusy, json);
+
+        _clips.Tray = Taken;
+        Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
+        Assert.Equal("busy first", Assert.Single(_tray).Text);
     }
 
     [Fact]
@@ -230,14 +353,17 @@ public class ClipShareApiTests
         var api = new MobileApiServer(new LiveSnapshotHub(new FakeSampler(), options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance),
             _pairing, _store, new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
             new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance);
-        Assert.Equal(404, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(token, "x")), default)).Status);
+        var (_, request) = ClipKeys.Begin();
+        Assert.Equal(404, (await api.HandleRestAsync(Req("POST", ClipProtocol.KeyPath, token), Body(request), default)).Status);
+        Assert.Equal(404, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(new byte[32], "x")), default)).Status);
     }
 
     [Fact]
-    public void Only_phones_that_read_clipboard_pushes_are_offered()
+    public void Only_phones_that_read_clipboard_pushes_and_agreed_a_key_are_offered()
     {
-        Phone("t1", "Galaxy S24");
-        Phone("t2", "Old phone", clip: false);
+        Phone("Galaxy S24");
+        Phone("Old phone", clip: false);
+        Phone("No key yet", keyed: false);
         Pair("WORK-PC", DeviceKind.Pc); // paired here, but this PC holds no token for it
 
         var target = Assert.Single(_clips.Targets());
@@ -248,7 +374,7 @@ public class ClipShareApiTests
     [Fact]
     public async Task Short_text_rides_in_the_push_sealed_for_that_phone()
     {
-        var phone = Phone("phone-token", "Galaxy");
+        var (phone, key) = Phone("Galaxy");
 
         var result = await _clips.SendAsync(new ClipSendRequest([ClipTargetKeys.Device(phone.DeviceId)], "회의실 B, 3시", true), default);
 
@@ -259,46 +385,46 @@ public class ClipShareApiTests
         Assert.Equal(phone.DeviceId, target.DeviceId);
         var push = JsonSerializer.Deserialize<ClipPushEnvelope>(plaintext, MobileProtocol.Json)!;
         Assert.Equal((ClipProtocol.PushKind, "6f1c0d2e9b8a4c7d"), (push.Kind, push.PcId));
-        var content = ClipMessages.Open(PairingService.HashToken("phone-token"), new ClipEnvelope(1, push.Id, push.Nonce, push.Data))!;
+        var content = ClipMessages.Open(key, new ClipEnvelope(1, push.Id, push.Nonce, push.Data))!;
         Assert.Equal(("회의실 B, 3시", true), (content.Text, content.Sensitive));
-        Assert.Null(ClipMessages.Open(PairingService.HashToken("other"), new ClipEnvelope(1, push.Id, push.Nonce, push.Data)));
+        Assert.Null(ClipMessages.Open(RandomNumberGenerator.GetBytes(32), new ClipEnvelope(1, push.Id, push.Nonce, push.Data)));
     }
 
     [Fact]
     public async Task Long_text_is_fetched_by_the_phone_it_was_sent_to_within_ten_minutes()
     {
-        var phone = Phone("phone-token", "Galaxy");
+        var phoneToken = Pair("Galaxy");
+        var api = Api();
+        var key = await Agree(api, phoneToken);
+        var phone = _store.List().Single();
+        _store.SetPushSubscription(phone.DeviceId, new PushSubscription("https://ntfy.sh/up1", "k", "a", _time.GetUtcNow(),
+            Features: [ClipProtocol.Feature]));
         var otherToken = Pair("Other phone");
+        await Agree(api, otherToken);
         var text = string.Concat(Enumerable.Repeat("긴 로그 한 줄입니다.\n", 400));
 
         await _clips.SendAsync(new ClipSendRequest([ClipTargetKeys.Device(phone.DeviceId)], text), default);
 
         var push = JsonSerializer.Deserialize<ClipPushEnvelope>(Assert.Single(_pushed).Plaintext, MobileProtocol.Json)!;
-        var notice = ClipMessages.Open(PairingService.HashToken("phone-token"), new ClipEnvelope(1, push.Id, push.Nonce, push.Data));
-        // Opened as a notice: no text, only its length (Open refuses content without text, so read it raw).
-        Assert.Null(notice);
-        var raw = JsonSerializer.Deserialize<ClipContent>(ClipCrypto.Open(ClipCrypto.Key(PairingService.HashToken("phone-token")), push.Nonce, push.Data)!,
-            ClipProtocol.ContentJson)!;
-        Assert.Null(raw.Text);
+        var raw = JsonSerializer.Deserialize<ClipContent>(ClipCrypto.Open(key, push.Nonce, push.Data)!, ClipProtocol.ContentJson)!;
+        Assert.Null(raw.Text); // only the length: the phone fetches the text
         Assert.Equal(text.Length, raw.Chars);
 
-        var api = Api();
-        var (status, json) = await api.HandleRestAsync(Req("GET", ClipProtocol.Path, "phone-token", $"id={push.Id}"), null, default);
+        var (status, json) = await api.HandleRestAsync(Req("GET", ClipProtocol.Path, phoneToken, $"id={push.Id}"), null, default);
         Assert.Equal(200, status);
-        var fetched = ClipMessages.Open(PairingService.HashToken("phone-token"), JsonSerializer.Deserialize<ClipEnvelope>(json, MobileProtocol.Json));
-        Assert.Equal(text, fetched?.Text);
+        Assert.Equal(text, ClipMessages.Open(key, JsonSerializer.Deserialize<ClipEnvelope>(json, MobileProtocol.Json))?.Text);
 
         // Not for another device, and gone after ten minutes.
         Assert.Equal(404, (await api.HandleRestAsync(Req("GET", ClipProtocol.Path, otherToken, $"id={push.Id}"), null, default)).Status);
         _time.Advance(ClipProtocol.OfferLifetime + TimeSpan.FromSeconds(1));
-        Assert.Equal(404, (await api.HandleRestAsync(Req("GET", ClipProtocol.Path, "phone-token", $"id={push.Id}"), null, default)).Status);
+        Assert.Equal(404, (await api.HandleRestAsync(Req("GET", ClipProtocol.Path, phoneToken, $"id={push.Id}"), null, default)).Status);
     }
 
     [Fact]
     public async Task A_failed_push_an_unknown_target_and_bad_text_are_reported_per_target()
     {
-        var phone = Phone("phone-token", "Galaxy");
-        var clips = new ClipShareService(_store, (_, _, _) => Task.FromResult((false, (string?)"EndpointOffline: phone not subscribed")),
+        var (phone, _) = Phone("Galaxy");
+        var clips = new ClipShareService(_store, _keys, (_, _, _) => Task.FromResult((false, (string?)"EndpointOffline: phone not subscribed")),
             hubs: null, _time, NullLogger.Instance);
 
         var result = await clips.SendAsync(new ClipSendRequest([ClipTargetKeys.Device(phone.DeviceId), "device:gone", "pc:nowhere"], "x"), default);
@@ -328,23 +454,24 @@ public class ClipShareApiTests
 }
 
 /// <summary>
-/// Two Agents on loopback (DECISIONS M-62): B sends A clipboard text over its link, through the real socket —
-/// longer than the 16 KiB every other request body is held to.
+/// Two Agents on loopback (DECISIONS M-62): B agrees a key with A and sends it clipboard text over its link, through
+/// the real socket — longer than the 16 KiB every other request body is held to.
 /// </summary>
 public class ClipShareEndToEndTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "hb-clip-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public async Task A_linked_pc_sends_long_text_to_its_hub_tray()
+    public async Task A_linked_pc_agrees_a_key_and_sends_long_text_to_its_hub_tray()
     {
         var port = FreePort();
         var options = Options.Create(new MobileOptions { Enabled = true, Tailscale = false, BindLoopback = true, Port = port });
 
         var storeA = new InMemoryDeviceStore("pc-a");
         var pairingA = new PairingService(storeA, TimeProvider.System);
+        var keysA = new InMemoryClipKeys();
         var trayA = new List<TrayClip>();
-        var clipsA = new ClipShareService(storeA, null, null, TimeProvider.System, NullLogger.Instance);
+        var clipsA = new ClipShareService(storeA, keysA, null, null, TimeProvider.System, NullLogger.Instance);
         var api = new MobileApiServer(
             new LiveSnapshotHub(new FakeSampler(), options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance),
             pairingA, storeA, new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
@@ -352,10 +479,11 @@ public class ClipShareEndToEndTests : IDisposable
             clips: clipsA);
 
         var storeB = new InMemoryDeviceStore("pc-b");
+        var keysB = new InMemoryClipKeys();
         var links = new HubLinkService(new HubStore(_dir, NullLogger.Instance, protect: false), storeB,
             new SystemStatusProbeAdapter(h => new PresenceReport(1, DeviceKind.Pc, "0.49.0", PushHashes: h)),
             TimeProvider.System, NullLogger<HubLinkService>.Instance, allowLoopback: true);
-        var clipsB = new ClipShareService(storeB, null, links, TimeProvider.System, NullLogger.Instance);
+        var clipsB = new ClipShareService(storeB, keysB, null, links, TimeProvider.System, NullLogger.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await api.StartAsync(cts.Token);
@@ -367,11 +495,14 @@ public class ClipShareEndToEndTests : IDisposable
             var target = Assert.Single(clipsB.Targets());
             Assert.Equal((ClipTargetKeys.Pc("pc-a"), DeviceKind.Pc), (target.Key, target.Kind));
 
-            // Nobody signed in at A yet.
+            // Nobody signed in at A yet — but the key is agreed on the way.
             var none = await clipsB.SendAsync(new ClipSendRequest([target.Key], "hello"), cts.Token);
             Assert.Equal(ClipErrors.NoUserSession, Assert.Single(none.Results).Error);
+            var keyAtB = keysB.Get(ClipTargetKeys.Pc("pc-a"));
+            Assert.NotNull(keyAtB);
+            Assert.Equal(keyAtB, keysA.Get(ClipTargetKeys.Device(Assert.Single(storeA.List()).DeviceId)));
 
-            clipsA.Tray = c => { lock (trayA) trayA.Add(c); return true; };
+            clipsA.Tray = (c, _) => { lock (trayA) trayA.Add(c); return Task.FromResult<bool?>(true); };
             var text = string.Concat(Enumerable.Repeat("가나다라마바사 0123456789\n", 2000)); // ~50 KB of UTF-8
             var sent = await clipsB.SendAsync(new ClipSendRequest([target.Key], text, Sensitive: true), cts.Token);
 
@@ -379,6 +510,13 @@ public class ClipShareEndToEndTests : IDisposable
             Assert.True(outcome.Ok, outcome.Error);
             var got = Assert.Single(trayA);
             Assert.Equal((text, DeviceKind.Pc, true), (got.Text, got.SourceKind, got.Sensitive));
+
+            // A was set up again and lost its key: B agrees a new one once and the text still arrives.
+            keysA.Set(ClipTargetKeys.Device(Assert.Single(storeA.List()).DeviceId), RandomNumberGenerator.GetBytes(32));
+            var again = await clipsB.SendAsync(new ClipSendRequest([target.Key], "after a reset"), cts.Token);
+            Assert.True(Assert.Single(again.Results).Ok);
+            Assert.Equal("after a reset", trayA[^1].Text);
+            Assert.NotEqual(keyAtB, keysB.Get(ClipTargetKeys.Pc("pc-a")));
         }
         finally
         {
