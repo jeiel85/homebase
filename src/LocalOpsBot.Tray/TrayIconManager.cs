@@ -426,15 +426,20 @@ public sealed class TrayIconManager : IDisposable
             t => DeviceNames.Show(t.Kind, t.Name, t.Kind == LocalOpsBot.Core.Mobile.DeviceKind.Pc ? t.Key : null), StringComparer.Ordinal);
         ShowBalloon(L.FilesSendingTitle(items.Count, bytes), L.FilesSendingBody(string.Join(", ", names.Values)));
 
-        var result = await Task.Run(() => FileSender.SendAsync(items, usable.Select(t => t.Key).ToList()));
+        // Tracked before files.go: delivery starts inside it, and its first (even final) progress may come back at once.
+        string? tracked = null;
+        var result = await Task.Run(() => FileSender.SendAsync(items, usable.Select(t => t.Key).ToList(), id =>
+        {
+            tracked = id;
+            lock (_sends) _sends[id] = new SendTracking(items.Count, bytes, names);
+        }));
         if (_disposed) return;
         TrayLog.Info("Files", $"Send of {items.Count} file(s), {bytes} bytes to {string.Join(", ", names.Values)}: {result.Id ?? result.Error}");
-        if (result.Id is not { } id)
+        if (result.Id is null)
         {
+            if (tracked is not null) lock (_sends) _sends.Remove(tracked);
             ShowBalloon(L.FilesNotSentTitle, L.FileSendError(result.Error));
-            return;
         }
-        lock (_sends) _sends[id] = new SendTracking(items.Count, bytes, names);
     }
 
     /// <summary>

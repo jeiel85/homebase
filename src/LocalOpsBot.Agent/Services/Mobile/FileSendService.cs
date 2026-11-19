@@ -75,6 +75,10 @@ public sealed class FileSendService : BackgroundService
         public string Dir { get; } = dir;
         public object Gate { get; } = new();
         public long TotalBytes => State.Files.Sum(f => f.Size);
+
+        /// <summary>Bytes the Tray has yet to write for a send that hasn't started (a file counts until it is whole).</summary>
+        public long OutstandingBytes => State.Started ? 0 : State.Files.Where((_, i) => State.Sha256[i] is null).Sum(f => f.Size);
+
         public bool Final(TargetState t) => t.State is FileSendStates.Sent or FileSendStates.Received or FileSendStates.Failed;
     }
 
@@ -130,7 +134,9 @@ public sealed class FileSendService : BackgroundService
         lock (_gate)
         {
             var inUse = _sends.Values.Sum(s => s.TotalBytes);
-            if (inUse + total > StoreCapBytes || FreeSpace() < total + FileShareService.FreeMarginBytes)
+            // Sends still being written from the Tray will take what they haven't written yet (Codex review on #100).
+            var free = FreeSpace() - _sends.Values.Sum(s => s.OutstandingBytes);
+            if (inUse + total > StoreCapBytes || free < total + FileShareService.FreeMarginBytes)
                 return new(null, TransferErrors.NoSpace);
             var id = ClipProtocol.NewId();
             var state = new SendState

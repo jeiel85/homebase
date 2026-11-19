@@ -57,8 +57,13 @@ internal static class FileSender
         }
     }
 
-    /// <summary>Hands <paramref name="items"/> to the Agent for <paramref name="targetKeys"/> and starts the send.</summary>
-    public static async Task<Result> SendAsync(IReadOnlyList<Item> items, IReadOnlyList<string> targetKeys, CancellationToken ct = default)
+    /// <summary>
+    /// Hands <paramref name="items"/> to the Agent for <paramref name="targetKeys"/> and starts the send.
+    /// <paramref name="onBegun"/> runs with the send's id before <c>files.go</c>: delivery starts inside <c>files.go</c>, and a
+    /// fast one (or a failure) can report its final <c>files.progress</c> before this returns.
+    /// </summary>
+    public static async Task<Result> SendAsync(IReadOnlyList<Item> items, IReadOnlyList<string> targetKeys, Action<string>? onBegun = null,
+        CancellationToken ct = default)
     {
         if (MobileHost.Client is not { IsConnected: true } client) return new(null, "agent");
         var files = items.Select(i => new TransferFile(i.Name, i.Size, i.Mime)).ToList();
@@ -81,6 +86,7 @@ internal static class FileSender
         try
         {
             for (var i = 0; i < items.Count; i++) await WriteOneAsync(id, i, items[i], ct);
+            onBegun?.Invoke(id);
             var go = await client.RequestAsync(MobileBridge.OpFilesGo, new FilesIdRequest(id), ct);
             if ((bool?)go["ok"] != true) throw new IOException("The Agent did not start the send.");
             return new(id, null);

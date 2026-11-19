@@ -104,6 +104,20 @@ public class FileSendTests : IDisposable
     }
 
     [Fact]
+    public void Space_promised_to_sends_still_being_written_is_not_free()
+    {
+        // 7 GiB free: one 3 GiB send leaves the 2 GiB margin; a second, while the first is still being written from the
+        // Tray, would not (Codex review on #100). Once the first is written, its bytes are on disk, not promised.
+        var (_, _, phone) = Phone();
+        var key = ClipTargetKeys.Device(phone.DeviceId);
+        _free = 7L * 1024 * 1024 * 1024;
+        TransferFile[] Big() => [new TransferFile("a.mkv", 3L * 512 * 1024 * 1024), new TransferFile("b.mkv", 3L * 512 * 1024 * 1024)];
+
+        Assert.NotNull(_sends.Begin(new FilesBeginRequest([key], Big())).Id);
+        Assert.Equal(TransferErrors.NoSpace, _sends.Begin(new FilesBeginRequest([key], Big())).Error);
+    }
+
+    [Fact]
     public void Nothing_goes_out_before_every_file_is_written_or_with_a_wrong_size()
     {
         var (_, _, phone) = Phone();
