@@ -154,13 +154,25 @@ public static class MobileServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<MobileApiServer>>(), sp.GetRequiredService<CloudflareTunnel>(),
                 deviceHub: sp.GetRequiredService<DeviceHub>(), approvals: sp.GetRequiredService<ApprovalBroker>(),
                 advice: sp.GetService<LocalOpsBot.Core.Advisor.OnDemandAdvice>(), clips: sp.GetRequiredService<ClipShareService>(), files: sp.GetRequiredService<FileShareService>(),
-                sends: sp.GetRequiredService<FileSendService>());
+                sends: sp.GetRequiredService<FileSendService>(), commands: sp.GetRequiredService<RemoteCommandService>());
             api.AttachGroup(sp.GetRequiredService<DeviceGroupService>());
             return api;
         });
         services.AddHostedService(sp => sp.GetRequiredService<MobileApiServer>());
         // Idle (returns at once) unless mobile:cloudflare:enabled.
         services.AddHostedService(sp => sp.GetRequiredService<CloudflareTunnel>());
+        // Remote commands phones ask for (M-69): lock and media by the Tray, restart and sleep here.
+        services.AddSingleton(sp =>
+        {
+            var push = sp.GetRequiredService<UnifiedPushOutboundChannel>();
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<MobileOptions>>();
+            return new RemoteCommandService(sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(),
+                () => options.CurrentValue, sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<RemoteCommandService>>(),
+                Path.Combine(MobileDeviceStore.DefaultDirectory, "commands"),
+                (target, plaintext, ct) => push.SendDirectAsync(target, plaintext, 24 * 3600, "normal", ct),
+                sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>());
+        });
+        services.AddHostedService(sp => sp.GetRequiredService<RemoteCommandService>());
         services.AddHostedService<MobileBridgeServer>();
         // New paths (Quick Tunnel address after a restart, new LAN IP) go to phones by push (M-23).
         services.AddHostedService(sp => new EndpointAnnouncer(

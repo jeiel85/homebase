@@ -49,6 +49,9 @@ public static class MobileBridge
     public const string OpFilesBegin = "files.begin";         // request FilesBeginRequest → FilesBeginResult; then the files over Homebase.Transfer (M-65)
     public const string OpFilesGo = "files.go";               // request FilesIdRequest → bool: every file is in, send them (M-65)
     public const string OpFilesCancel = "files.cancel";       // request FilesIdRequest → bool (M-65)
+    public const string OpCommandsReady = "commands.ready";   // push TrayCustomCommands — this Tray runs remote commands; its custom ones (M-69)
+    public const string OpCommandDone = "command.done";       // push TrayCommandDone — whether command.run {id} was carried out (M-69)
+    public const string OpCommandCancel = "command.cancel";   // request → bool: call off a restart under way (M-69)
 
     // Agent → Tray
     public const string OpWatch = "watch";                    // push {on, remote} — collect only while someone watches; remote: another device (M-46)
@@ -57,6 +60,8 @@ public static class MobileBridge
     public const string OpClipSet = "clip.set";               // push TrayClip with an id — text another device sent; the Tray answers clip.done (M-62)
     public const string OpTransferReady = "transfer.ready";   // push TrayTransfer — files another device sent, to read from Homebase.Transfer and save (M-64)
     public const string OpFilesProgress = "files.progress";   // push FilesProgress — files this PC sends, per target (M-65)
+    public const string OpCommandRun = "command.run";         // push TrayCommand with an id — a remote command to carry out; the Tray answers command.done (M-69)
+    public const string OpCommandNotice = "command.notice";   // push {name, at?, by} — a restart scheduled (at) or called off (no at) (M-69)
     public const string OpResponse = "response";
 
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
@@ -66,6 +71,7 @@ public static class MobileBridge
         OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpDevicesRefresh, OpAdvise,
         OpClipReady, OpClipTargets, OpClipSend, OpClipDone, OpFilesReady, OpTransferSaved,
         OpFilesTargets, OpFilesBegin, OpFilesGo, OpFilesCancel,
+        OpCommandsReady, OpCommandDone, OpCommandCancel,
     };
 
     /// <summary>Writes one frame: 4-byte little-endian length + UTF-8 JSON.</summary>

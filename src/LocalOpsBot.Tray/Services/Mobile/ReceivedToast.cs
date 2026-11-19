@@ -72,6 +72,37 @@ internal static class ReceivedToast
         return xml.ToString();
     }
 
+    /// <summary>
+    /// A phone asked this PC to restart (M-69): a toast with the time and [Cancel] — which works from the notification center
+    /// too. Replaced by the next one; taken away when it is called off.
+    /// </summary>
+    public static bool ShowRestart(DateTimeOffset at, string by)
+    {
+        try
+        {
+            Register();
+            var xml = new XmlDocument();
+            xml.LoadXml(
+                $"<toast activationType=\"protocol\" launch=\"{Attr(Scheme + "://commands/cancel-restart")}\">" +
+                $"<visual><binding template=\"ToastGeneric\"><text>{SecurityElement.Escape(L.RestartToastTitle(at.ToLocalTime()))}</text>" +
+                $"<text>{SecurityElement.Escape(L.RestartToastBody(by))}</text></binding></visual>" +
+                $"<actions><action content=\"{Attr(L.Cancel)}\" activationType=\"protocol\" arguments=\"{Attr(Scheme + "://commands/cancel-restart")}\"/></actions></toast>");
+            ToastNotificationManager.CreateToastNotifier(Aumid).Show(new ToastNotification(xml) { Tag = "restart", Group = "commands" });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            TrayLog.Warn("Commands", $"The restart toast didn't show ({ex.GetType().Name}: {ex.Message}).");
+            return false;
+        }
+    }
+
+    public static void HideRestart()
+    {
+        try { ToastNotificationManager.History.Remove("restart", "commands", Aumid); }
+        catch (Exception ex) { TrayLog.Warn("Commands", $"The restart toast stayed: {ex.GetType().Name}"); }
+    }
+
     /// <summary>For the preview: whether Windows lets this app show toasts, and how many of ours the notification center holds.</summary>
     internal static string Diagnose()
     {
@@ -105,6 +136,21 @@ internal static class ReceivedToast
     /// </summary>
     public static void Handle(string link)
     {
+        // [Cancel] on the restart countdown (M-69): calls it off with this user's rights; the Agent notices and tells the phone.
+        if (Uri.TryCreate(link, UriKind.Absolute, out var command) && command.Scheme == Scheme && command.Host == "commands"
+            && command.AbsolutePath.Trim('/') == "cancel-restart")
+        {
+            try
+            {
+                using var abort = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "shutdown.exe"), "/a")
+                    { UseShellExecute = false, CreateNoWindow = true });
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+            {
+                TrayLog.Warn("Commands", $"Calling off the restart failed: {ex.Message}");
+            }
+            return;
+        }
         var folder = FileReceiver.Folder();
         if (Parse(link) is not { } parsed) return;
         var (action, name) = parsed;

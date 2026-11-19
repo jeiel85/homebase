@@ -26,6 +26,8 @@ public partial class NotificationCenterPanel : UserControl
     // Files that came in and went out, apart from everything else (M-64, M-66).
     private const string ReceivedFilter = "\u0001files-received";
     private const string SentFilter = "\u0001files-sent";
+    // Remote commands phones asked this PC for (M-69).
+    private const string CommandsFilter = "\u0001commands";
 
     private readonly List<HistoryEntry> _entries = new();
     private DateTimeOffset _seenAtOpen;
@@ -238,6 +240,8 @@ public partial class NotificationCenterPanel : UserControl
             if (received > 0) FilterPanel.Children.Add(FilterTile(L.CenterFilesReceived, ReceivedFilter, received, pc: null));
             if (sent > 0) FilterPanel.Children.Add(FilterTile(L.CenterFilesSent, SentFilter, sent, pc: null));
         }
+        var commands = _entries.Count(e => Matches(e, CommandsFilter));
+        if (commands > 0) FilterPanel.Children.Add(FilterTile(L.CenterCommands, CommandsFilter, commands, pc: null));
 
         var sources = _entries.Where(e => e.Kind == HistoryKind.Device && e.Source is not null)
             .GroupBy(e => e.Source!, StringComparer.Ordinal)
@@ -312,6 +316,7 @@ public partial class NotificationCenterPanel : UserControl
         AlertFilter => L.CenterAlerts,
         ReceivedFilter => L.CenterFilesReceived,
         SentFilter => L.CenterFilesSent,
+        CommandsFilter => L.CenterCommands,
         _ => key,
     };
 
@@ -323,6 +328,7 @@ public partial class NotificationCenterPanel : UserControl
         AlertFilter => e.Kind == HistoryKind.Alert,
         ReceivedFilter => e.Kind == HistoryKind.Device && e.App == TransferHistory.Received,
         SentFilter => e.Kind == HistoryKind.Device && e.App == TransferHistory.Sent,
+        CommandsFilter => e.Kind == HistoryKind.Device && e.App == RemoteCommandProtocol.HistoryApp,
         var name => e.Kind == HistoryKind.Device && e.Source == name,
     };
 

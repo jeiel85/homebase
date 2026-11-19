@@ -95,19 +95,24 @@ object PushHistoryRules {
     fun prune(entries: List<HistoryEntry>, now: Long): List<HistoryEntry> =
         entries.filter { now - it.receivedAt <= MAX_AGE_MS }.take(MAX_ENTRIES)
 
-    /** What came in since [lastSeenAt]; files this phone sent itself are no news ([FileHistory.SENT]). */
+    /**
+     * What came in since [lastSeenAt]; files and commands this phone sent itself are no news ([FileHistory.SENT],
+     * [CommandHistory.SENT]).
+     */
     fun unreadCount(entries: List<HistoryEntry>, lastSeenAt: Long): Int = entries.count { isUnread(it, lastSeenAt) }
 
-    fun isUnread(entry: HistoryEntry, lastSeenAt: Long): Boolean = entry.receivedAt > lastSeenAt && entry.category != FileHistory.SENT
+    fun isUnread(entry: HistoryEntry, lastSeenAt: Long): Boolean =
+        entry.receivedAt > lastSeenAt && entry.category != FileHistory.SENT && entry.category != CommandHistory.SENT
 
     /** The notification group a category belongs to (the same groups as the receive settings, M-25). */
     fun groupOf(category: String): NotificationGroup? = NotificationGroups.ALL.firstOrNull { category in it.categories }
 
-    /** Short label of a category for a tag: its group, "받은 파일" / "보낸 파일", or "테스트" / "기타". */
+    /** Short label of a category for a tag: its group, "받은 파일" / "보낸 파일" / "보낸 명령", or "테스트" / "기타". */
     fun categoryLabel(category: String): String = when {
         category == NotificationGroups.TEST -> "테스트"
         category == FileHistory.RECEIVED -> FileHistory.RECEIVED_LABEL
         category == FileHistory.SENT -> FileHistory.SENT_LABEL
+        category == CommandHistory.SENT -> CommandHistory.SENT_LABEL
         else -> groupOf(category)?.label ?: "기타"
     }
 

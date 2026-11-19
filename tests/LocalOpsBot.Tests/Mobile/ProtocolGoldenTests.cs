@@ -505,6 +505,42 @@ public class ProtocolGoldenTests
         Assert.Null(TransferProtocol.Check(fixture["transferMeta"]!.Deserialize<TransferMeta>(ClipProtocol.ContentJson)));
     }
 
+    /// <summary>
+    /// <c>commands.v1.json</c> (M-69): a command list, a request (plaintext) and the same request sealed with
+    /// <see cref="ClipFixtureKey"/> and <see cref="ClipFixtureNonce"/>, and answers. The Kotlin test opens the envelope.
+    /// </summary>
+    [Fact]
+    public void Remote_commands_match_the_shared_fixture()
+    {
+        var at = new DateTimeOffset(2026, 11, 20, 1, 0, 0, TimeSpan.Zero);
+        var request = new CommandRequest(MobileProtocol.Schema, "5b2c8d1e0f3a4b6c9d7e1f2a3b4c5d6e", RemoteCommandNames.Lock, CommandOps.Run, at);
+        JsonNode Node<T>(T value) => JsonSerializer.SerializeToNode(value, ClipProtocol.ContentJson)!;
+        var actual = new JsonObject
+        {
+            ["list"] = Node(new CommandList(MobileProtocol.Schema,
+            [
+                new CommandInfo(RemoteCommandNames.Lock, "잠그기", CommandKinds.Session, false),
+                new CommandInfo(RemoteCommandNames.PlayPause, "재생/일시정지", CommandKinds.Session, false),
+                new CommandInfo(RemoteCommandNames.Restart, "다시 시작", CommandKinds.System, true),
+                new CommandInfo("custom:backup01", "백업", CommandKinds.Custom, true),
+            ], new CommandWake(["00:1a:2b:3c:4d:5e"]), new CommandPending(RemoteCommandNames.Restart, at.AddSeconds(60)))),
+            ["request"] = Node(request),
+            ["envelope"] = JsonSerializer.SerializeToNode(CommandMessages.Seal(ClipFixtureKey(), request, ClipFixtureNonce), MobileProtocol.Json),
+            ["resultDone"] = Node(new CommandResult(MobileProtocol.Schema, true, CommandStates.Done)),
+            ["resultScheduled"] = Node(new CommandResult(MobileProtocol.Schema, true, CommandStates.Scheduled, At: at.AddSeconds(60))),
+            ["resultError"] = Node(new CommandResult(MobileProtocol.Schema, false, Error: CommandErrors.NotAllowed)),
+        };
+        var path = Path.Combine(RepoRoot(), "docs", "mobile-protocol", "commands.v1.json");
+
+        if (Environment.GetEnvironmentVariable("HOMEBASE_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(path, actual.ToJsonString(new JsonSerializerOptions(ClipProtocol.ContentJson) { WriteIndented = true }) + "\n");
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(path)), actual), $"commands.v1.json drifted:\n{actual}");
+        var envelope = JsonNode.Parse(File.ReadAllText(path))!["envelope"]!.Deserialize<ClipEnvelope>(MobileProtocol.Json);
+        Assert.Equal(request, CommandMessages.Open(ClipFixtureKey(), envelope, CommandOps.Run));
+        Assert.Null(CommandMessages.Open(ClipFixtureKey(), envelope, CommandOps.Cancel));
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

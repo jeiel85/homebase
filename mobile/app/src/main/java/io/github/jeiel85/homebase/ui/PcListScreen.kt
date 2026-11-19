@@ -69,6 +69,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.jeiel85.homebase.clip.ClipShare
 import io.github.jeiel85.homebase.clip.PhoneClipboard
+import io.github.jeiel85.homebase.command.CommandNotifier
+import io.github.jeiel85.homebase.command.CommandPrefs
+import io.github.jeiel85.homebase.command.RemoteCommands
+import io.github.jeiel85.homebase.command.WakeSender
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.mesh.GroupSync
@@ -77,6 +81,7 @@ import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import androidx.compose.runtime.collectAsState
 import io.github.jeiel85.homebase.net.Endpoint
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.net.RemoteCommandNames
 import io.github.jeiel85.homebase.push.PushHistory
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
@@ -211,6 +216,10 @@ fun PcListScreen(
         }
     }
 
+    // PCs whose MAC addresses this phone knows (DECISIONS M-69): their menu offers "깨우기" while they don't answer.
+    var wakeable by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(pcIds) { wakeable = withContext(Dispatchers.IO) { CommandPrefs(context).wakeable(pcIds) } }
+
     // Unread count for the bell; the file is read off the main thread once per process.
     LaunchedEffect(Unit) { withContext(Dispatchers.IO) { PushHistory.ensureLoaded(context) } }
     val history by PushHistory.state.collectAsState()
@@ -283,6 +292,18 @@ fun PcListScreen(
                                 filesFor = pc.pcId
                                 filePicker.launch(arrayOf("*/*"))
                             },
+                            // Remote commands (DECISIONS M-69): locking goes at once — the PC says when it turned it off.
+                            onLock = {
+                                RemoteCommands.launch(
+                                    context, api, pc.pcId, RemoteCommandNames.LOCK, RemoteCommandNames.label(RemoteCommandNames.LOCK),
+                                ) { RemoteCommands.toast(context, it.message) }
+                            },
+                            // A PC that doesn't answer and listed its MAC addresses on its screen before.
+                            onWake = if (pc.pcId in wakeable && status[pc.pcId] !is PcStatus.Online) {
+                                { WakeSender.wake(context, pc.pcId) }
+                            } else {
+                                null
+                            },
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -336,6 +357,8 @@ fun PcListScreen(
                     PushState(context).markRegistered(pc.pcId, false)
                     PushNotifier.forgetPc(context, pc.pcId)
                     PushHistory.forgetPc(context, pc.pcId)
+                    CommandPrefs(context).forget(pc.pcId)
+                    CommandNotifier.cancel(context, pc.pcId)
                     AdviceRequests.close(pc.pcId) // a request still under way must not file advice for it later
                     MeshSync.forget(pc.pcId)
                     GroupSync.decline(context, pc.pcId) // deleted here: the group doesn't bring it back
@@ -447,6 +470,8 @@ private fun PcBay(
     onRemove: () -> Unit,
     onSendClipboard: () -> Unit,
     onSendFiles: () -> Unit,
+    onLock: () -> Unit,
+    onWake: (() -> Unit)?,
 ) {
     val hb = Hb.colors
     var menu by remember { mutableStateOf(false) }
@@ -482,6 +507,9 @@ private fun PcBay(
                         DropdownMenuItem(text = { Text("클립보드 보내기") }, onClick = { menu = false; onSendClipboard() })
                         // Files and pictures to this PC (DECISIONS M-64).
                         DropdownMenuItem(text = { Text("파일 보내기") }, onClick = { menu = false; onSendFiles() })
+                        // The remote command used most (DECISIONS M-69), and Wake-on-LAN for a PC that sleeps.
+                        DropdownMenuItem(text = { Text("잠그기") }, onClick = { menu = false; onLock() })
+                        if (onWake != null) DropdownMenuItem(text = { Text("깨우기") }, onClick = { menu = false; onWake() })
                         DropdownMenuItem(
                             text = { Text(if (pc.alias == null) "별칭 지정" else "별칭 바꾸기") },
                             onClick = { menu = false; onRename() },
