@@ -10,17 +10,18 @@
 </p>
 
 <p align="center">
-  <b>Homebase</b> &mdash; 내 Windows PC 여러 대를 Android 앱에서 실시간으로 보고, 경보·부팅·Windows 알림을 종단 암호화 푸시로 받는 개인용 모니터링입니다.<br>
-  PC·휴대폰끼리 서로의 상태를 보고 알림을 주고받습니다. Telegram 봇은 전환 기간의 대체 채널입니다.<br>
-  인터넷에 포트를 열지 않습니다. 휴대폰 앱은 같은 LAN(TLS)·Tailscale 망·Cloudflare Tunnel(outbound) 중 되는 경로로 연결하고, 푸시·Telegram은 outbound HTTPS입니다.
+  <b>Homebase</b> &mdash; 자리를 비워도 내 Windows PC 여러 대를 Android 앱에서 1초마다 보고, 경보·부팅·Windows 알림을 종단 암호화 푸시로 받는 개인용 모니터링입니다.<br>
+  Claude Code·Codex 세션이 입력을 기다리거나 일을 마치면 휴대폰이 알려 주고, Claude Code의 권한 요청은 알림에서 바로 허용·거부합니다.<br>
+  인터넷에 포트를 열지 않습니다. 휴대폰 앱은 같은 LAN(TLS)·Tailscale·Cloudflare Tunnel(outbound) 중 되는 경로로 연결하고, 푸시는 outbound HTTPS입니다. Telegram 봇은 선택해서 쓰는 대체 채널입니다.
 </p>
 
 <p align="center">
+  <a href="https://jeiel85.github.io/homebase/">홈페이지</a> •
   <a href="#-기능">기능</a> •
   <a href="#-시작하기">시작하기</a> •
-  <a href="#-명령어">명령어</a> •
-  <a href="#-아키텍처">아키텍처</a> •
-  <a href="#-기술-스택">기술 스택</a> •
+  <a href="#-휴대폰-앱-homebase-mobile">휴대폰 앱</a> •
+  <a href="#-telegram-명령어-선택">Telegram 명령어</a> •
+  <a href="#%EF%B8%8F-아키텍처">아키텍처</a> •
   <a href="#-프로젝트-구조">프로젝트 구조</a>
 </p>
 
@@ -30,41 +31,43 @@
 
 | | 기능 | 설명 |
 |---|---|---|
-| 🖥️ | **시스템 상태** | CPU, RAM, 디스크, 네트워크, 가동 시간을 Telegram으로 확인 |
-| 🚀 | **부팅 알림** | PC가 부팅되면 Telegram으로 즉시 알림 |
-| 👁️ | **프로세스/서비스 감시** | Ollama, PostgreSQL, 개발 서버 등의 상태 모니터링 |
-| 📋 | **이벤트 로그 감시** | Windows 오류/심각 이벤트를 Telegram으로 전달 |
-| 🔔 | **토스트 알림 전달** | Windows 알림을 프라이버시 필터링·앱별 묶음과 함께 휴대폰 앱으로 암호화 전달(기본 켜짐) |
-| 📲 | **앱 푸시 알림** | 경보·부팅·Windows 알림을 Homebase 앱으로 UnifiedPush 종단 암호화(RFC 8291) 전송, 실패 시에만 Telegram |
-| 🔒 | **프라이버시 우선** | 비밀번호, OTP, 토큰 마스킹; 민감 앱 차단 |
-| 🔇 | **조용한 시간** | `/mute 1h`로 일시적으로 알림 음소거 |
-| 📊 | **SQLite 로깅** | 명령 및 알림 이력 영구 저장 |
-| 📱 | **휴대폰 실시간 모니터링** | 여러 PC를 QR로 등록하고, 열린 창·창별 CPU/RAM/I/O/네트워크, GPU·드라이브·온도·인터넷 핑, Claude Code·Codex 세션(상태·대기 이유·모델·컨텍스트)을 실시간으로 확인하고, 세션이 입력을 기다리거나 작업을 마치면 알림 (Android, 아래 참고) |
+| 📱 | **휴대폰 실시간 모니터링** | 여러 PC를 QR로 등록하고 CPU·RAM·GPU(부하·VRAM·온도·전력)·드라이브 여유 공간·CPU 온도·인터넷 핑, 열린 창과 창(프로세스)별 CPU·RAM·I/O·네트워크를 1초마다 확인 (Android 8.0+) |
+| 🤖 | **AI 코딩 세션** | Claude Code·Codex 세션이 작업 중·입력 대기·쉬는 중인지, 무엇을 기다리는지, 모델·컨텍스트 사용량까지 표시. 자리를 비운 동안 세션이 입력을 기다리거나 1분 넘게 하던 작업을 마치면 알림 |
+| ✅ | **휴대폰에서 권한 허용/거부** | Claude Code의 권한 요청(명령 실행·파일 수정 등)이 알림으로 오고 **허용 / 거부** 버튼으로 답함. PC로 돌아오거나 10분 안에 답이 없으면 PC에서 평소처럼 물음 (켜야 동작) |
+| 📲 | **종단 암호화 푸시** | 감시 경보·부팅·Windows 알림을 UnifiedPush(ntfy)로 휴대폰 키에 암호화(RFC 8291)해 전송. 푸시 서버는 암호문만 봄 |
+| 🔔 | **Windows 알림 전달** | PC의 Windows 알림을 휴대폰으로(기본 켜짐). 1Password·Bitwarden 등은 항상 차단, 비밀번호·OTP·토큰은 마스킹, 같은 앱 알림은 묶음 |
+| 🗂️ | **알림 정리** | Android 알림 창에서 Homebase 한 묶음으로 접고, 종류·앱별 우선순위(긴급·보통·조용히·센터에만), PC마다 색 배지, 30일 보관 알림 센터 |
+| 🔗 | **기기 그룹** | 휴대폰이든 PC든 한 번 연결하면 그룹의 모든 PC·휴대폰이 서로 연결. 별칭("작업실 PC")은 그룹 전체에 같이 보임 |
+| 🖥️ | **PC 기기 허브** | 트레이 아이콘을 누르면 열리는 Homebase 창(기기·알림 센터·설정 탭)에서 연결한 다른 PC를 실시간으로, 휴대폰은 배터리·네트워크 등 마지막 보고를 확인 |
+| 👁️ | **감시·경보** | 프로세스·서비스·HTTP·포트·Windows 이벤트 로그 감시, 부팅 알림, 로컬 AI(Ollama) 점검 조언 |
+| 🛡️ | **포트를 열지 않음** | 같은 LAN(TLS·인증서 지문 고정)·Tailscale·Cloudflare Tunnel 중 되는 경로를 앱이 알아서 고름 |
+| ⬆️ | **자동 업데이트** | PC는 새 버전을 SHA-256으로 확인한 뒤 설치. 휴대폰 GitHub판은 앱을 쓰지 않는 동안 확인 없이 설치(Android 12+), Play판은 새 버전을 알리고 Play 스토어로 안내 |
+| 💬 | **Telegram (선택)** | 푸시를 받을 휴대폰이 없거나 전송이 실패한 경보만 Telegram으로. `/status`·`/mute 1h` 같은 명령어도 그대로 |
 
 ## 🚀 시작하기
 
 ### 사전 요구사항
 
-- Windows 10/11 (버전 1809 이상)
-- Telegram 계정 + [BotFather](https://t.me/BotFather) 봇 토큰
-- 설치 파일에 .NET 런타임이 포함되어 있어 **별도 런타임 설치는 필요 없습니다**
+- **PC**: Windows 10/11 (버전 1809 이상). 설치 파일에 .NET 런타임이 들어 있어 **별도 런타임 설치는 필요 없습니다**
+- **휴대폰**: Android 8.0 이상. 푸시 알림을 받으려면 UnifiedPush 배포자 앱 [ntfy](https://ntfy.sh/)(무료, 계정 없음)를 Play 스토어나 F-Droid에서 설치하세요
+- **Telegram은 필요 없습니다.** 대체 채널이나 봇 명령어를 쓰고 싶을 때만 [BotFather](https://t.me/BotFather) 봇 토큰을 준비하세요([아래](#telegram-대체-채널-선택))
 
-### 설치 — 어느 파일을 받나요?
+### 1. PC에 설치 — 어느 파일을 받나요?
 
 [**최신 릴리스**](https://github.com/jeiel85/homebase/releases/latest)에서 상황에 맞는 파일 하나만 받으세요.
 
 | 파일 | 이럴 때 받으세요 |
 |---|---|
-| **`Homebase-Setup.exe`** | ⭐ **대부분 이것 하나면 됩니다.** 더블클릭하면 마법사가 토큰·chat ID를 묻고 설치를 끝냅니다 |
-| `Homebase-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1` 실행 |
+| **`Homebase-Setup.exe`** | ⭐ **대부분 이것 하나면 됩니다.** 더블클릭하면 마법사가 서비스와 트레이를 설치합니다(Telegram은 묻지 않음) |
+| `Homebase-Setup.zip` | 마법사 없이 수동 설치. 압축을 풀고 **관리자** PowerShell에서 `.\setup.ps1 -SkipTelegram` 실행(`-SkipTelegram`을 빼면 Telegram 봇 토큰·chat ID를 묻습니다) |
 | `bootstrap.ps1` | 명령 한 줄 설치 (아래 방법 B) |
 
 **방법 A — 설치 마법사 (권장)**
 
 1. `Homebase-Setup.exe`를 받아 더블클릭
 2. **Windows SmartScreen** 경고("Windows의 PC 보호")가 뜨면 → **추가 정보** → **실행**을 누르세요. 서명되지 않은 개인용 앱이라 표시되는 정상 경고입니다
-3. 마법사가 물어보는 Telegram 봇 토큰과 chat ID 입력
-4. 설치가 끝나면 Telegram에서 봇에게 `/ping` 전송
+3. 설치가 끝나면 트레이에 Homebase 아이콘이 생기고 처음 설정 창이 열립니다. 감시 서비스가 "실행 중"이면 PC 쪽 준비는 끝입니다.
+   이 창의 "필수" 칸에 텔레그램 연결도 있지만, 휴대폰 앱으로만 받을 거라면 비워 두고 **시작하기**를 눌러도 됩니다
 
 **방법 B — 한 줄 설치**
 
@@ -73,6 +76,25 @@
 ```powershell
 irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 | iex
 ```
+
+> 한 줄 설치는 지금 Telegram 봇 토큰과 chat ID를 꼭 묻습니다. Telegram 없이 설치하려면 방법 A나 `Homebase-Setup.zip`의 `.\setup.ps1 -SkipTelegram`을 쓰세요.
+
+### 2. 휴대폰 연결
+
+1. 휴대폰에 앱을 설치합니다. [최신 릴리스](https://github.com/jeiel85/homebase/releases/latest)의 `Homebase-Mobile.apk`(GitHub판)를 휴대폰에서 받아 설치하세요. Google Play판은 테스트 트랙에서 준비 중입니다
+2. PC 트레이 아이콘을 눌러 Homebase 창을 열고 **설정** 탭 → **휴대폰** → 쓸 경로를 고르고(기본: 전부) **ENABLE**과 관리자 승인
+3. 화면에 뜬 QR을 앱의 **기기 추가**로 스캔합니다. 앱이 아직 없으면 휴대폰 기본 카메라로 찍어도 설치 안내 페이지가 열리고, 설치 후 **앱에서 열기**로 연결이 이어집니다
+4. 다른 PC도 같은 방법으로 연결하면, 몇 분 안에 그룹의 모든 PC·휴대폰이 서로 연결됩니다
+
+자세한 연결 경로·푸시 설정·알림 동작은 아래 [휴대폰 앱](#-휴대폰-앱-homebase-mobile)을 참고하세요.
+
+### Telegram 대체 채널 (선택)
+
+푸시를 받을 휴대폰이 없거나 전송이 실패한 경보를 Telegram으로도 받고 싶을 때만 설정합니다. Windows 알림은 기본으로 Telegram에 보내지 않습니다(평문 클라우드).
+
+1. [BotFather](https://t.me/BotFather)에서 봇을 만들어 봇 토큰을 받습니다
+2. 트레이 아이콘 우클릭 → **처음 설정 다시 보기**의 **텔레그램 연결하기**, 또는 Homebase 창 **설정** 탭의 Telegram 영역에 토큰과 chat ID를 넣습니다
+3. Telegram에서 봇에게 `/ping`을 보내 응답을 확인합니다
 
 > **chat ID를 모르나요?** 봇에게 아무 메시지나 보낸 뒤 `https://api.telegram.org/bot<봇토큰>/getUpdates`를 열어 `chat.id` 값을 확인하세요.
 
@@ -84,7 +106,9 @@ irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 |
 dotnet build LocalOpsBot.sln
 ```
 
-## 🤖 명령어
+## 🤖 Telegram 명령어 (선택)
+
+Telegram 봇을 연결했을 때 쓸 수 있는 명령어입니다.
 
 | 명령어 | 설명 |
 |---|---|
@@ -144,7 +168,8 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
 - **알림 우선순위**: 앱 설정 → 알림 → "알림 우선순위"에서 종류별(Windows 앱 알림·감시 경보·다른 기기 알림…)·앱별로
   긴급(팝업+소리+진동) / 보통(소리+진동) / 조용히(무음) / 센터에만(알림 창에 안 띄움) 중에 고르거나 팝업·소리·진동을 따로 켜고 끕니다.
   "같은 출처끼리 묶기"를 켜 두면(기본) 같은 앱의 알림이 Android 알림 창에서 한 묶음으로 접혀(출처별 최근 8건) 목록이 길어지지 않습니다.
-  기본값은 앱 알림(Windows·다른 기기)은 보통, PC 경보는 긴급입니다.
+  기본값은 감시 경보(프로세스·서비스·웹사이트·포트)와 AI 세션 권한 요청·입력 대기만 긴급이고, 나머지(Windows 앱 알림·다른 기기 알림·AI 작업 끝·이벤트 로그·상태 조언·부팅)는
+  조용히(소리·진동 없이 알림 창에만)입니다. 울려야 하는 앱은 앱별로 보통·긴급으로 올립니다.
 - **PC 배지**: PC마다 색과 이름 첫 글자로 된 둥근 배지가 정해져, 그 PC의 알림 오른쪽·PC 목록 카드·알림 센터에 같은 모양으로 붙습니다.
   알림 머리줄은 "작업실 · 카카오톡"처럼 보낸 PC(다른 기기 알림은 그 기기)부터, 굵은 제목은 알림 내용만 보여 줍니다.
 - **Homebase 창 (트레이 대시보드)**: 트레이 아이콘을 누르면 열리는 창 하나에서 위쪽 탭으로 **기기 · 알림 센터 · 설정**을 오갑니다(따로 뜨는 창 없음).
@@ -167,7 +192,7 @@ PC에서 에이전트로 돌리는 작업을 휴대폰에서 실시간으로 지
 
 ## 🌡️ 온도 모니터링
 
-`/status`와 조언(`/advise`)에 CPU·보드 온도가 함께 표시됩니다. 센서 백엔드는 두 가지입니다.
+휴대폰 앱과 트레이 기기 허브의 PC 화면, Telegram `/status`·조언(`/advise`)에 CPU·보드 온도가 함께 표시됩니다. 센서 백엔드는 두 가지입니다.
 
 - **기본값 — WMI/ACPI 센서:** 커널 드라이버를 로드하지 않아 백신에 탐지되지 않습니다. 다만 메인보드 ACPI 존 온도만 제공하며, **많은 데스크톱은 이 값을 노출하지 않아** 온도가 표시되지 않을 수 있습니다.
 - **정밀 센서(opt-in) — LibreHardwareMonitor:** CPU 코어별·GPU·보드 온도까지 읽지만, 이를 위해 **WinRing0 커널 드라이버**를 로드합니다. Windows Defender는 이 드라이버를 취약 드라이버(`VulnerableDriver:WinNT/Winring0`)로 분류합니다.
