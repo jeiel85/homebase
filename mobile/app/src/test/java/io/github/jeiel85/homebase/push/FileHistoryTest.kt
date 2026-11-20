@@ -3,6 +3,7 @@ package io.github.jeiel85.homebase.push
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,5 +69,30 @@ class FileHistoryTest {
         val root = JSONObject(PushHistoryRules.toJson(listOf(e)))
         root.getJSONArray("entries").getJSONObject(0).remove("uris")
         assertTrue(PushHistoryRules.fromJson(root.toString()).single().uris.isEmpty())
+    }
+
+    @Test
+    fun a_tapped_upload_notification_opens_the_sent_files_with_its_transfer() {
+        val received = FileHistory.received("r", "pc1", "PC", null, photos, emptyList(), null, now = 100)
+        val older = FileHistory.sent("t1", "pc1", "PC", emptyList(), photos, "보냄", null, now = 200)
+        val failed = FileHistory.sent("t2", "pc2", "노트북", emptyList(), photos, "실패: 연결 안 됨", null, now = 300)
+        val again = FileHistory.sent("t2", "pc2", "노트북", emptyList(), photos, "보냄", null, now = 400)
+        val entries = listOf(again, failed, older, received)
+
+        val done = PushHistoryRules.focus(entries, FileHistory.SENT, "t2")
+        assertEquals(FileHistory.SENT_LABEL, done.group)
+        // Recorded twice (failed, then sent again): the newest.
+        assertEquals(again.key, done.expanded)
+
+        // Still being sent: no entry yet, so the filter alone.
+        val underWay = PushHistoryRules.focus(entries, FileHistory.SENT, "t9")
+        assertEquals(FileHistory.SENT_LABEL, underWay.group)
+        assertNull(underWay.expanded)
+
+        // A received entry with the same id is not it.
+        assertNull(PushHistoryRules.focus(listOf(FileHistory.received("t2", "pc1", "PC", null, photos, emptyList(), null, 1)), FileHistory.SENT, "t2").expanded)
+
+        // Nothing ever sent: the center opens as it is.
+        assertEquals(PushHistoryRules.Focus(null, null), PushHistoryRules.focus(listOf(received), FileHistory.SENT, "t2"))
     }
 }

@@ -14,6 +14,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import io.github.jeiel85.homebase.MainActivity
 import io.github.jeiel85.homebase.R
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.Endpoint
@@ -181,10 +182,15 @@ class UploadJobService : JobService() {
 
 /**
  * The upload's notification (DECISIONS M-64) in a quiet channel of its own: progress with a cancel action, then
- * what came of it. One notification per transfer, replaced as it goes.
+ * what came of it. One notification per transfer, replaced as it goes. A tap opens the notification center on
+ * "보낸 파일" with this transfer's entry open (docs/SHARE_CONVENIENCE.md §4.5).
  */
 internal object UploadNotifier {
     private const val CHANNEL_ID = "hb.share.out"
+
+    /** [MainActivity] opens the notification center on "보낸 파일", with [EXTRA_TRANSFER_ID]'s entry open. */
+    const val ACTION_OPEN_SENT = "io.github.jeiel85.homebase.action.OPEN_SENT_FILES"
+    const val EXTRA_TRANSFER_ID = "io.github.jeiel85.homebase.SENT_TRANSFER_ID"
 
     fun id(transferId: String): Int = "upload:$transferId".hashCode()
 
@@ -192,7 +198,7 @@ internal object UploadNotifier {
     fun progress(context: Context, spec: UploadSpec, sent: Long, via: Endpoint? = null): Notification {
         val total = spec.total
         val permille = if (total <= 0) 0 else (sent * 1000 / total).toInt().coerceIn(0, 1000)
-        val shown = builder(context)
+        val shown = builder(context, spec)
             .setContentTitle(spec.line("보내는 중"))
             .setContentText("${FileShare.what(spec.transferFiles)} · ${FileShare.progress(sent, total)}")
             .setProgress(1000, permille, false)
@@ -203,7 +209,7 @@ internal object UploadNotifier {
         return shown.build()
     }
 
-    fun waiting(context: Context, spec: UploadSpec, reason: String): Notification = builder(context)
+    fun waiting(context: Context, spec: UploadSpec, reason: String): Notification = builder(context, spec)
         .setContentTitle(spec.line("보내기를 기다리는 중"))
         .setContentText("$reason — 연결되면 이어서 보냅니다")
         .setOngoing(false)
@@ -220,7 +226,7 @@ internal object UploadNotifier {
             else -> "${spec.pcName}에 $what${FileShare.objectParticle(what)} 보냈습니다" +
                 if (saved == "waiting") " — PC에 로그인하면 저장됩니다" else ""
         }
-        return builder(context)
+        return builder(context, spec)
             .setContentTitle("보냈습니다")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -236,7 +242,7 @@ internal object UploadNotifier {
         else -> "보냄 — PC에 저장됨"
     }
 
-    fun failed(context: Context, spec: UploadSpec, reason: String): Notification = builder(context)
+    fun failed(context: Context, spec: UploadSpec, reason: String): Notification = builder(context, spec)
         .setContentTitle(spec.line("보내지 못했습니다"))
         .setContentText(reason)
         .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
@@ -256,7 +262,7 @@ internal object UploadNotifier {
         NotificationManagerCompat.from(context).cancel(id(transferId))
     }
 
-    private fun builder(context: Context): NotificationCompat.Builder {
+    private fun builder(context: Context, spec: UploadSpec): NotificationCompat.Builder {
         ensureChannel(context)
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -264,7 +270,19 @@ internal object UploadNotifier {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             // File names can be private: the lock screen says only that something is being sent.
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openSent(context, spec))
     }
+
+    /** The notification's tap: the sent files in the notification center (while it is sent, the ones before). */
+    private fun openSent(context: Context, spec: UploadSpec): PendingIntent = PendingIntent.getActivity(
+        context,
+        id(spec.transferId),
+        Intent(context, MainActivity::class.java)
+            .setAction(ACTION_OPEN_SENT)
+            .putExtra(EXTRA_TRANSFER_ID, spec.transferId)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     private fun cancelIntent(context: Context, spec: UploadSpec): PendingIntent = PendingIntent.getBroadcast(
         context,

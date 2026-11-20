@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -82,7 +83,14 @@ import java.time.format.DateTimeFormatter
  * opening (or arrive while it is open) keep the amber rail so they stand out.
  */
 @Composable
-fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (String) -> Unit, onSettings: () -> Unit) {
+fun NotificationCenterScreen(
+    store: PcStore,
+    onBack: () -> Unit,
+    onOpenPc: (String) -> Unit,
+    onSettings: () -> Unit,
+    focus: CenterFocus? = null,
+    onFocused: () -> Unit = {},
+) {
     val hb = Hb.colors
     val context = LocalContext.current
     val history by PushHistory.state.collectAsState()
@@ -104,6 +112,7 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     // The one bundle opened to its entries (DECISIONS M-37); bundles follow the priority settings.
     var openStack by rememberSaveable { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
     val rules = remember { NotificationRuleStore(context).rules() }
     var confirmClear by remember { mutableStateOf(false) }
     val pushOn = remember { PushState(context).endpoint != null }
@@ -123,6 +132,20 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
     LaunchedEffect(groups, pcs) {
         if (groupFilter != null && groupFilter !in groups) groupFilter = null
         if (pcFilter != null && pcs.none { it.first == pcFilter }) pcFilter = null
+    }
+    // A tapped upload notification: once the history is loaded (an empty list would drop the filter), its kind's
+    // filter and its entry open, from the top.
+    LaunchedEffect(focus, seenBefore) {
+        val wanted = focus ?: return@LaunchedEffect
+        if (seenBefore == null) return@LaunchedEffect
+        val view = PushHistoryRules.focus(PushHistory.state.value.entries, wanted.category, wanted.id)
+        groupFilter = view.group
+        pcFilter = null
+        openStack = null
+        expanded = view.expanded
+        listState.scrollToItem(0)
+        // Last: taking the focus restarts this effect, which would cut the scroll short.
+        onFocused()
     }
     val shown = remember(entries, groupFilter, pcFilter) {
         entries.filter { e ->
@@ -168,6 +191,7 @@ fun NotificationCenterScreen(store: PcStore, onBack: () -> Unit, onOpenPc: (Stri
             },
         )
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 14.dp),
         ) {
@@ -457,6 +481,9 @@ private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): Strin
         else -> "$pcName · $source"
     }
 }
+
+/** What the notification center opens on: the kind [category] filtered, with the entry [id] of it open. */
+data class CenterFocus(val category: String, val id: String?)
 
 /** Entries this phone made itself — files received and sent, commands sent — rather than pushes it was sent. */
 private fun isOwnRecord(category: String): Boolean = FileHistory.isFile(category) || CommandHistory.isCommand(category)

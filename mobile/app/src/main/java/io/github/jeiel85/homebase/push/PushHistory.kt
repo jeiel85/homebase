@@ -95,6 +95,20 @@ object PushHistoryRules {
     fun prune(entries: List<HistoryEntry>, now: Long): List<HistoryEntry> =
         entries.filter { now - it.receivedAt <= MAX_AGE_MS }.take(MAX_ENTRIES)
 
+    /** How the notification center opens for a tapped notification: a kind's filter and the entry opened, either null. */
+    data class Focus(val group: String?, val expanded: String?)
+
+    /**
+     * Where a tapped notification about [category] — an upload's (docs/SHARE_CONVENIENCE.md §4.5) — leads in the
+     * center: that kind's filter when there is any of it, and the entry [id] opened (the newest, if recorded twice).
+     * An upload still under way has no entry yet; then the filter alone, or nothing when none was ever recorded.
+     */
+    fun focus(entries: List<HistoryEntry>, category: String, id: String?): Focus {
+        val any = entries.any { it.category == category }
+        val entry = id?.let { wanted -> entries.firstOrNull { it.category == category && it.id == wanted } }
+        return Focus(group = if (any) categoryLabel(category) else null, expanded = entry?.key)
+    }
+
     /**
      * What came in since [lastSeenAt]; files and commands this phone sent itself are no news ([FileHistory.SENT],
      * [CommandHistory.SENT]).
