@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -810,12 +811,13 @@ private fun CheckDot(checked: Boolean) {
     }
 }
 
-/** A tile's shape while the PC list is read. */
+/** A tile's shape while the PC list is read; a screen reader hears what it stands for. */
 @Composable
 private fun PlaceholderTile(modifier: Modifier) {
     val hb = Hb.colors
     Column(
         modifier
+            .semantics { contentDescription = "연결된 PC를 읽는 중" }
             .clip(RoundedCornerShape(10.dp))
             .background(hb.plate)
             .padding(12.dp),
