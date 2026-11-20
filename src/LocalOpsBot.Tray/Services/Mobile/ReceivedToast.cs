@@ -11,7 +11,8 @@ namespace LocalOpsBot.Tray.Services.Mobile;
 /// <summary>
 /// "Files received" as a real Windows toast above the clock (DECISIONS M-67), not a tray balloon: a single picture shows in
 /// it, and it has [Open] and [Open folder]. Windows decides when it pops up — with Do not disturb (Focus assist) on it goes
-/// straight to the notification center, quietly.
+/// straight to the notification center, quietly. With Homebase's toasts turned off in Windows the tray shows a balloon
+/// instead, and says why in tray.log once.
 /// <para>
 /// The toast is the tray's own (app id <see cref="Aumid"/>, registered for this user with its name and icon). Its clicks are
 /// <c>homebase://files/…</c> links, registered for this user to run <c>Homebase.Tray.exe --toast &lt;link&gt;</c>, so they work
@@ -31,6 +32,8 @@ internal static class ReceivedToast
         [".exe", ".msi", ".msix", ".appx", ".bat", ".cmd", ".com", ".scr", ".pif", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".lnk", ".cpl", ".reg", ".jar"];
 
     private static bool _registered;
+    /// <summary>The block last logged, so a PC with Homebase's notifications off says so once, not for every file.</summary>
+    private static NotificationSetting? _loggedBlock;
 
     /// <summary>Shows the toast; false when Windows wouldn't (the caller falls back to a balloon).</summary>
     public static bool Show(string title, string body, IReadOnlyList<string> paths, bool picture)
@@ -39,9 +42,10 @@ internal static class ReceivedToast
         try
         {
             Register();
+            if (Notifier("Files") is not { } notifier) return false;
             var xml = new XmlDocument();
             xml.LoadXml(Xml(title, body, paths, picture));
-            ToastNotificationManager.CreateToastNotifier(Aumid).Show(new ToastNotification(xml) { Group = "files" });
+            notifier.Show(new ToastNotification(xml) { Group = "files" });
             return true;
         }
         catch (Exception ex)
@@ -81,13 +85,14 @@ internal static class ReceivedToast
         try
         {
             Register();
+            if (Notifier("Commands") is not { } notifier) return false;
             var xml = new XmlDocument();
             xml.LoadXml(
                 $"<toast activationType=\"protocol\" launch=\"{Attr(Scheme + "://commands/cancel-restart")}\">" +
                 $"<visual><binding template=\"ToastGeneric\"><text>{SecurityElement.Escape(L.RestartToastTitle(at.ToLocalTime()))}</text>" +
                 $"<text>{SecurityElement.Escape(L.RestartToastBody(by))}</text></binding></visual>" +
                 $"<actions><action content=\"{Attr(L.Cancel)}\" activationType=\"protocol\" arguments=\"{Attr(Scheme + "://commands/cancel-restart")}\"/></actions></toast>");
-            ToastNotificationManager.CreateToastNotifier(Aumid).Show(new ToastNotification(xml) { Tag = "restart", Group = "commands" });
+            notifier.Show(new ToastNotification(xml) { Tag = "restart", Group = "commands" });
             return true;
         }
         catch (Exception ex)
@@ -96,6 +101,40 @@ internal static class ReceivedToast
             return false;
         }
     }
+
+    /// <summary>
+    /// Our notifier, or null when Windows won't show its toasts — Homebase turned off in Settings › System › Notifications,
+    /// notifications off altogether, a policy. Show() would then drop the toast without a word, so the caller shows a
+    /// balloon instead (another sender to Windows, as before M-68). Do not disturb doesn't count: the toast still goes to
+    /// the notification center, quietly, which is what the user asked for.
+    /// </summary>
+    private static ToastNotifier? Notifier(string area)
+    {
+        var notifier = ToastNotificationManager.CreateToastNotifier(Aumid);
+        var setting = notifier.Setting;
+        if (Blocked(setting) is not { } why)
+        {
+            _loggedBlock = null;
+            return notifier;
+        }
+        if (_loggedBlock != setting)
+        {
+            _loggedBlock = setting;
+            TrayLog.Warn(area, $"Windows won't show Homebase's toasts: {why}. A balloon instead.");
+        }
+        return null;
+    }
+
+    /// <summary>Why Windows won't show our toasts with this setting; null when it will.</summary>
+    internal static string? Blocked(NotificationSetting setting) => setting switch
+    {
+        NotificationSetting.Enabled => null,
+        NotificationSetting.DisabledForApplication => "Homebase is turned off in Settings › System › Notifications",
+        NotificationSetting.DisabledForUser => "notifications are turned off for this Windows user",
+        NotificationSetting.DisabledByGroupPolicy => "a group policy turns notifications off",
+        NotificationSetting.DisabledByManifest => "the app's manifest turns them off",
+        _ => $"setting {setting}",
+    };
 
     public static void HideRestart()
     {

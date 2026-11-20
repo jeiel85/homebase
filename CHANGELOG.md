@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.54.2 — A balloon when Windows blocks Homebase's notifications
+
+### Fixed
+- **Received files fall back to a balloon when Windows blocks Homebase's notifications.** With Homebase turned off
+  in Settings › System › Notifications (or notifications off for the Windows user, or a policy against them),
+  the "files received" toast and the restart countdown went nowhere: Windows drops such a toast without a word, so
+  the PC showed nothing and tray.log said nothing, while the notification center still listed the file. The tray
+  now checks first and shows a tray balloon instead, as before v0.53.0, and tray.log says once why the toast was
+  blocked. Do not disturb is unchanged: the toast still goes quietly to the notification center.
+
 ## v0.54.1 — The tray comes back after a crash
 
 ### Fixed
