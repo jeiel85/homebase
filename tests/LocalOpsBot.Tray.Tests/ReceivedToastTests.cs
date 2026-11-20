@@ -1,6 +1,7 @@
 using System.IO;
 using System.Xml.Linq;
 using LocalOpsBot.Tray.Services.Mobile;
+using Windows.UI.Notifications;
 using Xunit;
 
 namespace LocalOpsBot.Tray.Tests;
@@ -86,6 +87,16 @@ public class ReceivedToastTests : IDisposable
     [InlineData("report.pdf", false)]
     public void Programs_and_scripts_are_shown_rather_than_run(string name, bool runnable) =>
         Assert.Equal(runnable, ReceivedToast.IsRunnable(name));
+
+    [Fact]
+    public void Only_enabled_lets_the_toast_show_and_every_block_says_why()
+    {
+        // Windows drops a toast it won't show without a word; a block makes the tray show a balloon and log the reason.
+        Assert.Null(ReceivedToast.Blocked(NotificationSetting.Enabled));
+        foreach (var setting in Enum.GetValues<NotificationSetting>().Where(s => s != NotificationSetting.Enabled))
+            Assert.False(string.IsNullOrWhiteSpace(ReceivedToast.Blocked(setting)), setting.ToString());
+        Assert.Contains("Settings", ReceivedToast.Blocked(NotificationSetting.DisabledForApplication));
+    }
 
     public void Dispose()
     {
