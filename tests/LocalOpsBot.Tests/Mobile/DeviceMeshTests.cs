@@ -374,6 +374,66 @@ public class HubLinkEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task A_phone_notification_waiting_in_the_hub_inbox_is_not_pushed_back_to_that_phone_after_a_restart()
+    {
+        // Right after B (re)starts, A's inbox can answer before A's presence reply tells B which phones A
+        // pushes to. B then relayed a phone's own notification with nothing to skip and pushed it back to
+        // that phone (seen 2026-11-20 on a real PC right after an Agent restart).
+        var port = FreePort();
+        var options = Options.Create(new MobileOptions { Enabled = true, Tailscale = false, BindLoopback = true, Port = port });
+
+        var storeA = new InMemoryDeviceStore();
+        var phone = storeA.Add("Galaxy", "SM-S921N", PairingService.HashToken("galaxy-token"));
+        const string endpoint = "https://ntfy.sh/upGalaxy";
+        storeA.SetPushSubscription(phone.DeviceId, new PushSubscription(endpoint, "k", "a", DateTimeOffset.UtcNow));
+        var inboxA = new NotificationInbox(TimeProvider.System);
+        var slowPresence = false;
+        var deviceHubA = new DeviceHub(storeA, new DeviceStatusBoard(TimeProvider.System), inboxA,
+            () =>
+            {
+                if (Volatile.Read(ref slowPresence)) Thread.Sleep(1500); // the presence reply comes after the inbox's
+                return new DeviceStatus("0.22.0");
+            },
+            (_, _) => Task.CompletedTask, "HUB-A", "0.22.0", NullLogger.Instance);
+        var api = new MobileApiServer(
+            new LiveSnapshotHub(new FakeSampler(), options, TimeProvider.System, NullLogger<LiveSnapshotHub>.Instance),
+            new PairingService(storeA, TimeProvider.System), storeA, new TailscaleAddressResolver(NullLogger<TailscaleAddressResolver>.Instance),
+            new LanAddressResolver(NullLogger<LanAddressResolver>.Instance), options, NullLogger<MobileApiServer>.Instance,
+            deviceHub: deviceHubA);
+
+        var storeB = new InMemoryDeviceStore("pc-b");
+        var routerB = new RecordingRouter();
+        using var historyB = await LocalOpsBot.Tests.Data.Repositories.HistoryTestDb.CreateAsync();
+        var forwardingB = Forwarding(routerB, new NotificationInbox(TimeProvider.System), new RecordingToaster(), historyB.History);
+        var links = new HubLinkService(new HubStore(_dir, NullLogger.Instance, protect: false), storeB,
+            new SystemStatusProbeAdapter(h => new PresenceReport(1, DeviceKind.Pc, "0.22.0", PushHashes: h)),
+            TimeProvider.System, NullLogger<HubLinkService>.Instance, forwardingB, allowLoopback: true);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await api.StartAsync(cts.Token);
+        await links.StartAsync(cts.Token);
+        try
+        {
+            // The phone sent this to A while B was down.
+            inboxA.Add(phone.DeviceId, phone.Name, "카카오톡", "엄마", "밥 먹었니", DateTimeOffset.UtcNow, "n1");
+            var offer = await Until(() => api.CreateOffer(), cts.Token);
+            Volatile.Write(ref slowPresence, true);
+            Assert.True((await links.LinkAsync(PairingLink.Build(offer), cts.Token)).Linked);
+
+            var relayed = await Until(() => routerB.Snapshot().FirstOrDefault(n => n.Title.Contains("카카오톡")), cts.Token);
+            Assert.NotNull(relayed.Metadata);
+            Assert.True(relayed.Metadata!.TryGetValue(PushRelay.SkipHashesKey, out var skip), "relayed without the hub's phones to skip");
+            Assert.Contains(PushHash.Of(endpoint), skip!.Split(','));
+        }
+        finally
+        {
+            Volatile.Write(ref slowPresence, false);
+            await links.StopAsync(CancellationToken.None);
+            await api.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task A_bad_or_own_link_is_refused_without_pairing()
     {
         var store = new InMemoryDeviceStore();
