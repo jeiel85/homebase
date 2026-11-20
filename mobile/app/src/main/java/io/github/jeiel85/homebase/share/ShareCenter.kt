@@ -10,18 +10,26 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,14 +41,15 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,14 +61,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size as GeoSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.jeiel85.homebase.clip.ClipShare
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcMark
@@ -79,8 +97,6 @@ import io.github.jeiel85.homebase.ui.Hb
 import io.github.jeiel85.homebase.ui.HbType
 import io.github.jeiel85.homebase.ui.Led
 import io.github.jeiel85.homebase.ui.PcBadge
-import io.github.jeiel85.homebase.ui.Plate
-import io.github.jeiel85.homebase.ui.QuietButton
 import io.github.jeiel85.homebase.ui.SectionLabel
 import io.github.jeiel85.homebase.ui.SignalButton
 import kotlinx.coroutines.CancellationException
@@ -294,94 +310,108 @@ internal fun ShareCenterFlow(shared: List<Uri>, text: String?, presetPcId: Strin
         files = uris.mapNotNull { described[it] }
     }
 
+    val chosenCount = chosenPcs.size + chosenPhones.size
     Column(Modifier.fillMaxSize().background(hb.background)) {
         ConsoleBar(title = "공유 센터", onBack = onDone, eyebrow = "Homebase")
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 14.dp),
+            contentPadding = PaddingValues(bottom = 16.dp),
         ) {
-            item {
+            // What goes: a dark instrument panel continuing the masthead, with the files or the text large on it.
+            item(key = "payload") {
                 val described0 = files
-                SectionLabel(
-                    "보낼 것",
-                    trailing = when {
+                PayloadPanel(
+                    summary = when {
                         text != null -> "텍스트 ${String.format(java.util.Locale.ROOT, "%,d", text.length)}자"
                         described0 != null && described0.isNotEmpty() -> FileShare.summary(described0.map { it.toTransferFile() })
-                        else -> null
+                        described0 == null -> "확인하는 중…"
+                        else -> "보낼 파일 없음"
                     },
-                )
-                if (text != null) {
-                    TextPreview(text)
-                } else {
-                    FilesPreview(
-                        files = files,
-                        canAdd = !starting && uris.size < TransferProtocol.MAX_FILES,
-                        onRemove = { uri -> removed = removed + uri.toString() },
-                        onAddMedia = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
-                        onAddFiles = { pickFiles.launch(arrayOf("*/*")) },
-                    )
-                }
-                SectionLabel("보낼 곳", trailing = if (checked.isEmpty()) null else "${chosenPcs.size + chosenPhones.size}곳 고름")
-            }
-            val list = pcs
-            if (list == null) {
-                item { Hint("연결된 PC를 읽는 중…") }
-            } else {
-                items(list, key = { "pc:" + it.pcId }) { pc ->
-                    val key = ShareChoice.pcKey(pc.pcId)
-                    val state = reach[pc.pcId] ?: Reach.CHECKING
-                    TargetRow(
-                        checked = key in checked,
-                        onToggle = { toggle(key, it) },
-                        mark = pc.mark,
-                        name = pc.displayName,
-                        hint = when (state) {
-                            Reach.CHECKING -> "확인 중…"
-                            Reach.ONLINE -> "연결됨"
-                            Reach.OFFLINE -> if (forFiles) "지금 닿지 않음 — 연결되면 이어서 보냅니다" else "지금 닿지 않음"
-                            Reach.REVOKED -> "이 휴대폰의 연결이 해제됨 — 다시 페어링하세요"
-                        },
-                        led = when (state) {
-                            Reach.CHECKING -> null
-                            Reach.ONLINE -> hb.ledOn
-                            Reach.OFFLINE, Reach.REVOKED -> hb.ledOff
-                        },
-                        enabled = !starting,
-                    )
-                }
-                if (answers == null) {
-                    item { Hint("PC를 거쳐 보낼 수 있는 다른 휴대폰을 찾는 중…") }
-                } else if (phones.isNotEmpty()) {
-                    item { SectionLabel("다른 휴대폰 (PC 경유)") }
-                    items(phones, key = { it.key }) { t ->
-                        TargetRow(
-                            checked = t.key in checked,
-                            onToggle = { toggle(t.key, it) },
-                            mark = PcMarks.unpaired(t.phone.name, pcColors),
-                            name = t.phone.name,
-                            hint = "${t.pcName} 경유",
-                            led = null,
-                            enabled = !starting,
+                ) {
+                    if (text != null) {
+                        TextPreview(text)
+                    } else {
+                        FilesPreview(
+                            files = files,
+                            count = uris.size,
+                            canAdd = !starting && uris.size < TransferProtocol.MAX_FILES,
+                            onRemove = { uri -> removed = removed + uri.toString() },
+                            onAddMedia = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
+                            onAddFiles = { pickFiles.launch(arrayOf("*/*")) },
                         )
                     }
                 }
             }
-            item { Spacer(Modifier.height(12.dp)) }
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(hb.plate)
-                .navigationBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        ) {
-            problem?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = hb.danger, modifier = Modifier.padding(bottom = 8.dp))
+            item(key = "to") {
+                SectionLabel("보낼 곳", Modifier.padding(horizontal = 14.dp), trailing = if (chosenCount == 0) null else "${chosenCount}곳 고름")
             }
-            SignalButton("공유 시작", onClick = { start() }, enabled = ready)
-            Spacer(Modifier.height(8.dp))
-            QuietButton("취소", onClick = onDone, enabled = !starting)
+            val list = pcs
+            if (list == null) {
+                item(key = "loading") { TileGrid(listOf(Unit, Unit)) { _, m -> PlaceholderTile(m) } }
+            } else {
+                // Two tiles a row: a PC is picked by its badge and name at a glance, not read off a checklist.
+                items(list.chunked(2), key = { row -> "pcs:" + row.joinToString(",") { it.pcId } }) { row ->
+                    TileGrid(row) { pc, m ->
+                        val key = ShareChoice.pcKey(pc.pcId)
+                        val state = reach[pc.pcId] ?: Reach.CHECKING
+                        TargetTile(
+                            checked = key in checked,
+                            onToggle = { toggle(key, it) },
+                            mark = pc.mark,
+                            kind = DeviceKind.PC,
+                            name = pc.displayName,
+                            hint = when (state) {
+                                Reach.CHECKING -> "확인 중…"
+                                Reach.ONLINE -> "연결됨"
+                                Reach.OFFLINE -> if (forFiles) "지금 닿지 않음 · 연결되면 이어서 보냅니다" else "지금 닿지 않음"
+                                Reach.REVOKED -> "연결이 해제됨 · 다시 페어링하세요"
+                            },
+                            led = when (state) {
+                                Reach.CHECKING -> null
+                                Reach.ONLINE -> hb.ledOn
+                                Reach.OFFLINE, Reach.REVOKED -> hb.ledOff
+                            },
+                            enabled = !starting,
+                            modifier = m,
+                        )
+                    }
+                }
+                if (answers == null) {
+                    item(key = "phones-wait") {
+                        Hint("PC를 거쳐 보낼 수 있는 다른 휴대폰을 찾는 중…", Modifier.padding(horizontal = 14.dp))
+                    }
+                } else if (phones.isNotEmpty()) {
+                    item(key = "phones") { SectionLabel("다른 휴대폰 · PC 경유", Modifier.padding(horizontal = 14.dp)) }
+                    items(phones.chunked(2), key = { row -> "phones:" + row.joinToString(",") { it.key } }) { row ->
+                        TileGrid(row) { t, m ->
+                            TargetTile(
+                                checked = t.key in checked,
+                                onToggle = { toggle(t.key, it) },
+                                mark = PcMarks.unpaired(t.phone.name, pcColors),
+                                kind = DeviceKind.PHONE,
+                                name = t.phone.name,
+                                hint = "${t.pcName} 경유",
+                                led = null,
+                                enabled = !starting,
+                                modifier = m,
+                            )
+                        }
+                    }
+                }
+            }
         }
+        ShareDock(
+            marks = chosenPcs.map { it.mark } + chosenPhones.map { PcMarks.unpaired(it.phone.name, pcColors) },
+            names = chosenPcs.map { it.displayName } + chosenPhones.map { it.phone.name },
+            problem = problem,
+            label = when {
+                starting -> "보내는 중…"
+                chosenCount == 0 -> "공유 시작"
+                else -> "공유 시작 · ${chosenCount}곳"
+            },
+            enabled = ready,
+            onStart = { start() },
+        )
     }
 
     askMetered?.let { bytes ->
@@ -422,102 +452,221 @@ private suspend fun probe(api: HomebaseApi, pc: PcEntry): Probe = try {
 }
 
 @Composable
-private fun Hint(text: String) {
+private fun Hint(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         style = MaterialTheme.typography.bodySmall,
         color = Hb.colors.inkSoft,
-        modifier = Modifier.padding(vertical = 8.dp),
+        modifier = modifier.padding(vertical = 8.dp),
     )
 }
 
-/** The shared text, as much as fits in a few lines. */
+/** The carbon panel under the masthead: "보낼 것", the summary as a readout, and the preview ([content]). */
+@Composable
+private fun PayloadPanel(summary: String, content: @Composable ColumnScope.() -> Unit) {
+    val hb = Hb.colors
+    // No side padding of its own: the parts keep [PANEL_GUTTER] themselves, and a thumbnail strip runs to the edges.
+    Column(Modifier.fillMaxWidth().background(hb.slab).padding(top = 14.dp, bottom = 18.dp)) {
+        Text("보낼 것", style = HbType.label, color = hb.accent, modifier = Modifier.padding(horizontal = PANEL_GUTTER).semantics { heading() })
+        Spacer(Modifier.height(2.dp))
+        Text(
+            summary,
+            style = HbType.readout.copy(fontSize = 20.sp, letterSpacing = (-0.2).sp),
+            color = hb.onSlab,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = PANEL_GUTTER),
+        )
+        Spacer(Modifier.height(14.dp))
+        content()
+    }
+}
+
+/** The shared text, as much as fits in a few lines, set off by an amber quote rule. */
 @Composable
 private fun TextPreview(text: String) {
     val hb = Hb.colors
-    Plate {
+    Row(
+        Modifier
+            .padding(horizontal = PANEL_GUTTER)
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clip(RoundedCornerShape(8.dp))
+            .background(hb.slabRaised),
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(hb.accent))
         Text(
             text.take(PREVIEW_CHARS),
             style = MaterialTheme.typography.bodyMedium,
-            color = hb.ink,
-            maxLines = 6,
+            color = hb.onSlab,
+            maxLines = 8,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
         )
     }
 }
 
-/** Thumbnails (pictures, videos) or names of the files, each with a way to take it out, and the pickers to add more. */
+/**
+ * The files: one picture or video large, several as a strip of thumbnails (or names), each with a way to take it
+ * out, and the pickers to add more under them.
+ */
 @Composable
 private fun FilesPreview(
     files: List<OutgoingFile>?,
+    count: Int,
     canAdd: Boolean,
     onRemove: (Uri) -> Unit,
     onAddMedia: () -> Unit,
     onAddFiles: () -> Unit,
 ) {
     val hb = Hb.colors
-    Plate {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            when {
-                files == null -> Text("보낼 파일을 확인하는 중…", style = MaterialTheme.typography.bodySmall, color = hb.inkSoft)
-                files.isEmpty() -> Text("보낼 파일이 없습니다. 아래에서 고르세요.", style = MaterialTheme.typography.bodySmall, color = hb.inkSoft)
-                else -> LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(files, key = { it.uri.toString() }) { f -> Thumb(f, onRemove = { onRemove(f.uri) }) }
-                }
-            }
-            Row(Modifier.padding(top = 4.dp)) {
-                TextButton(onClick = onAddMedia, enabled = canAdd) { Text("+ 사진·동영상") }
-                TextButton(onClick = onAddFiles, enabled = canAdd) { Text("+ 파일") }
-            }
+    val gutter = Modifier.padding(horizontal = PANEL_GUTTER)
+    when {
+        files == null -> Box(gutter.size(THUMB.dp).clip(RoundedCornerShape(8.dp)).background(hb.slabRaised))
+        files.isEmpty() -> Text("보낼 파일이 없습니다. 아래에서 고르세요.", style = MaterialTheme.typography.bodySmall, color = hb.onSlabSoft, modifier = gutter)
+        files.size == 1 -> LargeThumb(files.single(), onRemove = { onRemove(files.single().uri) }, modifier = gutter)
+        else -> LazyRow(contentPadding = PaddingValues(horizontal = PANEL_GUTTER), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(files, key = { it.uri.toString() }) { f -> Thumb(f, onRemove = { onRemove(f.uri) }) }
         }
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(gutter, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SlabChip("사진·동영상", onClick = onAddMedia, enabled = canAdd)
+        SlabChip("파일", onClick = onAddFiles, enabled = canAdd)
+        Spacer(Modifier.weight(1f))
+        Text("$count/${TransferProtocol.MAX_FILES}", style = HbType.readout.copy(fontSize = 12.sp), color = hb.onSlabSoft)
+    }
+}
+
+/** A pill on the slab that adds files: "+ 사진·동영상", "+ 파일". */
+@Composable
+private fun SlabChip(text: String, onClick: () -> Unit, enabled: Boolean) {
+    val hb = Hb.colors
+    val shape = RoundedCornerShape(50)
+    Row(
+        Modifier
+            .minimumInteractiveComponentSize()
+            .clip(shape)
+            .border(1.dp, if (enabled) hb.onSlabSoft.copy(alpha = 0.55f) else hb.meterOff, shape)
+            .clickable(enabled = enabled, onClickLabel = "$text 더 고르기", role = Role.Button, onClick = onClick)
+            .heightIn(min = 36.dp)
+            .padding(start = 10.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Add, contentDescription = null, tint = if (enabled) hb.accent else hb.meterOff, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(text, style = HbType.label.copy(fontSize = 12.sp), color = if (enabled) hb.onSlab else hb.onSlabSoft.copy(alpha = 0.5f))
+    }
+}
+
+/** A file's thumbnail (pictures, videos; [Thumbnails]), loaded off the main thread; null until then or without one. */
+@Composable
+private fun rememberThumbnail(file: OutgoingFile): ImageBitmap? {
+    val context = LocalContext.current
+    var bitmap by remember(file.uri) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file.uri) {
+        if (isVisual(file)) bitmap = withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap()
+    }
+    return bitmap
+}
+
+private fun isVisual(file: OutgoingFile) = file.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
+
+/**
+ * The one shared file, the width of the panel: a picture or video as a wide crop, anything else as its type. No
+ * name under it — the summary above is the file's name and size.
+ */
+@Composable
+private fun LargeThumb(file: OutgoingFile, onRemove: () -> Unit, modifier: Modifier = Modifier) {
+    val hb = Hb.colors
+    val image = rememberThumbnail(file)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(if (isVisual(file)) 200.dp else 120.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(hb.slabRaised),
+    ) {
+        if (image != null) {
+            Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            FileGlyph(typeLabel(file), Modifier.align(Alignment.Center))
+        }
+        RemoveButton(file.name, onRemove, Modifier.align(Alignment.TopEnd))
     }
 }
 
 @Composable
 private fun Thumb(file: OutgoingFile, onRemove: () -> Unit) {
     val hb = Hb.colors
-    val context = LocalContext.current
-    val visual = file.mime?.let { it.startsWith("image/") || it.startsWith("video/") } == true
-    var bitmap by remember(file.uri) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(file.uri) {
-        if (visual) bitmap = withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap()
-    }
+    val image = rememberThumbnail(file)
     Column(Modifier.width(THUMB.dp)) {
-        Box(Modifier.size(THUMB.dp).clip(RoundedCornerShape(6.dp)).background(hb.slabRaised)) {
-            val image = bitmap
+        Box(Modifier.size(THUMB.dp).clip(RoundedCornerShape(8.dp)).background(hb.slabRaised)) {
             if (image != null) {
                 Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
-                Text(
-                    typeLabel(file),
-                    style = HbType.label,
-                    color = hb.onSlab,
-                    maxLines = 1,
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 4.dp),
-                )
+                FileGlyph(typeLabel(file), Modifier.align(Alignment.Center), small = true)
             }
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(3.dp)
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x99000000))
-                    .clickable(onClickLabel = "빼기", role = Role.Button, onClick = onRemove),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Close, contentDescription = "${file.name} 빼기", tint = Color.White, modifier = Modifier.size(14.dp))
-            }
+            RemoveButton(file.name, onRemove, Modifier.align(Alignment.TopEnd))
         }
         Text(
             file.name,
             style = MaterialTheme.typography.bodySmall,
-            color = hb.inkSoft,
+            color = hb.onSlabSoft,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.padding(top = 4.dp),
         )
+    }
+}
+
+/** A sheet with a folded corner and the file's type on it, for a file without a thumbnail. */
+@Composable
+private fun FileGlyph(label: String, modifier: Modifier = Modifier, small: Boolean = false) {
+    val hb = Hb.colors
+    val w = if (small) 40.dp else 56.dp
+    Box(modifier.size(width = w, height = w * 1.25f), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.matchParentSize()) {
+            val fold = size.width * 0.3f
+            val sheet = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width - fold, 0f)
+                lineTo(size.width, fold)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(sheet, hb.onSlabSoft.copy(alpha = 0.16f))
+            drawPath(sheet, hb.onSlabSoft.copy(alpha = 0.6f), style = Stroke(width = 1.5.dp.toPx()))
+            val corner = Path().apply {
+                moveTo(size.width - fold, 0f)
+                lineTo(size.width - fold, fold)
+                lineTo(size.width, fold)
+            }
+            drawPath(corner, hb.onSlabSoft.copy(alpha = 0.6f), style = Stroke(width = 1.5.dp.toPx()))
+        }
+        Text(
+            label,
+            style = HbType.label.copy(fontSize = if (small) 10.sp else 12.sp, letterSpacing = 0.4.sp),
+            color = hb.accent,
+            maxLines = 1,
+            modifier = Modifier.padding(top = w * 0.2f),
+        )
+    }
+}
+
+/** The × on a thumbnail: a 22 dp dot in a 36 dp target. */
+@Composable
+private fun RemoveButton(name: String, onRemove: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(36.dp)
+            .clickable(onClickLabel = "빼기", role = Role.Button, onClick = onRemove),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(22.dp).clip(CircleShape).background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Close, contentDescription = "$name 빼기", tint = Color.White, modifier = Modifier.size(14.dp))
+        }
     }
 }
 
@@ -532,45 +681,194 @@ private fun typeLabel(file: OutgoingFile): String {
     }
 }
 
-/** One PC or phone: a checkbox row with its badge, name and a hint (reachable, or which PC it goes through). */
+/** What a target is, for the small glyph on its badge. */
+private enum class DeviceKind { PC, PHONE }
+
+/** [row] (one or two items) side by side as equal tiles of the same height, the page's gutters around them. */
 @Composable
-private fun TargetRow(
+private fun <T> TileGrid(row: List<T>, tile: @Composable (T, Modifier) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp).height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        row.forEach { tile(it, Modifier.weight(1f).fillMaxHeight()) }
+        repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
+/**
+ * One PC or phone to send to: badge, name and a hint (reachable, or which PC it goes through), checked by a tap.
+ * A faceplate like [io.github.jeiel85.homebase.ui.Plate] — depth is the bevel along the bottom — that grows an
+ * amber frame and a check when picked.
+ */
+@Composable
+private fun TargetTile(
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
     mark: PcMark,
+    kind: DeviceKind,
     name: String,
     hint: String,
     led: Color?,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val hb = Hb.colors
-    Plate(Modifier.padding(bottom = 8.dp)) {
-        Row(
+    val frame by animateColorAsState(if (checked) hb.accent else hb.plateEdge, label = "frame")
+    val edge by animateDpAsState(if (checked) 2.dp else 0.dp, label = "edge")
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier
+            .clip(shape)
+            .background(frame)
+            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onToggle)
+            .padding(start = edge, end = edge, top = edge, bottom = edge + 2.dp),
+    ) {
+        Column(
             Modifier
-                .fillMaxWidth()
-                .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onToggle)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxSize()
+                .clip(RoundedCornerShape(if (checked) 8.dp else 10.dp))
+                .background(hb.plate)
+                .background(if (checked) hb.accent.copy(alpha = if (hb.dark) 0.10f else 0.12f) else Color.Transparent)
+                .padding(12.dp),
         ) {
-            Checkbox(
-                checked = checked,
-                onCheckedChange = null,
-                enabled = enabled,
-                colors = CheckboxDefaults.colors(checkedColor = hb.accent, checkmarkColor = Brand.Carbon, uncheckedColor = hb.inkSoft),
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                DeviceBadge(mark, kind)
+                Spacer(Modifier.weight(1f))
+                CheckDot(checked)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                name,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = hb.ink,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.width(8.dp))
-            PcBadge(mark, size = 28.dp)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(name, style = MaterialTheme.typography.titleSmall, color = hb.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (led != null) {
-                        Led(led, size = 6.dp)
-                        Spacer(Modifier.width(5.dp))
-                    }
-                    Text(hint, style = MaterialTheme.typography.bodySmall, color = hb.inkSoft, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                if (led != null) {
+                    Led(led, size = 6.dp, modifier = Modifier.padding(top = 2.dp))
+                    Spacer(Modifier.width(2.dp))
+                }
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = hb.inkSoft, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** The PC's or phone's badge with a small PC or phone glyph on its corner. */
+@Composable
+private fun DeviceBadge(mark: PcMark, kind: DeviceKind) {
+    val hb = Hb.colors
+    Box(Modifier.size(46.dp)) {
+        PcBadge(mark, size = 40.dp)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(hb.plate)
+                .padding(2.dp)
+                .clip(CircleShape)
+                .background(hb.slab),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(10.dp)) {
+                val s = 1.2.dp.toPx()
+                val c = hb.onSlab
+                if (kind == DeviceKind.PC) {
+                    // A monitor on a stand.
+                    drawRoundRect(c, Offset(0f, 0f), GeoSize(size.width, size.height * 0.68f), CornerRadius(1.dp.toPx()), style = Stroke(s))
+                    drawLine(c, Offset(size.width / 2, size.height * 0.68f), Offset(size.width / 2, size.height * 0.92f), s)
+                    drawLine(c, Offset(size.width * 0.25f, size.height * 0.95f), Offset(size.width * 0.75f, size.height * 0.95f), s)
+                } else {
+                    // A phone.
+                    val w = size.width * 0.62f
+                    drawRoundRect(c, Offset((size.width - w) / 2, 0f), GeoSize(w, size.height), CornerRadius(1.5.dp.toPx()), style = Stroke(s))
+                    drawCircle(c, radius = s * 0.6f, center = Offset(size.width / 2, size.height * 0.82f))
                 }
             }
+        }
+    }
+}
+
+/** The tile's check: an empty ring, or a filled amber dot with a check. Decorative — the tile is the checkbox. */
+@Composable
+private fun CheckDot(checked: Boolean) {
+    val hb = Hb.colors
+    val fill by animateColorAsState(if (checked) hb.accent else Color.Transparent, label = "check")
+    Box(
+        Modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(fill)
+            .border(1.5.dp, if (checked) hb.accent else hb.inkSoft.copy(alpha = 0.6f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) Icon(Icons.Filled.Check, contentDescription = null, tint = Brand.Carbon, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** A tile's shape while the PC list is read. */
+@Composable
+private fun PlaceholderTile(modifier: Modifier) {
+    val hb = Hb.colors
+    Column(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(hb.plate)
+            .padding(12.dp),
+    ) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(hb.hairline))
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth(0.7f).height(12.dp).clip(RoundedCornerShape(3.dp)).background(hb.hairline))
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth(0.45f).height(10.dp).clip(RoundedCornerShape(3.dp)).background(hb.hairline))
+    }
+}
+
+/**
+ * The bottom of the screen: who is picked (their badges, overlapping, and names), what is wrong with the files if
+ * anything, and [공유 시작].
+ */
+@Composable
+private fun ShareDock(
+    marks: List<PcMark>,
+    names: List<String>,
+    problem: String?,
+    label: String,
+    enabled: Boolean,
+    onStart: () -> Unit,
+) {
+    val hb = Hb.colors
+    Column(Modifier.fillMaxWidth().background(hb.plate).navigationBarsPadding()) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(hb.hairline))
+        Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp)) {
+            problem?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = hb.danger, modifier = Modifier.padding(bottom = 8.dp))
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = 28.dp).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (marks.isEmpty()) {
+                    Text("보낼 곳을 골라 주세요", style = MaterialTheme.typography.bodySmall, color = hb.inkSoft)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
+                        marks.take(DOCK_BADGES).forEach { mark ->
+                            Box(Modifier.clip(CircleShape).background(hb.plate).padding(2.dp)) { PcBadge(mark, size = 24.dp) }
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        names.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = hb.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            SignalButton(label, onClick = onStart, enabled = enabled)
         }
     }
 }
@@ -609,7 +907,9 @@ internal object Thumbnails {
     }
 }
 
-private const val THUMB = 76
+private const val THUMB = 96
+private const val DOCK_BADGES = 5
+private val PANEL_GUTTER = 16.dp
 private const val PREVIEW_CHARS = 1_000
 
 private fun toast(context: Context, text: String) = Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show()

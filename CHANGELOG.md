@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.56.0 — A share center that looks the part
+
+### Changed
+- **The phone's share center is redrawn.** Choosing Homebase in another app's share menu opened a plain checklist
+  and two buttons. Now what you send sits large on a dark panel under the title: the summary ("사진 4장 · 140KB"),
+  one picture across the width or several as a strip of bigger thumbnails, or the text set off by an amber rule,
+  with **+ 사진·동영상** and **+ 파일** and how many of the 20 are used. PCs and phones are tiles, two to a row,
+  each with its badge, a PC or phone mark, its name and a status light; a picked tile gets an amber frame and a
+  check. At the bottom, the picked devices' badges and names and **공유 시작 · 2곳**. The separate 취소 button is
+  gone: ← at the top and the system back still cancel. What is sent, and when, is unchanged.
+
 ## v0.55.0 — Tapping a file-sending notification shows what you sent
 
 ### Changed
