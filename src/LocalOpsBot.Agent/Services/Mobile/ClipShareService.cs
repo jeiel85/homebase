@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Notifications;
 using LocalOpsBot.Core.Push;
 using Microsoft.Extensions.Logging;
 
@@ -32,7 +33,8 @@ public enum ClipAcceptOutcome
 /// for a push stays here for <see cref="ClipProtocol.OfferLifetime"/> and the phone fetches it — and to a linked PC
 /// with <c>POST /api/v1/clip</c> over the link.</item>
 /// </list>
-/// Nothing here watches the clipboard, and the text is never logged or stored on disk.
+/// Nothing here watches the clipboard, and the text is never logged. What came in and went out is kept in the notification
+/// center (M-70, <see cref="ClipHistory"/>) — the text too, unless it was marked sensitive.
 /// </summary>
 public sealed class ClipShareService
 {
@@ -58,6 +60,7 @@ public sealed class ClipShareService
     private readonly HubLinkService? _hubs;
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
+    private readonly INotificationHistoryStore? _history;
     private readonly object _gate = new();
     private readonly Dictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Offer> _offers = new(StringComparer.Ordinal);
@@ -65,9 +68,10 @@ public sealed class ClipShareService
     private sealed record Offer(string Text, bool Sensitive, DateTimeOffset Ts, HashSet<string> DeviceIds, DateTimeOffset Expires);
 
     public ClipShareService(IMobileDeviceStore devices, IClipKeyStore keys, PushSender? push, HubLinkService? hubs,
-        TimeProvider time, ILogger logger)
+        TimeProvider time, ILogger logger, INotificationHistoryStore? history = null)
     {
         _devices = devices;
+        _history = history;
         _keys = keys;
         _push = push;
         _hubs = hubs;
@@ -137,6 +141,8 @@ public sealed class ClipShareService
         Seen(seenKey);
         _logger.LogInformation("Clipboard text from {Name} ({Chars} chars{Sensitive}) put on the clipboard.",
             device.Name, text.Length, sensitive ? ", sensitive" : "");
+        await RecordAsync(new DeviceNotificationRecord($"clip-in-{envelope.Id}", device.DeviceId, device.Name, device.Kind,
+            ClipHistory.Received, ClipHistory.Title(text.Length, sensitive), ClipHistory.Body(text, sensitive), content.Ts, _time.GetUtcNow()));
         return (ClipAcceptOutcome.Accepted, null);
     }
 
@@ -246,7 +252,29 @@ public sealed class ClipShareService
         _logger.LogInformation("Clipboard text ({Chars} chars{Sensitive}) sent from the Tray: {Outcomes}.", text.Length,
             request.Sensitive ? ", sensitive" : "",
             string.Join(", ", outcomes.Select(o => o.Ok ? $"{o.Name} ok" : $"{o.Name} {o.Error}")));
+        // One entry per device, like files sent (M-66); a target no longer paired or linked has no name to show.
+        foreach (var o in outcomes.Where(o => o.Error != ClipErrors.UnknownTarget))
+        {
+            var kind = ClipTargetKeys.PcId(o.Key) is not null ? DeviceKind.Pc : DeviceKind.Phone;
+            await RecordAsync(new DeviceNotificationRecord($"clip-out-{id}-{o.Key}", ClipTargetKeys.DeviceId(o.Key) ?? ClipTargetKeys.PcId(o.Key) ?? o.Key,
+                o.Name, kind, ClipHistory.Sent, ClipHistory.Title(text.Length, request.Sensitive, ClipHistory.Outcome(o)),
+                ClipHistory.Body(text, request.Sensitive), content.Ts, _time.GetUtcNow()));
+        }
         return new ClipSendResult(outcomes);
+    }
+
+    /// <summary>Keeps one entry in the notification center (M-70); a failure there never fails the clipboard itself.</summary>
+    private async Task RecordAsync(DeviceNotificationRecord record)
+    {
+        if (_history is null) return;
+        try
+        {
+            await _history.AddAsync(record, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not keep clipboard text in the notification center");
+        }
     }
 
     private async Task<ClipSendOutcome> SendOneAsync(string key, string id, ClipContent content, CancellationToken ct)

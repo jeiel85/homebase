@@ -28,6 +28,9 @@ public partial class NotificationCenterPanel : UserControl
     private const string SentFilter = "\u0001files-sent";
     // Remote commands phones asked this PC for (M-69).
     private const string CommandsFilter = "\u0001commands";
+    // Clipboard text that came in and went out (M-70).
+    private const string ClipReceivedFilter = "\u0001clip-received";
+    private const string ClipSentFilter = "\u0001clip-sent";
 
     private readonly List<HistoryEntry> _entries = new();
     private DateTimeOffset _seenAtOpen;
@@ -240,6 +243,16 @@ public partial class NotificationCenterPanel : UserControl
             if (received > 0) FilterPanel.Children.Add(FilterTile(L.CenterFilesReceived, ReceivedFilter, received, pc: null));
             if (sent > 0) FilterPanel.Children.Add(FilterTile(L.CenterFilesSent, SentFilter, sent, pc: null));
         }
+        var clipIn = _entries.Count(e => Matches(e, ClipReceivedFilter));
+        var clipOut = _entries.Count(e => Matches(e, ClipSentFilter));
+        if (clipIn + clipOut > 0)
+        {
+            var clips = Hb.Label(L.CenterClipHead, Hb.InkSoft, 11);
+            clips.Margin = new Thickness(6, 12, 0, 6);
+            FilterPanel.Children.Add(clips);
+            if (clipIn > 0) FilterPanel.Children.Add(FilterTile(L.CenterClipReceived, ClipReceivedFilter, clipIn, pc: null));
+            if (clipOut > 0) FilterPanel.Children.Add(FilterTile(L.CenterClipSent, ClipSentFilter, clipOut, pc: null));
+        }
         var commands = _entries.Count(e => Matches(e, CommandsFilter));
         if (commands > 0) FilterPanel.Children.Add(FilterTile(L.CenterCommands, CommandsFilter, commands, pc: null));
 
@@ -317,6 +330,8 @@ public partial class NotificationCenterPanel : UserControl
         ReceivedFilter => L.CenterFilesReceived,
         SentFilter => L.CenterFilesSent,
         CommandsFilter => L.CenterCommands,
+        ClipReceivedFilter => L.CenterClipReceived,
+        ClipSentFilter => L.CenterClipSent,
         _ => key,
     };
 
@@ -329,6 +344,8 @@ public partial class NotificationCenterPanel : UserControl
         ReceivedFilter => e.Kind == HistoryKind.Device && e.App == TransferHistory.Received,
         SentFilter => e.Kind == HistoryKind.Device && e.App == TransferHistory.Sent,
         CommandsFilter => e.Kind == HistoryKind.Device && e.App == RemoteCommandProtocol.HistoryApp,
+        ClipReceivedFilter => e.Kind == HistoryKind.Device && e.App == ClipHistory.Received,
+        ClipSentFilter => e.Kind == HistoryKind.Device && e.App == ClipHistory.Sent,
         var name => e.Kind == HistoryKind.Device && e.Source == name,
     };
 
@@ -401,6 +418,19 @@ public partial class NotificationCenterPanel : UserControl
         {
             var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(L.CenterOpenFolder));
             link.Click += (_, _) => OpenReceivedFolder();
+            folderLink = new TextBlock(link) { Style = Res<Style>("Type.Micro"), Margin = new Thickness(0, 4, 0, 0) };
+        }
+        // Clipboard text kept in an entry goes back on the clipboard (M-70); sensitive text was never kept.
+        else if (e.Kind == HistoryKind.Device && ClipHistory.IsClip(e.App) && !string.IsNullOrEmpty(e.Body))
+        {
+            var run = new System.Windows.Documents.Run(L.CenterCopy);
+            var link = new System.Windows.Documents.Hyperlink(run);
+            var text = e.Body;
+            link.Click += async (_, _) =>
+            {
+                var ok = await ClipboardShare.PutAsync(text, sensitive: false);
+                run.Text = ok ? L.CenterCopied : L.ClipBusy;
+            };
             folderLink = new TextBlock(link) { Style = Res<Style>("Type.Micro"), Margin = new Thickness(0, 4, 0, 0) };
         }
 

@@ -320,3 +320,54 @@ public static class ClipErrors
     /// <summary>Any other failure.</summary>
     public const string Failed = "failed";
 }
+
+/// <summary>
+/// Clipboard text in the PC notification center (DECISIONS M-70), beside the files: what came in and what went out,
+/// with the text itself — its first <see cref="KeptChars"/> characters — unless the sender marked it sensitive (a
+/// password manager's), which is never kept. The Tray's "clipboard" filters pick entries by these apps.
+/// </summary>
+public static class ClipHistory
+{
+    public const string Received = "받은 클립보드";
+    public const string Sent = "보낸 클립보드";
+
+    /// <summary>Characters of the text kept in an entry (the notification center lists at most 2,000 of a body).</summary>
+    public const int KeptChars = 2000;
+
+    public static bool IsClip(string? app) => app is Received or Sent;
+
+    /// <summary>
+    /// "텍스트 1,234자", then what was not kept (" · 민감한 내용이라 보관 안 함", " · 앞 2,000자만 보관"), then
+    /// <paramref name="outcome"/> when there is one (a send's "보냄" or "실패: …").
+    /// </summary>
+    public static string Title(int chars, bool sensitive, string? outcome = null)
+    {
+        var title = $"텍스트 {chars.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}자";
+        if (sensitive) title += " · 민감한 내용이라 보관 안 함";
+        else if (chars > KeptChars) title += $" · 앞 {KeptChars.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}자만 보관";
+        return string.IsNullOrEmpty(outcome) ? title : $"{title} · {outcome}";
+    }
+
+    /// <summary>The text kept in the entry: none when sensitive, else at most <see cref="KeptChars"/>, never half a surrogate pair.</summary>
+    public static string? Body(string text, bool sensitive)
+    {
+        if (sensitive || text.Length == 0) return null;
+        if (text.Length <= KeptChars) return text;
+        var cut = char.IsHighSurrogate(text[KeptChars - 1]) ? KeptChars - 1 : KeptChars;
+        return text[..cut];
+    }
+
+    /// <summary>How a send to one device went, in words for the entry's title.</summary>
+    public static string Outcome(ClipSendOutcome o) => o.Ok ? "보냄" : "실패: " + o.Error switch
+    {
+        ClipErrors.NoUserSession => "그 PC에 로그인한 사용자가 없음",
+        ClipErrors.Unreachable => "닿지 않음",
+        ClipErrors.Unsupported => "그 PC의 Homebase가 오래됨",
+        ClipErrors.Rejected => "그 PC가 거절함",
+        ClipErrors.PushFailed => "휴대폰에 알리지 못함",
+        ClipErrors.KeyNeeded => "암호 키를 맞추지 못함",
+        ClipErrors.ClipboardBusy => "그 PC의 클립보드가 사용 중",
+        ClipErrors.Invalid => "받는 쪽에서 열지 못함",
+        _ => "알 수 없는 오류",
+    };
+}

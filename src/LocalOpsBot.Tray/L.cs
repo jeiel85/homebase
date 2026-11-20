@@ -142,6 +142,11 @@ public static class L
     public static string CenterFilesHead => T("FILES", "파일");
     public static string CenterOpenFolder => T("Open folder", "폴더 열기");
     public static string CenterCommands => T("Remote commands", "원격 명령");
+    public static string CenterClipHead => T("CLIPBOARD", "클립보드");
+    public static string CenterClipReceived => T("Received clipboard", "받은 클립보드");
+    public static string CenterClipSent => T("Sent clipboard", "보낸 클립보드");
+    public static string CenterCopy => T("Copy to the clipboard", "클립보드에 복사");
+    public static string CenterCopied => T("Copied", "복사했습니다");
     public static string ToastOpen => T("Open", "열기");
 
     // ── Remote commands (DECISIONS M-69) ──

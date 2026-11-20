@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import io.github.jeiel85.homebase.MainActivity
 import io.github.jeiel85.homebase.R
 import io.github.jeiel85.homebase.net.ClipProtocol
 import io.github.jeiel85.homebase.net.ShareRelay
@@ -14,8 +15,8 @@ import io.github.jeiel85.homebase.push.PushNotifier
 
 /**
  * Notifications about text a PC sent (DECISIONS M-62), in their own quiet channel: no sound, no
- * vibration — the user just sent it themselves. Not recorded in the notification center, which keeps
- * alerts, not clipboard contents.
+ * vibration — the user just sent it themselves. A tap on "copied" opens the notification center on
+ * "받은 클립보드" with that text open, to read, copy again or delete (M-70).
  */
 object ClipNotifier {
     private const val CHANNEL_ID = "hb.clip"
@@ -23,6 +24,10 @@ object ClipNotifier {
 
     /** How long "copied" stays in the shade: it reports something done, not something to do. */
     private const val COPIED_TIMEOUT_MS = 2 * 60_000L
+
+    /** [MainActivity] opens the notification center on "받은 클립보드", with [EXTRA_CLIP_ID]'s entry open. */
+    const val ACTION_OPEN_RECEIVED = "io.github.jeiel85.homebase.action.OPEN_RECEIVED_CLIPS"
+    const val EXTRA_CLIP_ID = "io.github.jeiel85.homebase.RECEIVED_CLIP_ID"
 
     /** Characters of the text shown in the notification (never for sensitive text). */
     private const val PREVIEW_CHARS = 120
@@ -46,6 +51,7 @@ object ClipNotifier {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
+            .setContentIntent(openReceived(context, id))
             .setAutoCancel(true)
             .setTimeoutAfter(COPIED_TIMEOUT_MS)
             .build()
@@ -83,6 +89,17 @@ object ClipNotifier {
             .build()
         post(context, id, notification)
     }
+
+    /** The "copied" notification's tap: the received texts in the notification center, [id]'s open. */
+    private fun openReceived(context: Context, id: String): PendingIntent = PendingIntent.getActivity(
+        context,
+        "clip-open:$id".hashCode(),
+        Intent(context, MainActivity::class.java)
+            .setAction(ACTION_OPEN_RECEIVED)
+            .putExtra(EXTRA_CLIP_ID, id)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     /** Takes [id]'s notification away (its text was fetched). */
     fun cancel(context: Context, id: String) {

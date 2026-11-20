@@ -23,6 +23,8 @@ import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
+import io.github.jeiel85.homebase.clip.ClipNotifier
+import io.github.jeiel85.homebase.push.ClipHistory
 import io.github.jeiel85.homebase.push.FileHistory
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
@@ -53,7 +55,10 @@ class MainActivity : ComponentActivity() {
     /** Where a push notification tapped while the app is already open leads (a PC, or the notification center). */
     private var tappedRoute by mutableStateOf<String?>(null)
 
-    /** What a tapped upload notification shows in the notification center ("보낸 파일", its transfer); taken once shown. */
+    /**
+     * What a tapped upload or received-text notification shows in the notification center ("보낸 파일" or "받은 클립보드",
+     * its entry open); taken once shown.
+     */
     private var centerFocus by mutableStateOf<CenterFocus?>(null)
 
     private lateinit var store: PcStore
@@ -214,19 +219,21 @@ class MainActivity : ComponentActivity() {
         this?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString?.takeIf(PairingLink::isLink)
 
     /**
-     * The screen a tapped notification opens: the notification center for a bundle summary or an upload's
-     * notification, else the push's PC.
+     * The screen a tapped notification opens: the notification center for a bundle summary, an upload's or a received
+     * text's notification, else the push's PC.
      */
     private fun Intent?.pushRoute(): String? {
         val tapped = this ?: return null
         return when (tapped.action) {
-            PushNotifier.ACTION_OPEN_CENTER, UploadNotifier.ACTION_OPEN_SENT -> ROUTE_NOTIFICATIONS
+            PushNotifier.ACTION_OPEN_CENTER, UploadNotifier.ACTION_OPEN_SENT, ClipNotifier.ACTION_OPEN_RECEIVED -> ROUTE_NOTIFICATIONS
             else -> tapped.getStringExtra(PushNotifier.EXTRA_PC_ID)
         }
     }
 
-    /** A tapped upload notification: the sent files, with its transfer open. */
-    private fun Intent?.centerFocus(): CenterFocus? =
-        this?.takeIf { it.action == UploadNotifier.ACTION_OPEN_SENT }
-            ?.let { CenterFocus(FileHistory.SENT, it.getStringExtra(UploadNotifier.EXTRA_TRANSFER_ID)) }
+    /** A tapped upload notification: the sent files, with its transfer open; a received text's: the received texts, it open. */
+    private fun Intent?.centerFocus(): CenterFocus? = when (this?.action) {
+        UploadNotifier.ACTION_OPEN_SENT -> CenterFocus(FileHistory.SENT, getStringExtra(UploadNotifier.EXTRA_TRANSFER_ID))
+        ClipNotifier.ACTION_OPEN_RECEIVED -> CenterFocus(ClipHistory.RECEIVED, getStringExtra(ClipNotifier.EXTRA_CLIP_ID))
+        else -> null
+    }
 }

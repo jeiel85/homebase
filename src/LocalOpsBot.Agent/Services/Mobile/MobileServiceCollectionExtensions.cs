@@ -118,7 +118,8 @@ public static class MobileServiceCollectionExtensions
             return new ClipShareService(sp.GetRequiredService<IMobileDeviceStore>(), sp.GetRequiredService<IClipKeyStore>(),
                 (target, plaintext, ct) => push.SendDirectAsync(target, plaintext, ClipProtocol.PushTtlSeconds, "high", ct),
                 sp.GetRequiredService<HubLinkService>(), sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<ILogger<ClipShareService>>());
+                sp.GetRequiredService<ILogger<ClipShareService>>(),
+                history: sp.GetService<LocalOpsBot.Core.Notifications.INotificationHistoryStore>());
         });
         // Files from a device (M-64): kept under the mobile folder (SYSTEM/Administrators), read by the Tray over its pipe.
         services.AddSingleton(sp => new FileShareService(Path.Combine(MobileDeviceStore.DefaultDirectory, "transfers"),
