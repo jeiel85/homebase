@@ -18,6 +18,9 @@
     <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- The QR scanner below is locked to portrait, which makes Play list "screen.portrait" as a required feature
+         and flag the release. Portrait is how it looks, not something the app needs from the device. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
 
     <!-- Find installed UnifiedPush distributors (ntfy, …); package visibility on API 30+. -->
     <queries>

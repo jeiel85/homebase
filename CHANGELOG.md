@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.57.1 — The Play build no longer asks for a portrait screen
+
+### Fixed
+- **Google Play no longer lists "portrait screen" as something your device must have.** The QR scanner is locked to
+  portrait, and Play read that as a required hardware feature, so every Play release was flagged as limiting which
+  devices can install the app. The app now says portrait is optional. The scanner still opens in portrait, and the
+  devices that can install the app are the same.
+
 ## v0.57.0 — Clipboard history on both ends
 
 ### Added
