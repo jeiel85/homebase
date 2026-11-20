@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.56.2 — The Homebase window opens the moment you click the tray icon
+
+### Fixed
+- **The first click on the tray icon no longer waits 1–3 seconds for the Homebase window.** The window was built
+  on that first click, and its first show did one-time work — creating the window, applying every page's
+  templates, the first layout and paint, compiling all that code — while you waited: measured 1.5–3.4 s from the
+  click, and still 0.5–1 s with the window already built. The tray now does that work once, a few seconds after it
+  starts, off screen and without taking the focus or a taskbar button, then hides the window again. The first click
+  now shows it in about 0.1–0.35 s, like every click after it. A click while it is being prepared (under a second)
+  waits for that and then shows the window where it belongs.
+
 ## v0.56.1 — Your phone's notifications don't come back to it
 
 ### Fixed
