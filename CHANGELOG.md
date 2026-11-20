@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.56.1 — Your phone's notifications don't come back to it
+
+### Fixed
+- **A PC that just started no longer pushes a phone's own notification back to that phone.** With two PCs linked
+  to each other and the phone connected to both, a notification the phone sent while one PC was restarting reached
+  that PC a moment later through the other PC's inbox. The PC relayed it before it had heard which phones the
+  other PC already pushes to, so it skipped nobody and the phone got its own notification again, labelled
+  "Galaxy S24 · 카카오톡". A linked PC now waits for the other PC's first reply about its phones before it relays
+  anything from it. Steady-state relaying was already right; this was the first few seconds after an Agent start.
+
 ## v0.56.0 — A share center that looks the part
 
 ### Changed

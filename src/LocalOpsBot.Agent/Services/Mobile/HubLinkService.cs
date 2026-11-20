@@ -444,6 +444,15 @@ public sealed class HubLinkService : BackgroundService
             while (!ct.IsCancellationRequested)
             {
                 var woken = link.Woken;
+                // Nothing from the hub is relayed before its presence reply says which phones it pushes to
+                // (HubPushHashes): right after a (re)start the inbox can answer first, and a phone's own
+                // notification would then be pushed back to it (M-28). Taken before the check, like Woken.
+                var attempt = link.NextAttempt;
+                if (link.LastDevices is null)
+                {
+                    await attempt.WaitAsync(ct);
+                    continue;
+                }
                 var reply = await link.Client.GetAsync(link.Hub.Endpoints, $"/api/v1/inbox?after={cursor ?? 0}",
                     link.Hub.Token, InboxTimeout, ct);
                 if (!reply.Ok || reply.Read<InboxResponse>() is not { } inbox)
