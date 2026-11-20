@@ -86,7 +86,8 @@ public partial class DashboardWindow : ThemedWindow
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) { _ticks = 0; Refresh(); _timer.Start(); }
-            else { _timer.Stop(); if (!_preview) DashboardPrefs.Save(this, _selected); }
+            // A prewarm's hide keeps the saved size: the window was never where the user put it.
+            else { _timer.Stop(); if (!_preview && !_prewarming) DashboardPrefs.Save(this, _selected); }
             SyncPages();
             if (!IsVisible) SettingsView.Discard();
         };
@@ -754,6 +755,13 @@ public partial class DashboardWindow : ThemedWindow
     private bool _prewarming;
 
     /// <summary>
+    /// Off screen, the nearest monitor may be another, shorter one than the one the window will be shown on:
+    /// fitting to it would shrink the window, and the hide would save that size (<see cref="Prewarm"/>).
+    /// <see cref="ShowNearTray"/> fits the window to the work area it is shown in.
+    /// </summary>
+    protected override bool FitsToWorkArea => !_prewarming;
+
+    /// <summary>
     /// The window's first show did its one-time work — the window handle, every template, the first
     /// layout and paint, and compiling all that code — while the user waited: 1–3 s from a tray click
     /// (0.5–1 s even with the window already built). The tray calls this once soon after it starts, so
@@ -783,8 +791,8 @@ public partial class DashboardWindow : ThemedWindow
     private bool EndPrewarm(bool hide)
     {
         if (!_prewarming) return false;
+        if (hide) Hide(); // still prewarming here, so the hide saves no size
         _prewarming = false;
-        if (hide) Hide();
         ShowInTaskbar = true;
         ShowActivated = true;
         return true;
