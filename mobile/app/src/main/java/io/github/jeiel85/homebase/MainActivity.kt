@@ -23,10 +23,13 @@ import io.github.jeiel85.homebase.mesh.PresenceScheduler
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.NetworkProbe
 import io.github.jeiel85.homebase.net.PairingLink
+import io.github.jeiel85.homebase.push.FileHistory
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
 import io.github.jeiel85.homebase.share.ShareShortcuts
+import io.github.jeiel85.homebase.share.UploadNotifier
 import io.github.jeiel85.homebase.ui.AdviceRequests
+import io.github.jeiel85.homebase.ui.CenterFocus
 import io.github.jeiel85.homebase.ui.HomebaseTheme
 import io.github.jeiel85.homebase.ui.NotificationCenterScreen
 import io.github.jeiel85.homebase.ui.NotificationPriorityScreen
@@ -49,6 +52,9 @@ class MainActivity : ComponentActivity() {
 
     /** Where a push notification tapped while the app is already open leads (a PC, or the notification center). */
     private var tappedRoute by mutableStateOf<String?>(null)
+
+    /** What a tapped upload notification shows in the notification center ("보낸 파일", its transfer); taken once shown. */
+    private var centerFocus by mutableStateOf<CenterFocus?>(null)
 
     private lateinit var store: PcStore
     private lateinit var api: HomebaseApi
@@ -79,6 +85,7 @@ class MainActivity : ComponentActivity() {
         PushRegistrar.scope.launch { ShareShortcuts.sync(app, PcStore(app).all()) }
         // An alert's "AI 조언" button (M-61); not again when the activity is recreated with the same intent.
         if (savedInstanceState == null) askAdviceIfTapped(intent)
+        if (savedInstanceState == null) centerFocus = intent.centerFocus()
         setContent {
             val dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())
             // The navigation bar follows the app's theme choice, not only the system's.
@@ -134,6 +141,8 @@ class MainActivity : ComponentActivity() {
                                 onBack = { route = "" },
                                 onOpenPc = { openPc(it, backTo = ROUTE_NOTIFICATIONS) },
                                 onSettings = { route = ROUTE_SETTINGS },
+                                focus = centerFocus,
+                                onFocused = { centerFocus = null },
                             )
                         }
                         route == "+" -> PairScreen(
@@ -168,6 +177,7 @@ class MainActivity : ComponentActivity() {
             updateTapped++
         }
         intent.pushRoute()?.let { tappedRoute = it }
+        intent.centerFocus()?.let { centerFocus = it }
         askAdviceIfTapped(intent)
     }
 
@@ -203,9 +213,20 @@ class MainActivity : ComponentActivity() {
     private fun Intent?.pairingLink(): String? =
         this?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString?.takeIf(PairingLink::isLink)
 
-    /** The screen a tapped push notification opens: the notification center for a bundle summary, else its PC. */
+    /**
+     * The screen a tapped notification opens: the notification center for a bundle summary or an upload's
+     * notification, else the push's PC.
+     */
     private fun Intent?.pushRoute(): String? {
         val tapped = this ?: return null
-        return if (tapped.action == PushNotifier.ACTION_OPEN_CENTER) ROUTE_NOTIFICATIONS else tapped.getStringExtra(PushNotifier.EXTRA_PC_ID)
+        return when (tapped.action) {
+            PushNotifier.ACTION_OPEN_CENTER, UploadNotifier.ACTION_OPEN_SENT -> ROUTE_NOTIFICATIONS
+            else -> tapped.getStringExtra(PushNotifier.EXTRA_PC_ID)
+        }
     }
+
+    /** A tapped upload notification: the sent files, with its transfer open. */
+    private fun Intent?.centerFocus(): CenterFocus? =
+        this?.takeIf { it.action == UploadNotifier.ACTION_OPEN_SENT }
+            ?.let { CenterFocus(FileHistory.SENT, it.getStringExtra(UploadNotifier.EXTRA_TRANSFER_ID)) }
 }

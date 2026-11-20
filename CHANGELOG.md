@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.55.0 — Tapping a file-sending notification shows what you sent
+
+### Changed
+- **Tapping a file-sending notification opens the sent files.** The phone's "보내는 중", "보냈습니다",
+  "보내지 못했습니다" and "기다리는 중" notifications did nothing when tapped. They now open the app's
+  notification center on **보낸 파일**, with that transfer's entry already open (to whom, the file names, how it went).
+  While it is still being sent there is no entry for it yet, so you see the files sent before; it appears when the
+  transfer ends. Cancel still works as before.
+
 ## v0.54.2 — A balloon when Windows blocks Homebase's notifications
 
 ### Fixed
