@@ -99,8 +99,9 @@ object PushHistoryRules {
     data class Focus(val group: String?, val expanded: String?)
 
     /**
-     * Where a tapped notification about [category] — an upload's (docs/SHARE_CONVENIENCE.md §4.5) — leads in the
-     * center: that kind's filter when there is any of it, and the entry [id] opened (the newest, if recorded twice).
+     * Where a tapped notification about [category] — an upload's (docs/SHARE_CONVENIENCE.md §4.5), received text's
+     * (M-70) — leads in the center: that kind's filter when there is any of it, and the entry [id] opened (the newest,
+     * if recorded twice).
      * An upload still under way has no entry yet; then the filter alone, or nothing when none was ever recorded.
      */
     fun focus(entries: List<HistoryEntry>, category: String, id: String?): Focus {
@@ -110,23 +111,29 @@ object PushHistoryRules {
     }
 
     /**
-     * What came in since [lastSeenAt]; files and commands this phone sent itself are no news ([FileHistory.SENT],
-     * [CommandHistory.SENT]).
+     * What came in since [lastSeenAt]; files, commands and text this phone sent itself are no news ([FileHistory.SENT],
+     * [CommandHistory.SENT], [ClipHistory.SENT]).
      */
     fun unreadCount(entries: List<HistoryEntry>, lastSeenAt: Long): Int = entries.count { isUnread(it, lastSeenAt) }
 
     fun isUnread(entry: HistoryEntry, lastSeenAt: Long): Boolean =
-        entry.receivedAt > lastSeenAt && entry.category != FileHistory.SENT && entry.category != CommandHistory.SENT
+        entry.receivedAt > lastSeenAt && entry.category != FileHistory.SENT && entry.category != CommandHistory.SENT &&
+            entry.category != ClipHistory.SENT
 
     /** The notification group a category belongs to (the same groups as the receive settings, M-25). */
     fun groupOf(category: String): NotificationGroup? = NotificationGroups.ALL.firstOrNull { category in it.categories }
 
-    /** Short label of a category for a tag: its group, "받은 파일" / "보낸 파일" / "보낸 명령", or "테스트" / "기타". */
+    /**
+     * Short label of a category for a tag: its group, "받은 파일" / "보낸 파일" / "받은 클립보드" / "보낸 클립보드" /
+     * "보낸 명령", or "테스트" / "기타".
+     */
     fun categoryLabel(category: String): String = when {
         category == NotificationGroups.TEST -> "테스트"
         category == FileHistory.RECEIVED -> FileHistory.RECEIVED_LABEL
         category == FileHistory.SENT -> FileHistory.SENT_LABEL
         category == CommandHistory.SENT -> CommandHistory.SENT_LABEL
+        category == ClipHistory.RECEIVED -> ClipHistory.RECEIVED_LABEL
+        category == ClipHistory.SENT -> ClipHistory.SENT_LABEL
         else -> groupOf(category)?.label ?: "기타"
     }
 

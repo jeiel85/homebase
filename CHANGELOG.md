@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.57.0 — Clipboard history on both ends
+
+### Added
+- **The text you send between devices is kept, on both ends.** A PC sending text to the phone showed "받은 텍스트를
+  복사했습니다", and tapping it did nothing. Now the tap opens the app's notification center on **받은 클립보드** with that
+  text open: read it whole, **복사** to put it back on the clipboard, or **삭제**. Text the phone sends (share menu,
+  quick settings tile, a PC card's menu) is kept as **보낸 클립보드**, with where it went and how it went. Long text a
+  tap fetched is kept once it is fetched.
+- **The PC's notification center has a 클립보드 section** — **받은 클립보드** (text a phone or another PC put on this
+  clipboard) and **보낸 클립보드** (one entry per device the tray sent to, with "보냄" or why it failed). Click an entry to
+  read the whole text, **클립보드에 복사** to copy it again.
+- Entries keep the text's first 2,000 characters (the title says so when it was longer). Text a password manager
+  marked sensitive keeps only its length. Like other entries, they go after 30 days and can be deleted. The privacy
+  policy says so.
+
 ## v0.56.2 — The Homebase window opens the moment you click the tray icon
 
 ### Fixed

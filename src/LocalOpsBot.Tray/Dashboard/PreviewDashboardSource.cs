@@ -149,6 +149,8 @@ internal sealed class PreviewDashboardSource : IDashboardSource
             new(HistoryKind.Alert, id, now.AddMinutes(-minutesAgo), null, null, null, kind, title, body, severity, status);
         return new HistoryPage(new[]
         {
+            Dev(13, 0.5, "Galaxy S24", DeviceKind.Phone, ClipHistory.Sent, "텍스트 15자 · 보냄", "서울시 중구 세종대로 110"),
+            Dev(12, 0.8, "Galaxy S24", DeviceKind.Phone, ClipHistory.Received, "텍스트 12자", "회의실 B, 오후 3시"),
             Dev(11, 1, "Galaxy S24", DeviceKind.Phone, TransferHistory.Received, "파일 3개 · 12.4 MB", "IMG_0412.jpg\nIMG_0413.jpg\nIMG_0414.jpg"),
             Dev(10, 2, "LAPTOP-JEIEL", DeviceKind.Pc, TransferHistory.Sent, "파일 1개 · 1.8 MB", "보냄\n주간보고.pdf"),
             Dev(9, 3, "Galaxy S24", DeviceKind.Phone, "카카오톡", "김민수", "내일 회의 10시로 옮겨도 될까요?"),

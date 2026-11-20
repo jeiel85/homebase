@@ -420,6 +420,101 @@ public class ClipShareApiTests
         Assert.Equal(404, (await api.HandleRestAsync(Req("GET", ClipProtocol.Path, phoneToken, $"id={push.Id}"), null, default)).Status);
     }
 
+    /// <summary>The notification center's store, as far as clipboard sharing uses it (M-70).</summary>
+    private sealed class HistoryLog : LocalOpsBot.Core.Notifications.INotificationHistoryStore
+    {
+        private readonly List<LocalOpsBot.Core.Notifications.DeviceNotificationRecord> _records = new();
+
+        public IReadOnlyList<LocalOpsBot.Core.Notifications.DeviceNotificationRecord> Records { get { lock (_records) return _records.ToList(); } }
+
+        public Task AddAsync(LocalOpsBot.Core.Notifications.DeviceNotificationRecord record, CancellationToken ct)
+        {
+            lock (_records) _records.Add(record);
+            return Task.CompletedTask;
+        }
+
+        public Task<LocalOpsBot.Core.Notifications.HistoryPage> ListAsync(LocalOpsBot.Core.Notifications.HistoryCursor? after, int limit,
+            CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> ClearDevicesAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    private ClipShareService WithHistory(HistoryLog history, ClipShareService.PushSender? push = null, bool? tray = true) =>
+        new(_store, _keys, push ?? ((_, _, _) => Task.FromResult((true, (string?)null))), hubs: null, _time, NullLogger.Instance, history)
+        {
+            Tray = (_, _) => Task.FromResult(tray),
+        };
+
+    [Fact]
+    public async Task Text_put_on_this_clipboard_is_kept_as_received_once_and_sensitive_text_without_its_words()
+    {
+        var history = new HistoryLog();
+        var clips = WithHistory(history);
+        var device = _store.Add("Galaxy S24", "SM-S921N", PairingService.HashToken("t"));
+        var key = RandomNumberGenerator.GetBytes(32);
+        _keys.Set(ClipTargetKeys.Device(device.DeviceId), key);
+
+        var envelope = Sealed(key, "회의실 B, 3시");
+        Assert.Equal(ClipAcceptOutcome.Accepted, await clips.AcceptAsync(device, envelope, default));
+        Assert.Equal(ClipAcceptOutcome.Accepted, await clips.AcceptAsync(device, envelope, default)); // the same message again
+        await clips.AcceptAsync(device, Sealed(key, "hunter2", sensitive: true), default);
+
+        Assert.Equal(2, history.Records.Count);
+        var plain = history.Records[0];
+        Assert.Equal((ClipHistory.Received, device.DeviceId, "Galaxy S24", DeviceKind.Phone), (plain.App, plain.OriginId, plain.OriginName, plain.OriginKind));
+        Assert.Equal(("텍스트 9자", "회의실 B, 3시"), (plain.Title, plain.Body));
+        var secret = history.Records[1];
+        Assert.Equal(("텍스트 7자 · 민감한 내용이라 보관 안 함", null), (secret.Title, secret.Body));
+    }
+
+    [Fact]
+    public async Task Text_this_pc_could_not_put_on_the_clipboard_is_not_kept()
+    {
+        var history = new HistoryLog();
+        var device = _store.Add("Galaxy", "SM-S921N", PairingService.HashToken("t"));
+        var key = RandomNumberGenerator.GetBytes(32);
+        _keys.Set(ClipTargetKeys.Device(device.DeviceId), key);
+
+        Assert.Equal(ClipAcceptOutcome.ClipboardBusy, await WithHistory(history, tray: false).AcceptAsync(device, Sealed(key, "x"), default));
+        Assert.Equal(ClipAcceptOutcome.NoUserSession, await WithHistory(history, tray: null).AcceptAsync(device, Sealed(key, "x"), default));
+        Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task Text_sent_is_kept_once_per_device_with_how_it_went()
+    {
+        var (ok, _) = Phone("Galaxy");
+        var (offline, _) = Phone("Tab");
+        var history = new HistoryLog();
+        var clips = WithHistory(history, (t, _, _) =>
+            Task.FromResult(t.DeviceId == ok.DeviceId ? (true, (string?)null) : (false, "EndpointOffline")));
+
+        await clips.SendAsync(new ClipSendRequest([ClipTargetKeys.Device(ok.DeviceId), ClipTargetKeys.Device(offline.DeviceId), "device:gone"],
+            "주소: 서울시 중구"), default);
+        await clips.SendAsync(new ClipSendRequest([ClipTargetKeys.Device(ok.DeviceId)], "pw!", Sensitive: true), default);
+
+        var records = history.Records;
+        Assert.Equal(3, records.Count); // the target no longer paired has no entry
+        Assert.All(records, r => Assert.Equal(ClipHistory.Sent, r.App));
+        Assert.Equal(("Galaxy", ok.DeviceId, "텍스트 10자 · 보냄", "주소: 서울시 중구"), (records[0].OriginName, records[0].OriginId, records[0].Title, records[0].Body));
+        Assert.Equal(("Tab", "텍스트 10자 · 실패: 휴대폰에 알리지 못함"), (records[1].OriginName, records[1].Title));
+        Assert.Equal(("텍스트 3자 · 민감한 내용이라 보관 안 함 · 보냄", null), (records[2].Title, records[2].Body));
+    }
+
+    [Fact]
+    public void Long_text_is_kept_up_to_its_first_two_thousand_characters_never_half_a_pair()
+    {
+        var text = new string('가', ClipHistory.KeptChars + 10);
+        Assert.Equal(ClipHistory.KeptChars, ClipHistory.Body(text, false)!.Length);
+        Assert.Equal("텍스트 2,010자 · 앞 2,000자만 보관", ClipHistory.Title(text.Length, false));
+
+        var emoji = new string('a', ClipHistory.KeptChars - 1) + "😀" + "tail";
+        var kept = ClipHistory.Body(emoji, false)!;
+        Assert.Equal(ClipHistory.KeptChars - 1, kept.Length);
+        Assert.False(char.IsHighSurrogate(kept[^1]));
+        Assert.Null(ClipHistory.Body("secret", sensitive: true));
+    }
+
     [Fact]
     public async Task A_failed_push_an_unknown_target_and_bad_text_are_reported_per_target()
     {

@@ -59,6 +59,8 @@ import androidx.compose.ui.unit.sp
 import io.github.jeiel85.homebase.data.PcMark
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.push.CommandHistory
+import io.github.jeiel85.homebase.clip.PhoneClipboard
+import io.github.jeiel85.homebase.push.ClipHistory
 import io.github.jeiel85.homebase.push.FileHistory
 import io.github.jeiel85.homebase.push.HistoryEntry
 import io.github.jeiel85.homebase.push.NotificationGroups
@@ -175,6 +177,13 @@ fun NotificationCenterScreen(
         }
     }
 
+    // A kept text goes back on the clipboard (M-70); sensitive text was never kept, so it has no button.
+    fun copyText(e: HistoryEntry) {
+        val text = e.body ?: return
+        val message = if (PhoneClipboard.write(context, text, sensitive = false)) "클립보드에 복사했습니다" else "클립보드에 넣지 못했습니다"
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
     Column(Modifier.fillMaxSize().background(hb.background)) {
         ConsoleBar(
             title = "알림 센터",
@@ -275,6 +284,11 @@ fun NotificationCenterScreen(
                                 } else {
                                     null
                                 },
+                                onCopy = if (ClipHistory.isClip(e.category) && e.body != null) {
+                                    { copyText(e) }
+                                } else {
+                                    null
+                                },
                                 onDelete = {
                                     PushHistory.remove(context, e)
                                     if (expanded == e.key) expanded = null
@@ -362,11 +376,13 @@ private fun HistoryCard(
     modifier: Modifier = Modifier,
     /** A received file entry: opens its file (shown folded too, so one tap opens it). */
     onOpenFiles: (() -> Unit)? = null,
+    /** A clipboard entry with its text kept: copies it again (shown folded too). */
+    onCopy: (() -> Unit)? = null,
 ) {
     val hb = Hb.colors
     val time = remember(entry.receivedAt) { TIME.format(Instant.ofEpochMilli(entry.receivedAt).atZone(zone)) }
     val kind = PushHistoryRules.categoryLabel(entry.category)
-    // A file transfer or a command this phone sent: no push, so nothing about the shade applies.
+    // A file transfer, a text or a command this phone recorded: nothing about the shade applies.
     val file = isOwnRecord(entry.category)
     // The header line already names the source; the PC sends titles as "카카오톡: 홍길동", so drop the repeat.
     val title = if (expanded) entry.title else entry.title.removePrefix("${entry.source}: ").ifBlank { entry.title }
@@ -445,8 +461,8 @@ private fun HistoryCard(
                     val at = FULL.format(Instant.ofEpochMilli(entry.sentAt).atZone(zone))
                     Text(
                         when (entry.category) {
-                            FileHistory.RECEIVED -> "받음 $at"
-                            FileHistory.SENT, CommandHistory.SENT -> "보냄 $at"
+                            FileHistory.RECEIVED, ClipHistory.RECEIVED -> "받음 $at"
+                            FileHistory.SENT, CommandHistory.SENT, ClipHistory.SENT -> "보냄 $at"
                             else -> "PC 발송 $at"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -454,12 +470,14 @@ private fun HistoryCard(
                         modifier = Modifier.weight(1f),
                     )
                     if (onOpenFiles != null) TextButton(onClick = onOpenFiles) { Text("열기") }
+                    if (onCopy != null) TextButton(onClick = onCopy) { Text("복사") }
                     if (canOpenPc) TextButton(onClick = onOpenPc) { Text("PC 열기") }
                     TextButton(onClick = onDelete) { Text("삭제") }
                 }
-            } else if (onOpenFiles != null) {
+            } else if (onOpenFiles != null || onCopy != null) {
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onOpenFiles) { Text("열기") }
+                    if (onOpenFiles != null) TextButton(onClick = onOpenFiles) { Text("열기") }
+                    if (onCopy != null) TextButton(onClick = onCopy) { Text("복사") }
                 }
             }
         }
@@ -473,6 +491,7 @@ private fun HistoryCard(
  */
 private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): String {
     if (FileHistory.isFile(entry.category)) return FileHistory.header(entry, pcName)
+    if (ClipHistory.isClip(entry.category)) return ClipHistory.header(entry, pcName)
     if (CommandHistory.isCommand(entry.category)) return pcName
     val source = sourceLabel(entry)
     return when {
@@ -485,8 +504,9 @@ private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): Strin
 /** What the notification center opens on: the kind [category] filtered, with the entry [id] of it open. */
 data class CenterFocus(val category: String, val id: String?)
 
-/** Entries this phone made itself — files received and sent, commands sent — rather than pushes it was sent. */
-private fun isOwnRecord(category: String): Boolean = FileHistory.isFile(category) || CommandHistory.isCommand(category)
+/** Entries this phone made itself — files and text received and sent, commands sent — rather than pushes it was sent. */
+private fun isOwnRecord(category: String): Boolean =
+    FileHistory.isFile(category) || ClipHistory.isClip(category) || CommandHistory.isCommand(category)
 
 /** An app for forwarded notifications, a Korean label for alert kinds. */
 private fun sourceLabel(entry: HistoryEntry): String =

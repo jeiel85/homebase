@@ -86,7 +86,7 @@ class PushReceiver : BroadcastReceiver() {
                 handleEndpoints(context, plain)
                 return
             }
-            // Text a PC sent by hand (DECISIONS M-62): onto the clipboard, never into the notification center.
+            // Text a PC sent by hand (DECISIONS M-62): onto the clipboard, kept as "받은 클립보드" (M-70).
             ClipProtocol.PUSH_KIND -> {
                 ClipShare.receive(context, plain)
                 return

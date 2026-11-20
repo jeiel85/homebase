@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.data.PcStore
+import io.github.jeiel85.homebase.net.ClipContent
 import io.github.jeiel85.homebase.net.ClipCrypto
 import io.github.jeiel85.homebase.net.ClipProtocol
 import io.github.jeiel85.homebase.net.ClipPush
@@ -13,6 +14,8 @@ import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.RelayPhone
 import io.github.jeiel85.homebase.net.ShareRelay
 import io.github.jeiel85.homebase.net.UnauthorizedException
+import io.github.jeiel85.homebase.push.ClipHistory
+import io.github.jeiel85.homebase.push.PushHistory
 import io.github.jeiel85.homebase.push.RecentPushIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -81,10 +84,40 @@ object ClipShare {
 
     private suspend fun send(context: Context, api: HomebaseApi, pc: PcEntry, text: String, sensitive: Boolean, phones: List<RelayPhone>): String {
         problem(text)?.let { return it }
+        val (line, outcome) = attempt(context, api, pc, text, sensitive, phones)
+        // "보낸 클립보드" in the notification center (M-70): to whom, how it went, and the text unless it is sensitive.
+        withContext(Dispatchers.IO) {
+            try {
+                val current = PcStore(context).get(pc.pcId) ?: pc
+                PushHistory.record(
+                    context,
+                    ClipHistory.sent(
+                        ClipProtocol.newId(), current.pcId, current.name, phones.map { it.name }, text, sensitive, outcome,
+                        current.color, System.currentTimeMillis(),
+                    ),
+                )
+                // The tile and the share sheet finish right after; keep the process until the entry is on disk.
+                PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
+            } catch (e: Exception) {
+                Log.w(TAG, "sent text not recorded: ${e.javaClass.simpleName}")
+            }
+        }
+        return line
+    }
+
+    /** One send and what came of it: a line for a toast, and a short one for the notification center. */
+    private suspend fun attempt(
+        context: Context,
+        api: HomebaseApi,
+        pc: PcEntry,
+        text: String,
+        sensitive: Boolean,
+        phones: List<RelayPhone>,
+    ): Pair<String, String> {
         // The entry the caller holds may predate a key agreed meanwhile (the registrar's, another send).
         val current = withContext(Dispatchers.IO) { PcStore(context).get(pc.pcId) } ?: pc
         val name = current.displayName
-        val tooOld = "${name}의 Homebase를 업데이트하세요"
+        val tooOld = "${name}의 Homebase를 업데이트하세요" to "실패: PC의 Homebase가 오래됨"
         val to = phones.map { it.deviceId }
         return try {
             val stored = ClipCrypto.decodeKey(current.clipKey)
@@ -98,30 +131,42 @@ object ClipShare {
                 ClipSendResult.Sent -> {
                     if (phones.isEmpty()) {
                         remember(context, current.pcId)
-                        "${name}에 보냈습니다"
+                        "${name}에 보냈습니다" to SENT
                     } else {
                         // A PC that took `to` always answers with `forwarded`; without it, it pasted the text itself.
-                        "${name}이(가) 다른 휴대폰에 넘기지 못해 PC 클립보드에 넣었습니다"
+                        "${name}이(가) 다른 휴대폰에 넘기지 못해 PC 클립보드에 넣었습니다" to "PC 클립보드에 들어감(넘기지 못함)"
                     }
                 }
                 is ClipSendResult.Relayed -> if (phones.isEmpty()) {
                     remember(context, current.pcId)
-                    "${name}에 보냈습니다"
+                    "${name}에 보냈습니다" to SENT
                 } else {
-                    relayedLine(r.forwarded, phones, name)
+                    relayedLine(r.forwarded, phones, name) to relayedOutcome(r.forwarded, phones)
                 }
-                ClipSendResult.NoUserSession -> "${name}에 로그인한 사용자가 없습니다"
-                ClipSendResult.ClipboardBusy -> "${name}의 클립보드가 사용 중이었습니다. 다시 보내세요"
-                ClipSendResult.KeyNeeded -> "${name}와(과) 암호 키를 맞추지 못했습니다. 다시 보내세요"
+                ClipSendResult.NoUserSession -> "${name}에 로그인한 사용자가 없습니다" to "실패: PC에 로그인한 사용자가 없음"
+                ClipSendResult.ClipboardBusy -> "${name}의 클립보드가 사용 중이었습니다. 다시 보내세요" to "실패: PC의 클립보드가 사용 중"
+                ClipSendResult.KeyNeeded -> "${name}와(과) 암호 키를 맞추지 못했습니다. 다시 보내세요" to "실패: 암호 키를 맞추지 못함"
                 ClipSendResult.Unsupported -> tooOld
-                ClipSendResult.Rejected -> "${name}이(가) 텍스트를 받지 않았습니다"
-                is ClipSendResult.Failed -> "${name}에 보내지 못했습니다: ${r.reason}"
+                ClipSendResult.Rejected -> "${name}이(가) 텍스트를 받지 않았습니다" to "실패: PC가 받지 않음"
+                is ClipSendResult.Failed -> "${name}에 보내지 못했습니다: ${r.reason}" to "실패: ${r.reason}"
             }
         } catch (_: UnauthorizedException) {
-            "${name}에서 이 휴대폰의 연결이 해제되었습니다. 다시 페어링하세요."
+            "${name}에서 이 휴대폰의 연결이 해제되었습니다. 다시 페어링하세요." to "실패: 연결이 해제됨"
         } catch (e: Exception) {
             Log.i(TAG, "clipboard to ${current.name} failed: ${e.message}")
-            "${name}에 닿지 않습니다"
+            "${name}에 닿지 않습니다" to "실패: PC에 닿지 않음"
+        }
+    }
+
+    private const val SENT = "보냄"
+
+    /** A relayed send in the notification center's words: "보냄", "실패: …", or "일부만 보냄 — Galaxy Tab S9 실패". */
+    internal fun relayedOutcome(forwarded: List<Forwarded>, phones: List<RelayPhone>): String {
+        val failed = phones.filterNot { p -> forwarded.any { it.deviceId == p.deviceId && it.ok } }
+        return when {
+            failed.isEmpty() -> SENT
+            failed.size == phones.size -> "실패: 다른 휴대폰에 넘기지 못함"
+            else -> "일부만 보냄 — ${ShareRelay.names(failed.map { it.name })} 실패"
         }
     }
 
@@ -192,6 +237,7 @@ object ClipShare {
             val text = content.text ?: return "시간이 지나 받을 수 없습니다"
             ClipNotifier.cancel(context, id)
             if (PhoneClipboard.write(context, text, content.sensitive)) {
+                withContext(Dispatchers.IO) { record(context, pc, id, text, content) }
                 "${name}에서 받은 텍스트를 복사했습니다 (${String.format(java.util.Locale.ROOT, "%,d", text.length)}자)"
             } else {
                 "클립보드에 넣지 못했습니다"
@@ -236,9 +282,28 @@ object ClipShare {
         if (text == null) {
             ClipNotifier.offer(context, pc.pcId, name, push.id, content.chars, content.from)
         } else if (PhoneClipboard.write(context, text, content.sensitive)) {
+            // Kept before the notification goes up, so its tap finds the entry (M-70).
+            record(context, pc, push.id, text, content)
+            PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
             ClipNotifier.copied(context, name, text, content.sensitive, push.id, content.from)
         }
     }
+
+    /** "받은 클립보드" in the notification center (M-70): from whom, and the text unless it is sensitive. */
+    private fun record(context: Context, pc: PcEntry, id: String, text: String, content: ClipContent) {
+        try {
+            val now = System.currentTimeMillis()
+            val sentAt = runCatching { OffsetDateTime.parse(content.ts).toInstant().toEpochMilli() }.getOrDefault(now)
+            PushHistory.record(
+                context,
+                ClipHistory.received(id, pc.pcId, pc.name, content.from, text, content.sensitive, sentAt, pc.color, now),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "received text not recorded: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private const val HISTORY_WRITE_WAIT_MS = 2_000L
 
     /** Whether text stamped [ts] by the PC is too old to put on the clipboard now; unreadable stamps are not. */
     internal fun isStale(ts: String, nowMillis: Long): Boolean {
