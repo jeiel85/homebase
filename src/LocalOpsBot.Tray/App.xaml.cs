@@ -146,6 +146,7 @@ public partial class App : Application
 
         base.OnStartup(e);
         LogUnhandledErrors();
+        CrashRestart.Register(e.Args);
         ApplyLanguage();
         _trayIcon = new TrayIconManager();
 
