@@ -14,6 +14,12 @@ namespace LocalOpsBot.Tray.Services;
 /// updater's <c>Stop-Process</c> are not crashes, so they do not restart it. Restarts for Windows Update and
 /// installers are left out: sign-in and the updater already start the tray then.
 /// </para>
+/// <para>
+/// The API documentation still says a crashed application is not restarted without the user's consent. On
+/// Windows 11 with Windows Error Reporting at its defaults (no policy, no <c>DontShowUI</c>) it was restarted
+/// unattended, about seven seconds after the crash, with nobody at the PC (checked 2026-11-20). Where Windows
+/// Error Reporting is turned off by policy, nothing restarts it and the tray is back at the next sign-in, as before.
+/// </para>
 /// </summary>
 internal static class CrashRestart
 {
