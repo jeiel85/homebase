@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.54.1 — The tray comes back after a crash
+
+### Fixed
+- **The tray comes back after a crash.** A tray that crashed or stopped responding stayed gone until the next
+  sign-in, and with it the phone's live view, file sharing, remote commands and notification forwarding. Windows
+  now starts it again a few seconds later (once it had run for a minute, so a tray failing at start does not
+  loop), and tray.log says so. Quitting from the menu and updates do not restart it. The crash that showed this
+  was Windows running out of virtual memory (emulators, build daemons and many apps at once): any process can
+  fail then, and the tray was one of them.
+
 ## v0.54.0 — Remote commands: lock, media, restart and more from the phone
 
 ### Added
