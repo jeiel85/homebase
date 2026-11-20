@@ -43,6 +43,13 @@ public class ThemedWindow : Window
     // work area, whichever is smaller, so a window moved to a taller monitor gets its limit back.
     private double _configuredMaxHeight = double.PositiveInfinity;
 
+    /// <summary>
+    /// False while the window is shown somewhere the user never sees it (the Homebase window's prewarm, off
+    /// screen): the monitor nearest to it is not the one it will be shown on, so its work area must not
+    /// shrink the window.
+    /// </summary>
+    protected virtual bool FitsToWorkArea => true;
+
     private bool IsContentSized => SizeToContent is SizeToContent.Height or SizeToContent.WidthAndHeight;
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -67,7 +74,7 @@ public class ThemedWindow : Window
     /// </summary>
     private void FitFixedHeight()
     {
-        if (IsContentSized || WindowState != WindowState.Normal || double.IsNaN(Height) || WorkArea() is not { } wa) return;
+        if (!FitsToWorkArea || IsContentSized || WindowState != WindowState.Normal || double.IsNaN(Height) || WorkArea() is not { } wa) return;
         if (Height > wa.Height) Height = wa.Height;
         // Once placed (centered at the old height, or near the tray), keep the whole window on screen.
         if (!double.IsNaN(Top) && (Top < wa.Top || Top + Height > wa.Bottom))

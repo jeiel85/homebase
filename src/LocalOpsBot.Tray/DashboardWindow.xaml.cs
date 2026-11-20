@@ -86,7 +86,8 @@ public partial class DashboardWindow : ThemedWindow
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) { _ticks = 0; Refresh(); _timer.Start(); }
-            else { _timer.Stop(); if (!_preview) DashboardPrefs.Save(this, _selected); }
+            // A prewarm's hide keeps the saved size: the window was never where the user put it.
+            else { _timer.Stop(); if (!_preview && !_prewarming) DashboardPrefs.Save(this, _selected); }
             SyncPages();
             if (!IsVisible) SettingsView.Discard();
         };
@@ -715,7 +716,8 @@ public partial class DashboardWindow : ThemedWindow
     /// </summary>
     public void BringForward()
     {
-        if (!IsVisible)
+        // A prewarm is off screen: show it near the tray as if it had been hidden.
+        if (EndPrewarm(hide: false) || !IsVisible)
         {
             ShowNearTray();
             return;
@@ -732,6 +734,7 @@ public partial class DashboardWindow : ThemedWindow
     // a background process, so the window used to lose focus and hide itself before it even painted.
     public void ShowNearTray()
     {
+        EndPrewarm(hide: false);
         WindowStartupLocation = WindowStartupLocation.Manual;
         var wa = SystemParameters.WorkArea;
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -747,6 +750,52 @@ public partial class DashboardWindow : ThemedWindow
         Topmost = true;
         Topmost = false;
         Focus();
+    }
+
+    private bool _prewarming;
+
+    /// <summary>
+    /// Off screen, the nearest monitor may be another, shorter one than the one the window will be shown on:
+    /// fitting to it would shrink the window, and the hide would save that size (<see cref="Prewarm"/>).
+    /// <see cref="ShowNearTray"/> fits the window to the work area it is shown in.
+    /// </summary>
+    protected override bool FitsToWorkArea => !_prewarming;
+
+    /// <summary>
+    /// The window's first show did its one-time work — the window handle, every template, the first
+    /// layout and paint, and compiling all that code — while the user waited: 1–3 s from a tray click
+    /// (0.5–1 s even with the window already built). The tray calls this once soon after it starts, so
+    /// that work is done ahead: the window is shown off screen, without taking the focus or a taskbar
+    /// button, and hidden again as soon as it has painted. A tray click meanwhile just shows it
+    /// (<see cref="EndPrewarm"/>).
+    /// </summary>
+    internal void Prewarm()
+    {
+        // Only a window that has never been shown: afterwards the work is done and the user may be using it.
+        if (_prewarming || IsVisible || new System.Windows.Interop.WindowInteropHelper(this).Handle != IntPtr.Zero) return;
+        _prewarming = true;
+        ShowActivated = false;
+        ShowInTaskbar = false;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = -32000;
+        Top = SystemParameters.WorkArea.Top;
+        // The first paint raises ContentRendered once; by then everything a tray click would wait for has run.
+        ContentRendered += (_, _) => Dispatcher.BeginInvoke(() => EndPrewarm(hide: true), DispatcherPriority.Background);
+        Show();
+    }
+
+    /// <summary>
+    /// Ends a <see cref="Prewarm"/> still under way: hidden again, or kept for a show the user asked for.
+    /// True if one was under way.
+    /// </summary>
+    private bool EndPrewarm(bool hide)
+    {
+        if (!_prewarming) return false;
+        if (hide) Hide(); // still prewarming here, so the hide saves no size
+        _prewarming = false;
+        ShowInTaskbar = true;
+        ShowActivated = true;
+        return true;
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)

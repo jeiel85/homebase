@@ -187,6 +187,16 @@ public sealed class TrayIconManager : IDisposable
         _updateTimer.Tick += async (_, _) => await DailyCheckAsync();
         _updateTimer.Start();
 
+        // Build and paint the Homebase window once, unseen, a few seconds after start-up, so the first tray click
+        // shows it at once instead of after 1–3 s of one-time work (DashboardWindow.Prewarm).
+        _ = Application.Current?.Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            if (Closing || _popup is not null) return;
+            try { Dashboard().Prewarm(); }
+            catch (Exception ex) { TrayLog.Warn("Dashboard", "Preparing the Homebase window failed; it is built on the first click instead", ex); }
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
         // First launch for this Windows user: walk them through the connection checklist
         // once. Guarded so a window failure can never take down the tray itself; it only
         // ever shows again on demand from the "Setup checklist" menu item.
