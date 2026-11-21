@@ -42,15 +42,6 @@ class CommandTextTest {
     }
 
     @Test
-    fun the_media_and_volume_buttons_carry_symbols() {
-        assertEquals("⏮", CommandLayout.symbol(RemoteCommandNames.PREVIOUS))
-        assertEquals("⏯", CommandLayout.symbol(RemoteCommandNames.PLAY_PAUSE))
-        assertEquals("⏭", CommandLayout.symbol(RemoteCommandNames.NEXT))
-        assertEquals("🔇", CommandLayout.symbol(RemoteCommandNames.MUTE))
-        assertEquals(null, CommandLayout.symbol(RemoteCommandNames.LOCK))
-    }
-
-    @Test
     fun results_say_what_happened_in_the_apps_words() {
         val pc = "집 PC"
         assertEquals("집 PC을(를) 잠갔습니다", CommandText.resultLine(pc, "lock", "잠그기", CommandOutcome.Ok(CommandStates.DONE)))

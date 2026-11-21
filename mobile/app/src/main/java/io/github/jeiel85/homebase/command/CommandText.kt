@@ -108,8 +108,8 @@ object CommandText {
 }
 
 /**
- * How the PC screen's "원격 명령" card lays the listed commands out (DECISIONS M-69): lock and screen off, then
- * media [⏮ 이전] [⏯ 재생/일시정지] [⏭ 다음], volume [🔇 음소거] [− 소리 작게] [+ 소리 크게], restart and sleep, then custom
+ * How the PC screen's "원격 명령" section lays the listed commands out (DECISIONS M-69): lock and screen off, then
+ * media [이전] [재생/일시정지] [다음], volume [음소거] [소리 작게] [소리 크게], restart and sleep, then custom
  * commands — and any a newer PC adds — in the PC's order, two to a row. Only what the PC listed; a row with nothing
  * listed is left out. Pure, so unit tests pin it.
  */
@@ -128,16 +128,5 @@ object CommandLayout {
         val fixed = listOf(BASIC, MEDIA, VOLUME, SYSTEM).map { row -> row.mapNotNull { byName[it] } }
         val rest = commands.filter { it.name !in PLACED }.chunked(PER_ROW)
         return (fixed + rest).filter { it.isNotEmpty() }
-    }
-
-    /** The symbol shown above a button's label, or null (an icon, or none). */
-    fun symbol(name: String): String? = when (name) {
-        RemoteCommandNames.PREVIOUS -> "⏮"
-        RemoteCommandNames.PLAY_PAUSE -> "⏯"
-        RemoteCommandNames.NEXT -> "⏭"
-        RemoteCommandNames.MUTE -> "🔇"
-        RemoteCommandNames.VOLUME_DOWN -> "−"
-        RemoteCommandNames.VOLUME_UP -> "+"
-        else -> null
     }
 }

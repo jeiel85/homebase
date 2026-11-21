@@ -189,8 +189,9 @@ public sealed class ClipShareService
     public SharePhones RelayPhones(MobileDeviceInfo asking)
     {
         if (_push is null) return new SharePhones(MobileProtocol.Schema, Array.Empty<SharePhone>());
+        var replaced = PhoneReinstalls.Superseded(_devices);
         var phones = _devices.PushTargets()
-            .Where(t => t.DeviceId != asking.DeviceId && _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
+            .Where(t => t.DeviceId != asking.DeviceId && !replaced.Contains(t.DeviceId) && _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
             .GroupBy(t => t.DeviceId, StringComparer.Ordinal)
             .Select(g => g.First())
             .Select(t => new SharePhone(t.DeviceId, t.DeviceName, t.Subscription.Supports(ClipProtocol.Feature),
@@ -226,10 +227,12 @@ public sealed class ClipShareService
     /// </summary>
     public IReadOnlyList<ClipTarget> Targets()
     {
+        var replaced = PhoneReinstalls.Superseded(_devices);
         var phones = _push is null
             ? Enumerable.Empty<ClipTarget>()
             : _devices.PushTargets()
-                .Where(t => t.Subscription.Supports(ClipProtocol.Feature) && _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
+                .Where(t => t.Subscription.Supports(ClipProtocol.Feature) && !replaced.Contains(t.DeviceId) &&
+                            _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
                 .Select(t => new ClipTarget(ClipTargetKeys.Device(t.DeviceId), t.DeviceName, DeviceKind.Phone))
                 .OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase);
         var pcs = (_hubs?.Hubs() ?? Array.Empty<LinkedHub>())

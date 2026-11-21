@@ -80,10 +80,12 @@ public sealed class DeviceHub
         _board.Retain(devices.Select(d => d.DeviceId));
         foreach (var gone in _liveFrames.Keys.Where(id => devices.All(d => d.DeviceId != id)).ToList())
             _liveFrames.TryRemove(gone, out _);
+        // Not the old entry a reinstalled phone left behind (M-72): it would show as another phone of the same name.
+        var replaced = PhoneReinstalls.Superseded(devices);
         return new(
             MobileProtocol.Schema,
             new HubEntry(_devices.PcId, _pcName, _agentVersion, _selfStatus()),
-            _board.Entries(devices),
+            _board.Entries(devices.Where(d => !replaced.Contains(d.DeviceId))),
             OwnPushHashes() is { Count: > 0 } hashes ? hashes : null);
     }
 

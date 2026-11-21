@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,6 +59,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -898,7 +900,16 @@ private fun AdviceCard(state: AdviceUi, onAsk: () -> Unit, onClose: () -> Unit) 
     val body = androidx.compose.material3.MaterialTheme.typography.bodyMedium
     val small = androidx.compose.material3.MaterialTheme.typography.bodySmall
     if (state == AdviceUi.Idle) {
-        QuietButton("AI 조언 받기", onClick = onAsk, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        // A faceplate key like the remote commands under it, not an outlined button of its own.
+        Plate(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp), onClick = onAsk) {
+            Text(
+                "AI 조언 받기",
+                style = HbType.label.copy(fontSize = 13.sp, letterSpacing = 0.4.sp),
+                color = hb.ink,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically),
+            )
+        }
         return
     }
     Plate(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {

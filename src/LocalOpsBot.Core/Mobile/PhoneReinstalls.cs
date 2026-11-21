@@ -28,4 +28,10 @@ public static class PhoneReinstalls
         }
         return stale;
     }
+
+    /// <summary>
+    /// The same over what this PC has paired. Lists of devices shown to people (the group's device lists, where to send)
+    /// leave these out (M-72): it only hides them — one that reports again is not marked any more and shows again.
+    /// </summary>
+    public static IReadOnlySet<string> Superseded(IMobileDeviceStore store) => Superseded(store.List());
 }

@@ -166,10 +166,13 @@ public sealed class FileSendService : BackgroundService
     /// </summary>
     public IReadOnlyList<ClipTarget> Targets()
     {
+        // Not the old entry a reinstalled phone left behind (M-72): its endpoint no longer reaches an app.
+        var replaced = PhoneReinstalls.Superseded(_devices);
         var phones = _push is null
             ? Enumerable.Empty<ClipTarget>()
             : _devices.PushTargets()
-                .Where(t => t.Subscription.Supports(FileSendProtocol.Feature) && _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
+                .Where(t => t.Subscription.Supports(FileSendProtocol.Feature) && !replaced.Contains(t.DeviceId) &&
+                            _keys.Get(ClipTargetKeys.Device(t.DeviceId)) is not null)
                 .Select(t => new ClipTarget(ClipTargetKeys.Device(t.DeviceId), t.DeviceName, DeviceKind.Phone))
                 .OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase);
         var pcs = (_hubs?.Hubs() ?? Array.Empty<LinkedHub>())
