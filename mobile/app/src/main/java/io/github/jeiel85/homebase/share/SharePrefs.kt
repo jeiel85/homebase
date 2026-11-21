@@ -83,3 +83,36 @@ object ShareChoice {
         }
     }
 }
+
+/** Sizes in the share center that follow the screen (#111) — pure, so tests pin them. */
+object ShareLayout {
+    /** The narrowest a target tile may get at font scale 1 — a 46 dp badge, the check and a two-line name. */
+    const val MIN_TILE_DP = 150
+
+    /** Space between tiles and the page's gutters, as [ShareCenterFlow] lays them out. */
+    private const val GAP_DP = 10
+    private const val GUTTERS_DP = 28
+
+    /**
+     * Target tiles in a row for a screen [widthDp] wide at [fontScale]: as many as fit at [MIN_TILE_DP] (wider with
+     * larger text), two at least — a phone in portrait — and four at most, so a tablet or landscape screen doesn't
+     * stretch two tiles across it.
+     */
+    fun columns(widthDp: Int, fontScale: Float): Int {
+        val tile = MIN_TILE_DP * fontScale.coerceAtLeast(1f) + GAP_DP
+        return ((widthDp - GUTTERS_DP + GAP_DP) / tile).toInt().coerceIn(2, 4)
+    }
+
+    /** Badges the bottom dock draws before it says "+n" for the rest. */
+    const val DOCK_BADGES = 5
+
+    /** The "+n" after the dock's badges for [picked] targets, or null when all of them have a badge. */
+    fun dockOverflow(picked: Int): String? = (picked - DOCK_BADGES).takeIf { it > 0 }?.let { "+$it" }
+
+    /**
+     * Pixels to ask a thumbnail for, to fill [dp] on a screen of [density] without blur: at least 128 (a tiny
+     * thumbnail is not worth a second request) and at most 1,024 (a full-width preview on a tablet — more only
+     * costs memory).
+     */
+    fun thumbnailPx(dp: Int, density: Float): Int = (dp * density).toInt().coerceIn(128, 1024)
+}

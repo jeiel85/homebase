@@ -58,4 +58,37 @@ class ShareCenterRulesTest {
         assertEquals("Cloudflare 경로 — 느릴 수 있음", FileShare.pathLabel(Endpoint(Endpoint.CLOUDFLARE, "pc.example.com", 443, true)))
         assertEquals("Cloudflare 경로 — 느릴 수 있음", FileShare.pathLabel(Endpoint(Endpoint.CLOUDFLARE, "x.trycloudflare.com", 443, true)))
     }
+
+    @Test
+    fun tiles_follow_the_screen_width() {
+        // Phones in portrait (360–411 dp), also with large text: two a row, as before.
+        assertEquals(2, ShareLayout.columns(360, 1f))
+        assertEquals(2, ShareLayout.columns(411, 1f))
+        assertEquals(2, ShareLayout.columns(360, 1.3f))
+        // Landscape phone and tablet: more tiles instead of two stretched ones, four at most.
+        assertEquals(4, ShareLayout.columns(840, 1f))
+        assertEquals(3, ShareLayout.columns(600, 1f))
+        assertEquals(4, ShareLayout.columns(1280, 1f))
+        // Larger text needs wider tiles, so fewer fit.
+        assertEquals(3, ShareLayout.columns(840, 1.5f))
+    }
+
+    @Test
+    fun the_dock_counts_what_has_no_badge() {
+        assertNull(ShareLayout.dockOverflow(0))
+        assertNull(ShareLayout.dockOverflow(ShareLayout.DOCK_BADGES))
+        assertEquals("+1", ShareLayout.dockOverflow(ShareLayout.DOCK_BADGES + 1))
+        assertEquals("+7", ShareLayout.dockOverflow(12))
+    }
+
+    @Test
+    fun thumbnails_are_asked_for_at_the_size_shown() {
+        // A 96 dp thumbnail on xxhdpi (3x) is 288 px — more than the old fixed 256.
+        assertEquals(288, ShareLayout.thumbnailPx(96, 3f))
+        // A full-width preview on a 411 dp phone at 2.625x.
+        assertEquals(1024, ShareLayout.thumbnailPx(411, 2.625f))
+        assertEquals(840, ShareLayout.thumbnailPx(420, 2f))
+        // Not below 128 on a low-density screen.
+        assertEquals(128, ShareLayout.thumbnailPx(96, 0.75f))
+    }
 }

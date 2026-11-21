@@ -430,7 +430,8 @@ public sealed class MobileBridgeServer : BackgroundService
             MobileBridge.OpDevicesList => MobileBridge.Response(id, true, _devices.List()),
             MobileBridge.OpDevicesRevoke => MobileBridge.Response(id,
                 _devices.Revoke((string?)payload?["deviceId"] ?? "")),
-            MobileBridge.OpStatus => MobileBridge.Response(id, true, _api.Status()),
+            MobileBridge.OpStatus => MobileBridge.Response(id, true,
+                _api.Status() with { DevicesVersion = PhoneReinstalls.ListVersion(_devices.List()) }),
             MobileBridge.OpDevicesOverview => _deviceHub is null
                 ? MobileBridge.Response(id, false, error: "unsupported")
                 : MobileBridge.Response(id, true, new DeviceOverview(_deviceHub.Devices(),

@@ -92,8 +92,20 @@ object PushHistoryRules {
     fun add(entries: List<HistoryEntry>, entry: HistoryEntry, now: Long): List<HistoryEntry> =
         prune(listOf(entry) + entries, now)
 
-    fun prune(entries: List<HistoryEntry>, now: Long): List<HistoryEntry> =
-        entries.filter { now - it.receivedAt <= MAX_AGE_MS }.take(MAX_ENTRIES)
+    /**
+     * Newest clipboard entries kept, received and sent together (#117). One keeps up to [ClipHistory.KEPT_CHARS]
+     * characters — about 6 KB of Korean in the file, more than a push can carry — and the whole file is encrypted and
+     * written again on every change: 500 of them would be about 3 MB. 100 keep it near 600 KB at worst.
+     */
+    const val MAX_CLIP_ENTRIES = 100
+
+    fun prune(entries: List<HistoryEntry>, now: Long): List<HistoryEntry> {
+        var clips = 0
+        return entries
+            .filter { now - it.receivedAt <= MAX_AGE_MS }
+            .filter { !ClipHistory.isClip(it.category) || ++clips <= MAX_CLIP_ENTRIES }
+            .take(MAX_ENTRIES)
+    }
 
     /** How the notification center opens for a tapped notification: a kind's filter and the entry opened, either null. */
     data class Focus(val group: String?, val expanded: String?)

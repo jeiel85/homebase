@@ -3,6 +3,7 @@ package io.github.jeiel85.homebase.ui
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -135,8 +136,22 @@ fun NotificationCenterScreen(
         if (groupFilter != null && groupFilter !in groups) groupFilter = null
         if (pcFilter != null && pcs.none { it.first == pcFilter }) pcFilter = null
     }
+    // The entry a tapped notification opened, scrolled to once the list is laid out with its filter (#109).
+    var scrollTo by remember { mutableStateOf<String?>(null) }
+    // A transfer's notification tapped while it was still under way: its entry, opened when it is written (#109).
+    var awaitedCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    var awaitedId by rememberSaveable { mutableStateOf<String?>(null) }
+    // The user took over (picked a filter, opened an entry or a stack, dragged the list): a transfer that finishes
+    // later doesn't move the screen away from what they are reading.
+    fun stopAwaiting() {
+        awaitedCategory = null
+        awaitedId = null
+    }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) stopAwaiting() }
+    }
     // A tapped upload notification: once the history is loaded (an empty list would drop the filter), its kind's
-    // filter and its entry open, from the top.
+    // filter and its entry open.
     LaunchedEffect(focus, seenBefore) {
         val wanted = focus ?: return@LaunchedEffect
         if (seenBefore == null) return@LaunchedEffect
@@ -145,9 +160,25 @@ fun NotificationCenterScreen(
         pcFilter = null
         openStack = null
         expanded = view.expanded
-        listState.scrollToItem(0)
+        awaitedCategory = if (view.expanded == null && wanted.id != null) wanted.category else null
+        awaitedId = if (awaitedCategory != null) wanted.id else null
+        if (view.expanded != null) scrollTo = view.expanded else listState.scrollToItem(0)
         // Last: taking the focus restarts this effect, which would cut the scroll short.
         onFocused()
+    }
+    // The awaited transfer's entry came in while the center is open: its kind's filter, it open and in view.
+    LaunchedEffect(history.entries, awaitedId) {
+        val category = awaitedCategory ?: return@LaunchedEffect
+        val id = awaitedId ?: return@LaunchedEffect
+        val view = PushHistoryRules.focus(history.entries, category, id)
+        val key = view.expanded ?: return@LaunchedEffect
+        groupFilter = view.group
+        pcFilter = null
+        openStack = null
+        expanded = key
+        scrollTo = key
+        awaitedCategory = null
+        awaitedId = null
     }
     val shown = remember(entries, groupFilter, pcFilter) {
         entries.filter { e ->
@@ -162,6 +193,19 @@ fun NotificationCenterScreen(
             // Each transfer and each command sent is a card of its own: they are not bundled like notifications of one source.
             Triple(day, dayEntries, PushHistoryRules.stack(dayEntries) { !isOwnRecord(it.category) && rules.resolve(it.category, it.source).bundle })
         }
+    }
+    // What the list starts with before the days, in [LazyColumn]'s order: the restart notice, the empty notice, the
+    // chips and the "no match" line. [scrollTo] counts from them.
+    val showRestarted = restarted
+    val showEmpty = seenBefore != null && entries.isEmpty()
+    val showChips = groups.size > 1 || pcs.size > 1
+    val showNoMatch = entries.isNotEmpty() && shown.isEmpty()
+    val leading = listOf(showRestarted, showEmpty, showChips, showNoMatch).count { it }
+    LaunchedEffect(scrollTo, byDay, openStack) {
+        val key = scrollTo ?: return@LaunchedEffect
+        CenterLayout.indexOf(key, leading, byDay.map { (day, _, rows) -> rows.map { it to "stack:$day:${it.first().bundleKey}" } }, openStack)
+            ?.let { listState.scrollToItem(it) }
+        scrollTo = null
     }
     val scope = rememberCoroutineScope()
     // A received file entry opens the first of its files that is still there (docs/SHARE_CONVENIENCE.md §4.5).
@@ -204,7 +248,7 @@ fun NotificationCenterScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 14.dp),
         ) {
-            if (restarted) {
+            if (showRestarted) {
                 item {
                     Text(
                         "이전 알림 이력을 읽지 못해 새로 시작했습니다.",
@@ -214,26 +258,32 @@ fun NotificationCenterScreen(
                     )
                 }
             }
-            if (seenBefore != null && entries.isEmpty()) {
+            if (showEmpty) {
                 item { EmptyCenter(pushOn, onSettings) }
             }
-            if (groups.size > 1 || pcs.size > 1) {
+            if (showChips) {
                 item {
                     Column(Modifier.padding(top = 12.dp)) {
                         if (groups.size > 1) {
                             ChipRow(
                                 options = groups.map { it to it },
                                 selected = groupFilter,
-                                onSelect = { groupFilter = it },
+                                onSelect = {
+                                    groupFilter = it
+                                    stopAwaiting()
+                                },
                             )
                         }
                         if (pcs.size > 1) {
-                            ChipRow(options = pcs, selected = pcFilter, onSelect = { pcFilter = it })
+                            ChipRow(options = pcs, selected = pcFilter, onSelect = {
+                                pcFilter = it
+                                stopAwaiting()
+                            })
                         }
                     }
                 }
             }
-            if (entries.isNotEmpty() && shown.isEmpty()) {
+            if (showNoMatch) {
                 item {
                     Text(
                         "고른 조건에 맞는 알림이 없습니다.",
@@ -262,7 +312,10 @@ fun NotificationCenterScreen(
                                 open = open,
                                 pcName = nameOf(row.first().pcId, row.first().pcName),
                                 mark = markOf(row.first()),
-                                onToggle = { openStack = if (open) null else stackKey },
+                                onToggle = {
+                                    openStack = if (open) null else stackKey
+                                    stopAwaiting()
+                                },
                                 zone = zone,
                             )
                             Spacer(Modifier.height(if (open) 6.dp else 10.dp))
@@ -277,7 +330,10 @@ fun NotificationCenterScreen(
                                 pcName = nameOf(e.pcId, e.pcName),
                                 mark = markOf(e),
                                 canOpenPc = e.pcId in paired,
-                                onToggle = { expanded = if (expanded == e.key) null else e.key },
+                                onToggle = {
+                                    expanded = if (expanded == e.key) null else e.key
+                                    stopAwaiting()
+                                },
                                 onOpenPc = { onOpenPc(e.pcId) },
                                 onOpenFiles = if (e.category == FileHistory.RECEIVED && e.uris.isNotEmpty()) {
                                     { openFiles(e) }
@@ -503,6 +559,35 @@ private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): Strin
 
 /** What the notification center opens on: the kind [category] filtered, with the entry [id] of it open. */
 data class CenterFocus(val category: String, val id: String?)
+
+/** Where an entry sits in the notification center's list — pure, so tests pin it (#109). */
+internal object CenterLayout {
+    /**
+     * The list index of the entry [key], or its bundle's card when that bundle is closed; null when it isn't shown.
+     * [leading]: items before the first day. [days]: each day's rows (newest first) with the row's bundle key, laid
+     * out as the screen does — a day heading, then per row a bundle card when it has more than one entry, and its
+     * entries when it has one or is [openStack].
+     */
+    fun indexOf(key: String, leading: Int, days: List<List<Pair<List<HistoryEntry>, String>>>, openStack: String?): Int? {
+        var i = leading
+        days.forEach { rows ->
+            i++ // the day's heading
+            rows.forEach { (row, stackKey) ->
+                val open = row.size == 1 || openStack == stackKey
+                val at = row.indexOfFirst { it.key == key }
+                if (row.size > 1) {
+                    if (at >= 0 && !open) return i
+                    i++ // the bundle card
+                }
+                if (open) {
+                    if (at >= 0) return i + at
+                    i += row.size
+                }
+            }
+        }
+        return null
+    }
+}
 
 /** Entries this phone made itself — files and text received and sent, commands sent — rather than pushes it was sent. */
 private fun isOwnRecord(category: String): Boolean =

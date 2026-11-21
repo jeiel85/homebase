@@ -277,15 +277,37 @@ object ClipShare {
             return
         }
         val name = pc.displayName
-        val text = content.text
         // Another phone's text the PC passed on (docs/SHARE_CONVENIENCE.md §4.8) names that phone in `from`.
+        deliver(
+            text = content.text,
+            write = { PhoneClipboard.write(context, it, content.sensitive) },
+            offer = { ClipNotifier.offer(context, pc.pcId, name, push.id, content.chars, content.from) },
+            keep = { record(context, pc, push.id, it, content) },
+            awaitKept = { PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS) },
+            copied = { ClipNotifier.copied(context, name, it, content.sensitive, push.id, content.from) },
+        )
+    }
+
+    /**
+     * What [receive] does with text that opened, in its order — pure of Android, so tests pin it (#117). Without
+     * [text] (too long for a push) only the "tap to copy" offer. Otherwise onto the clipboard, and only when that
+     * worked: the notification center entry, waiting until it is on disk, then the "copied" notification — so a tap on
+     * that notification finds the entry (M-70).
+     */
+    internal inline fun deliver(
+        text: String?,
+        write: (String) -> Boolean,
+        offer: () -> Unit,
+        keep: (String) -> Unit,
+        awaitKept: () -> Unit,
+        copied: (String) -> Unit,
+    ) {
         if (text == null) {
-            ClipNotifier.offer(context, pc.pcId, name, push.id, content.chars, content.from)
-        } else if (PhoneClipboard.write(context, text, content.sensitive)) {
-            // Kept before the notification goes up, so its tap finds the entry (M-70).
-            record(context, pc, push.id, text, content)
-            PushHistory.awaitWrites(HISTORY_WRITE_WAIT_MS)
-            ClipNotifier.copied(context, name, text, content.sensitive, push.id, content.from)
+            offer()
+        } else if (write(text)) {
+            keep(text)
+            awaitKept()
+            copied(text)
         }
     }
 

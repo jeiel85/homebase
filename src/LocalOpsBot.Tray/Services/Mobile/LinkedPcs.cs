@@ -67,7 +67,7 @@ internal static class LinkedPcs
         var h = link.Hub;
         var row = h is null
             ? new LinkedPc(link.Name, null, false, false, null, null, false, 0, Array.Empty<string>())
-            : new LinkedPc(h.PcName, h.PcId, true, h.Online, h.LastContactAt, h.Status, h.Error == "rejected",
+            : new LinkedPc(h.PcName, h.PcId, true, h.Online, h.LastContactAt, h.Status, h.Error == LinkErrors.Rejected,
                 h.Devices.Count(d => d.Kind == DeviceKind.Phone && d.DeviceId != h.SelfDeviceId), Array.Empty<string>());
         foreach (var d in link.Here)
         {

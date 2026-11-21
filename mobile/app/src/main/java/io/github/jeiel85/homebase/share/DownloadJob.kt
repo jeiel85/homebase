@@ -20,6 +20,7 @@ import android.os.PersistableBundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import io.github.jeiel85.homebase.MainActivity
 import io.github.jeiel85.homebase.R
 import io.github.jeiel85.homebase.clip.ClipActionActivity
 import io.github.jeiel85.homebase.data.PcStore
@@ -301,10 +302,15 @@ class DownloadJobService : JobService() {
 
 /**
  * Notifications of files a PC sends (DECISIONS M-65), in a quiet channel of their own ("파일 받기"): the offer with
- * [받기], progress with 취소, then [열기] and [공유] — one notification per transfer, replaced as it goes.
+ * [받기], progress with 취소, then [열기] and [공유] — one notification per transfer, replaced as it goes. A tap on
+ * progress, waiting or failure opens the notification center on "받은 파일" (#109), as the upload's does on "보낸 파일".
  */
 internal object ReceiveNotifier {
     private const val CHANNEL_ID = "hb.share.in"
+
+    /** [MainActivity] opens the notification center on "받은 파일", with [EXTRA_TRANSFER_ID]'s entry open when there is one. */
+    const val ACTION_OPEN_RECEIVED = "io.github.jeiel85.homebase.action.OPEN_RECEIVED_FILES"
+    const val EXTRA_TRANSFER_ID = "io.github.jeiel85.homebase.RECEIVED_TRANSFER_ID"
 
     fun id(transferId: String): Int = "download:$transferId".hashCode()
 
@@ -344,6 +350,7 @@ internal object ReceiveNotifier {
             .setProgress(1000, permille, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setContentIntent(openReceived(context, spec))
             .addAction(0, "취소", cancelIntent(context, spec))
         FileShare.pathLabel(via)?.let { shown.setSubText(it) }
         return shown.build()
@@ -353,6 +360,7 @@ internal object ReceiveNotifier {
         .setContentTitle("${spec.sender} 받기를 기다리는 중")
         .setContentText("$reason — 연결되면 이어서 받습니다")
         .setOnlyAlertOnce(true)
+        .setContentIntent(openReceived(context, spec))
         .addAction(0, "취소", cancelIntent(context, spec))
         .build()
 
@@ -380,8 +388,23 @@ internal object ReceiveNotifier {
         .setContentTitle("${spec.sender} 받지 못했습니다")
         .setContentText(reason)
         .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
+        .setContentIntent(openReceived(context, spec))
         .setAutoCancel(true)
         .build()
+
+    /**
+     * The tap of a transfer still under way or that failed: the files received before, in the notification center —
+     * this transfer's entry once it has one (it is written when the files are saved).
+     */
+    private fun openReceived(context: Context, spec: DownloadSpec): PendingIntent = PendingIntent.getActivity(
+        context,
+        id(spec.transferId) + 3,
+        Intent(context, MainActivity::class.java)
+            .setAction(ACTION_OPEN_RECEIVED)
+            .putExtra(EXTRA_TRANSFER_ID, spec.transferId)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     fun post(context: Context, transferId: String, notification: Notification) {
         if (!ensureChannel(context)) return

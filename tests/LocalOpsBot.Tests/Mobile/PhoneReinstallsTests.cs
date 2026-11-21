@@ -66,4 +66,19 @@ public class PhoneReinstallsTests
 
         Assert.Equal(new[] { "a", "b" }, PhoneReinstalls.Superseded(devices).Order());
     }
+
+    [Fact]
+    public void The_list_version_changes_with_what_settings_shows_and_not_otherwise()
+    {
+        var a = Phone("a", "S24", "SM-S921N", T0, T0.AddMinutes(5));
+        var b = Phone("b", "Tab", "SM-X710", T0, null);
+        var version = PhoneReinstalls.ListVersion(new[] { a, b });
+
+        Assert.Equal(version, PhoneReinstalls.ListVersion(new[] { b, a })); // order does not matter
+        Assert.Equal(version, PhoneReinstalls.ListVersion(new[] { a with { LastSeenAt = T0.AddMinutes(5).AddSeconds(20) }, b }));
+        Assert.NotEqual(version, PhoneReinstalls.ListVersion(new[] { a with { LastSeenAt = T0.AddMinutes(7) }, b }));
+        Assert.NotEqual(version, PhoneReinstalls.ListVersion(new[] { a })); // one removed
+        Assert.NotEqual(version, PhoneReinstalls.ListVersion(new[] { a, b, Phone("c", "S24", "SM-S921N", T0.AddDays(1), null) })); // paired, and a marked old
+        Assert.NotEqual(version, PhoneReinstalls.ListVersion(new[] { a with { Name = "S24 Ultra" }, b }));
+    }
 }

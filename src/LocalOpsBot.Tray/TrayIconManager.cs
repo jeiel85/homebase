@@ -254,8 +254,10 @@ public sealed class TrayIconManager : IDisposable
             TrayLog.Info("Clipboard", ok
                 ? $"Text from {from} ({clip.Text.Length} chars{(clip.Sensitive ? ", sensitive" : "")}) put on the clipboard"
                 : $"Text from {from} could not be put on the clipboard (busy)");
+            // Clicked, it opens what was received in the notification center (text not taken is not kept there).
             ShowBalloon(ok ? L.ClipReceivedTitle : L.ClipReceiveFailedTitle,
-                ok ? L.ClipReceivedBody(from, clip.Text.Length) : L.ClipReceiveFailedBody(from));
+                ok ? L.ClipReceivedBody(from, clip.Text.Length) : L.ClipReceiveFailedBody(from),
+                ok ? () => ShowClipboardHistory(received: true) : null);
             return ok;
         }).Task.Unwrap();
     }
@@ -396,11 +398,12 @@ public sealed class TrayIconManager : IDisposable
         var failed = result.Results.Where(o => !o.Ok).ToList();
         TrayLog.Info("Clipboard", $"Sent {text.Length} chars{(sensitive ? " (sensitive)" : "")}: " +
             string.Join(", ", result.Results.Select(o => o.Ok ? $"{o.Name} ok" : $"{o.Name} {o.Error}")));
+        // Each target's outcome is kept as "Clipboard sent" (M-70): clicked, the balloon opens it.
         if (failed.Count == 0)
-            ShowBalloon(L.ClipSentTitle, L.ClipSentBody(string.Join(", ", sent)));
+            ShowBalloon(L.ClipSentTitle, L.ClipSentBody(string.Join(", ", sent)), () => ShowClipboardHistory(received: false));
         else
             ShowBalloon(sent.Count == 0 ? L.ClipNotSentTitle : L.ClipPartlySentTitle,
-                string.Join("\n", failed.Select(o => $"{Name(o)}: {L.ClipError(o.Error)}")));
+                string.Join("\n", failed.Select(o => $"{Name(o)}: {L.ClipError(o.Error)}")), () => ShowClipboardHistory(received: false));
     }
 
     /// <summary>The "Send files" submenu: the devices that take files, asked for when it opens (M-65).</summary>
@@ -740,13 +743,18 @@ public sealed class TrayIconManager : IDisposable
     private void TogglePopup()
     {
         if (Closing) return;
+        var clickedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         var popup = Dashboard();
         // Toggle only when it is already the foreground window; if it is hidden OR just behind
         // another window, bring it to the front instead of hiding it, so a tray click always
         // surfaces the dashboard rather than dismissing an out-of-sight one. It opens on the page
         // it was left on.
         if (popup is { IsVisible: true, IsActive: true }) popup.Hide();
-        else popup.ShowNearTray();
+        else
+        {
+            popup.ShowNearTray();
+            popup.ReportFirstShow(clickedAt);
+        }
     }
 
     private void ShowPopup()
@@ -767,6 +775,14 @@ public sealed class TrayIconManager : IDisposable
         if (Closing) return;
         var popup = Dashboard();
         popup.ShowTab(DashTab.Notifications);
+        popup.BringForward();
+    }
+
+    private void ShowClipboardHistory(bool received)
+    {
+        if (Closing) return;
+        var popup = Dashboard();
+        popup.ShowClipboardHistory(received);
         popup.BringForward();
     }
 

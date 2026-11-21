@@ -28,6 +28,7 @@ import io.github.jeiel85.homebase.push.ClipHistory
 import io.github.jeiel85.homebase.push.FileHistory
 import io.github.jeiel85.homebase.push.PushNotifier
 import io.github.jeiel85.homebase.push.PushRegistrar
+import io.github.jeiel85.homebase.share.ReceiveNotifier
 import io.github.jeiel85.homebase.share.ShareShortcuts
 import io.github.jeiel85.homebase.share.UploadNotifier
 import io.github.jeiel85.homebase.ui.AdviceRequests
@@ -56,8 +57,8 @@ class MainActivity : ComponentActivity() {
     private var tappedRoute by mutableStateOf<String?>(null)
 
     /**
-     * What a tapped upload or received-text notification shows in the notification center ("보낸 파일" or "받은 클립보드",
-     * its entry open); taken once shown.
+     * What a tapped upload, download or received-text notification shows in the notification center ("보낸 파일",
+     * "받은 파일" or "받은 클립보드", its entry open); taken once shown. Kept across recreation until then (#109).
      */
     private var centerFocus by mutableStateOf<CenterFocus?>(null)
 
@@ -90,7 +91,7 @@ class MainActivity : ComponentActivity() {
         PushRegistrar.scope.launch { ShareShortcuts.sync(app, PcStore(app).all()) }
         // An alert's "AI 조언" button (M-61); not again when the activity is recreated with the same intent.
         if (savedInstanceState == null) askAdviceIfTapped(intent)
-        if (savedInstanceState == null) centerFocus = intent.centerFocus()
+        centerFocus = if (savedInstanceState == null) intent.centerFocus() else savedInstanceState.centerFocus()
         setContent {
             val dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())
             // The navigation bar follows the app's theme choice, not only the system's.
@@ -172,7 +173,15 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         pairingLink?.let { outState.putString(KEY_PAIRING_LINK, it) }
+        // A focus not applied yet — the history was still loading when the screen turned (#109).
+        centerFocus?.let {
+            outState.putString(KEY_FOCUS_CATEGORY, it.category)
+            it.id?.let { id -> outState.putString(KEY_FOCUS_ID, id) }
+        }
     }
+
+    private fun Bundle.centerFocus(): CenterFocus? =
+        getString(KEY_FOCUS_CATEGORY)?.let { CenterFocus(it, getString(KEY_FOCUS_ID)) }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -192,10 +201,14 @@ class MainActivity : ComponentActivity() {
         // Again a moment later: the notification tapped to get here is cancelled after the app opens.
         PushNotifier.tidy(this)
         window.decorView.postDelayed({ PushNotifier.tidy(this) }, TIDY_DELAY_MS)
+        // Back to an app that lived in the background a long time: the Play build asks again when it is due (#77).
+        UpdateSurface.onResume(this)
     }
 
     private companion object {
         const val KEY_PAIRING_LINK = "pairingLink"
+        const val KEY_FOCUS_CATEGORY = "centerFocusCategory"
+        const val KEY_FOCUS_ID = "centerFocusId"
         /** Checked before the pcId branch, so it never reaches the PC store. */
         const val ROUTE_SETTINGS = "app:settings"
         const val ROUTE_PRIORITY = "app:priority"
@@ -225,14 +238,19 @@ class MainActivity : ComponentActivity() {
     private fun Intent?.pushRoute(): String? {
         val tapped = this ?: return null
         return when (tapped.action) {
-            PushNotifier.ACTION_OPEN_CENTER, UploadNotifier.ACTION_OPEN_SENT, ClipNotifier.ACTION_OPEN_RECEIVED -> ROUTE_NOTIFICATIONS
+            PushNotifier.ACTION_OPEN_CENTER, UploadNotifier.ACTION_OPEN_SENT, ReceiveNotifier.ACTION_OPEN_RECEIVED,
+            ClipNotifier.ACTION_OPEN_RECEIVED -> ROUTE_NOTIFICATIONS
             else -> tapped.getStringExtra(PushNotifier.EXTRA_PC_ID)
         }
     }
 
-    /** A tapped upload notification: the sent files, with its transfer open; a received text's: the received texts, it open. */
+    /**
+     * A tapped upload notification: the sent files, with its transfer open; a download's: the received files; a received
+     * text's: the received texts, it open.
+     */
     private fun Intent?.centerFocus(): CenterFocus? = when (this?.action) {
         UploadNotifier.ACTION_OPEN_SENT -> CenterFocus(FileHistory.SENT, getStringExtra(UploadNotifier.EXTRA_TRANSFER_ID))
+        ReceiveNotifier.ACTION_OPEN_RECEIVED -> CenterFocus(FileHistory.RECEIVED, getStringExtra(ReceiveNotifier.EXTRA_TRANSFER_ID))
         ClipNotifier.ACTION_OPEN_RECEIVED -> CenterFocus(ClipHistory.RECEIVED, getStringExtra(ClipNotifier.EXTRA_CLIP_ID))
         else -> null
     }

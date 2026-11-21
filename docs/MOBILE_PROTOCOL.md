@@ -73,7 +73,7 @@ https://jeiel85.github.io/homebase/pair/#<base64url(UTF-8 JSON {hb, pcId, pcName
 | GET | `/api/v1/transfer/offer?id=` | `Authorization: Bearer <token>` | PC가 그 휴대폰에 보내는 파일(M-65, 아래 "PC가 보내는 파일"): 봉투(이름·크기·MIME·SHA-256) · 409 `unknown_transfer` |
 | GET | `/api/v1/transfer/fetch?id=&f=&n=` | `Authorization: Bearer <token>` | 그 휴대폰 키로 봉인한 조각, `application/octet-stream` · 400 `bad_chunk` · 409 `unknown_transfer` |
 | POST | `/api/v1/transfer/received?id=` | `Authorization: Bearer <token>` | 본문 `{schema}` → 200: 휴대폰이 모든 파일을 받았다 |
-| GET | `/api/v1/clip?id=<id>` | `Authorization: Bearer <token>` | 200 봉투(그 기기 키로 봉인) · 404 `clip_gone` — PC가 그 기기에 알린 긴 텍스트, 10분 (M-62) |
+| GET | `/api/v1/clip?id=<id>` | `Authorization: Bearer <token>` | 200 봉투(그 기기 키로 봉인) · 404 `clip_gone` — PC가 그 기기에 알린 긴 텍스트, 10분 (M-62). 다른 휴대폰이 보낸 것이면 봉인한 내용에 푸시와 같은 `from`(v0.59.0~, 그 전 PC는 뺌) |
 
 `POST /api/v1/pair` 본문은 `{ "code", "deviceName", "deviceModel", "kind"? }`이다. `kind`는 `phone`(기본, 옛 앱은 보내지 않음) 또는 `pc`(다른 PC가 이 PC에 붙을 때, M-29)다. 오류 응답은 항상 `{schema, error, message}` 형태다.
 
@@ -159,7 +159,7 @@ PC는 새 경로(재시작 후 바뀐 Quick Tunnel 주소, 새 LAN IP 등)가 �
 
 - **키 합의**: 기기가 `POST /api/v1/clip/key`에 이 교환에만 쓰는 새 P-256 공개키(65바이트 비압축, base64url)를 보내고, PC가 자기 새 공개키로 답한다. 양쪽이 ECDH 비밀(x 좌표 32바이트)에서 키 = HKDF-SHA256(salt = 0 32바이트, info = `"homebase clip v1"` ‖ 기기 공개키 ‖ PC 공개키, 32바이트)을 만들고, 개인키는 버리고 키만 둔다. 공개키만 오가므로 Bearer 토큰을 보는 Cloudflare 엣지도 키를 만들 수 없다(그 교환을 능동적으로 바꿔치기하지 않는 한). PC는 기기마다 하나를 `clip-keys.json`(DPAPI)에 두고, 다시 합의하면 바꾼다. 휴대폰은 푸시 등록 뒤 미리 합의하고, PC → PC는 처음 보낼 때 합의한다. 픽스처 [`clip-key.v1.json`](mobile-protocol/clip-key.v1.json)은 RFC 8291 부록 A의 두 키(기기 = UA, PC = AS)로 합의한 키다.
 - **암호화**: 모든 경로에서 내용을 그 키로 한 번 더 종단 암호화한다(Cloudflare 엣지는 TLS를 푼다). AES-256-GCM, nonce는 메시지마다 12바이트 난수, `data`는 암호문 뒤에 16바이트 태그, 추가 데이터 없음, 둘 다 패딩 없는 base64url.
-- **봉투** [`clip.v1.json`](mobile-protocol/clip.v1.json): `{schema, id, nonce, data}`. `id`는 소문자 hex 32자(보낸 쪽이 만듦). 봉인한 내용은 UTF-8 JSON `{schema, text?, chars, ts, sensitive?}` — `chars`는 텍스트 길이(UTF-16 단위), `sensitive`는 비밀번호 관리자가 넣은 내용(받는 쪽은 클립보드 기록·미리보기에서 뺀다). 텍스트는 1~100,000자.
+- **봉투** [`clip.v1.json`](mobile-protocol/clip.v1.json): `{schema, id, nonce, data}`. `id`는 소문자 hex 32자(보낸 쪽이 만듦). 봉인한 내용은 UTF-8 JSON `{schema, text?, chars, ts, sensitive?, to?, from?}`(`to`·`from`은 아래 "휴대폰 ↔ 휴대폰") — `chars`는 텍스트 길이(UTF-16 단위), `sensitive`는 비밀번호 관리자가 넣은 내용(받는 쪽은 클립보드 기록·미리보기에서 뺀다). 텍스트는 1~100,000자.
 - **휴대폰·PC → PC**: `POST /api/v1/clip`. PC는 그 기기 토큰의 키로 열고 트레이에 넘겨 클립보드에 넣는다. 같은 기기의 같은 `id`는 30분 동안 한 번만 넣고 200을 준다(다른 경로로 재시도해도 안전). 트레이가 클립보드에 넣었다고 답해야 200이다. 넘길 트레이가 없으면(로그인한 사용자 없음) 409 `no_user_session`, 클립보드가 바빠 못 넣었으면 503 `clipboard_busy` — 둘 다 기억하지 않으므로 같은 메시지를 다시 보내면 받는다. 그 기기와 합의한 키가 없으면 409 `clip_key_needed`, 키가 다르면 400 `invalid_clip`: 보내는 쪽은 한 번 다시 합의하고 보낸다. PC끼리는 그룹 링크의 토큰(M-47)으로 보낸다.
 - **PC → 휴대폰**: 복호화된 푸시 [`push-clip.v1.json`](mobile-protocol/push-clip.v1.json) `{schema, kind: "clip", pcId, id, nonce, data}`(`title` 없음 — 옛 앱은 버린다), 그 휴대폰과 그 PC가 합의한 키로 봉인, `TTL` 600초, `Urgency: high`. 평문이 한 푸시(3993바이트)를 넘으면 `text`를 빼고 보내며, PC가 10분 동안 메모리에 두어 그 휴대폰만 `GET /api/v1/clip?id=`로 받는다. 앱은 `pcId`가 페어링된 PC이고 그 PC와 합의한 키로 열릴 때만 받고, 같은 `id`는 한 번만, `ts`가 휴대폰 시계로 30분보다 오래됐으면 버린다(TTL을 넘겨 늦게 온 푸시가 클립보드를 바꾸지 않게). `text`가 있으면 바로 클립보드에 넣고 조용한 알림(채널 `hb.clip`, 2분 뒤 사라짐)을 띄우며, 없으면 "눌러서 복사" 알림(10분)을 띄운다. 받는 휴대폰은 `features`에 `clip`을 등록하고 키를 합의한 휴대폰뿐이다.
 - **앱에서 보내기**: 공유 메뉴의 Homebase(받은 텍스트 — 다른 앱이 연 것이므로 PC가 하나여도 고르게 함), 빠른 설정 타일(창에 포커스가 온 뒤 클립보드를 읽어 마지막으로 보낸 PC로), PC 카드 메뉴 "클립보드 보내기". 휴대폰 → PC 의 `ts`는 `Instant.toString()`(UTC `Z`, 밀리초가 있으면 소수점) 형식이다.
@@ -201,7 +201,7 @@ PC의 트레이가 보낸 파일(2b). 다른 PC로는 Agent가 위 "파일"(2a) 
 같은 PC에 연결된 다른 휴대폰으로 그 PC를 거쳐 보낸다. 견본 [`share-relay.v1.json`](mobile-protocol/share-relay.v1.json)(봉인 전 평문)을 .NET과 Kotlin이 함께 읽는다.
 
 - **목록** `GET /api/v1/share/phones` → `{schema, phones: [{deviceId, name, clip, files}]}`: 그 PC와 키를 합의했고 푸시를 받는 다른 휴대폰(묻는 휴대폰 제외). `clip`은 클립보드 텍스트를, `files`는 파일을 받을 수 있다는 뜻이다. 404면 옛 PC라 넘기지 못한다.
-- **텍스트**: 위 `POST /api/v1/clip`의 봉인한 내용에 `to: [deviceId]`(1~10개)를 넣는다. 그러면 PC는 자기 클립보드에 넣지 않고, 받을 휴대폰마다 위 "PC → 휴대폰" 푸시를 그 휴대폰 키로 봉인해 보낸다(새 `id`, 내용에 `from`: 보낸 휴대폰 이름). 답은 200 `{schema, accepted: true, forwarded: [{deviceId, ok, error?}]}`(`error`: `unknown_target`·`push_failed` 등).
+- **텍스트**: 위 `POST /api/v1/clip`의 봉인한 내용에 `to: [deviceId]`(1~10개)를 넣는다. 그러면 PC는 자기 클립보드에 넣지 않고, 받을 휴대폰마다 위 "PC → 휴대폰" 푸시를 그 휴대폰 키로 봉인해 보낸다(새 `id`, 내용에 `from`: 보낸 휴대폰 이름 — 푸시에 다 담기지 않아 `GET /api/v1/clip?id=`로 받는 긴 텍스트도 v0.59.0부터 같은 `from`을 봉인한 내용에 싣는다). 답은 200 `{schema, accepted: true, forwarded: [{deviceId, ok, error?}]}`(`error`: `unknown_target`·`push_failed` 등).
 - **파일**: 위 "파일"(2a)과 같고, 봉인한 전송 설명에 `to: [deviceId]`를 넣는다. `done`이 맞으면 PC는 트레이 대신 받을 휴대폰에 "PC가 보내는 파일" 흐름으로 알리고(봉인한 요약에 `from`), 200 `{schema, saved: "forwarded"}`로 답한다. 같은 전송의 `done`을 다시 보내도 같은 답이다. 넘길 휴대폰이 없으면 409 `unknown_target`(받은 것은 지움). 자기 자신은 `to`에 넣을 수 없다(400).
 - PC는 보낸 휴대폰의 키로 열어 받는 휴대폰의 키로 다시 봉인하므로 내용을 거쳐 간다. 저장하지 않으며, 파일은 받을 휴대폰이 받을 때까지(최대 24시간) Agent 폴더에 둔다.
 

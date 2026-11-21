@@ -126,8 +126,33 @@ internal class UpdatePreferences(context: Context) : UpdateStore {
         prefs.edit().putInt(KEY_SILENT_INSTALLING_VERSION_CODE, versionCode).commit()
     }
 
+    /** 마지막 자동 설치의 결과(#74). 없으면 null. */
+    fun lastAutoInstall(): AutoInstallResult.Record? {
+        val outcome = prefs.getString(KEY_AUTO_OUTCOME, null)
+            ?.let { name -> AutoInstallResult.Outcome.entries.firstOrNull { it.name == name } } ?: return null
+        return AutoInstallResult.Record(
+            outcome,
+            prefs.getInt(KEY_AUTO_VERSION_CODE, 0),
+            prefs.getLong(KEY_AUTO_AT, 0L),
+            prefs.getInt(KEY_AUTO_STATUS, 0),
+        )
+    }
+
+    fun recordAutoInstall(outcome: AutoInstallResult.Outcome, versionCode: Int, status: Int = 0) {
+        prefs.edit()
+            .putString(KEY_AUTO_OUTCOME, outcome.name)
+            .putInt(KEY_AUTO_VERSION_CODE, versionCode)
+            .putLong(KEY_AUTO_AT, System.currentTimeMillis())
+            .putInt(KEY_AUTO_STATUS, status)
+            .apply()
+    }
+
     private companion object {
         const val NAME = "homebase_update"
+        const val KEY_AUTO_OUTCOME = "auto_install_outcome"
+        const val KEY_AUTO_VERSION_CODE = "auto_install_version_code"
+        const val KEY_AUTO_AT = "auto_install_at"
+        const val KEY_AUTO_STATUS = "auto_install_status"
         const val KEY_AUTO_INSTALL = "auto_install"
         const val KEY_NEEDS_CONFIRM_VERSION_CODE = "needs_confirm_version_code"
         const val KEY_SILENT_FAILED_VERSION_CODE = "silent_failed_version_code"

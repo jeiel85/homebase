@@ -84,6 +84,20 @@ class NotificationPriorityTest {
     }
 
     @Test
+    fun anUnknownCategoryFollowsThePriorityThePcGaveIt() {
+        // #88: a newer PC's informational kind must not pop up and buzz on an older app.
+        for (priority in listOf("info", "recovery")) {
+            assertEquals(priority, AlertLevel.QUIET, AlertLevel.of(NotificationPriority.resolve("something_new", "x", NotificationRules(), priority)))
+        }
+        for (priority in listOf("warning", "critical", "something_else", null)) {
+            assertEquals("$priority", AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("something_new", "x", NotificationRules(), priority)))
+        }
+        // A known kind keeps its group's choice and default whatever its priority.
+        assertEquals(AlertLevel.URGENT, AlertLevel.of(NotificationPriority.resolve("process_watch", "x", NotificationRules(), "recovery")))
+        assertEquals(AlertLevel.QUIET, AlertLevel.of(NotificationPriority.resolve("advisor", "x", NotificationRules(), "critical")))
+    }
+
+    @Test
     fun everyUrgentGroupExists() {
         val keys = NotificationGroups.ALL.map { it.key }.toSet()
         assertTrue(NotificationPriority.URGENT_GROUPS.toString(), keys.containsAll(NotificationPriority.URGENT_GROUPS))

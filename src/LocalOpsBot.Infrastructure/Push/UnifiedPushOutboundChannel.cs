@@ -74,31 +74,37 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
         if (relayed.Count == 0)
         {
             _logger.LogInformation("Push skipped: every phone already has this relayed notification");
-            return new OutboundAttemptResult(ChannelId, true);
+            return new OutboundAttemptResult(ChannelId, true, Note: "skipped, every phone already has it");
         }
         var wanted = relayed.Where(t => !t.Subscription.Mutes(notification.Category)).ToList();
         if (wanted.Count == 0)
         {
             _logger.LogInformation("Push skipped: every phone muted category {Category}", notification.Category);
-            return new OutboundAttemptResult(ChannelId, true);
+            return new OutboundAttemptResult(ChannelId, true, Note: $"skipped, every phone muted {notification.Category}");
         }
 
         var plaintext = PushPayload.Serialize(ToMessage(notification));
         var failures = new List<(OutboundFailureKind Kind, string Error)>();
-        var delivered = 0;
+        var delivered = new List<string>();
 
         foreach (var target in wanted)
         {
             var (ok, kind, error) = await SendOneAsync(target, plaintext, TtlSeconds(notification), Urgency(notification.Priority), ct);
-            if (ok) delivered++;
+            if (ok) delivered.Add(target.DeviceName);
             else failures.Add((kind, $"{target.DeviceName}: {error}"));
         }
 
-        if (delivered > 0)
+        if (delivered.Count > 0)
         {
             foreach (var f in failures)
                 _logger.LogWarning("Push to one phone failed ({Kind}): {Error}", f.Kind, f.Error);
-            return new OutboundAttemptResult(ChannelId, true);
+            // Which phones it went to, and which were left out on purpose: the line that says it was forwarded
+            // then tells a real push from one that skipped everybody (#113).
+            var skipped = targets.Count - wanted.Count;
+            return new OutboundAttemptResult(ChannelId, true,
+                Note: $"pushed to {delivered.Count} phone(s): {string.Join(", ", delivered)}" +
+                      (failures.Count > 0 ? $"; {failures.Count} failed" : "") +
+                      (skipped > 0 ? $"; {skipped} skipped" : ""));
         }
 
         // Report the most actionable failure kind; the router falls back on any failure.

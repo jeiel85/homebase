@@ -156,7 +156,7 @@ public sealed class HubLinkService : BackgroundService
     public IReadOnlyList<LinkedHubView> Views() => _links.Values
         .Select(l => new LinkedHubView(l.Hub.PcId, l.LastDevices?.Hub.PcName ?? l.Hub.PcName, l.Online, l.LastContactAt,
             l.LastDevices?.Hub.Status, l.LastDevices?.Devices ?? (IReadOnlyList<DeviceEntry>)Array.Empty<DeviceEntry>(), l.Error,
-            l.Hub.DeviceId))
+            l.Hub.DeviceId, RelayWaiting: l.LastDevices is null))
         .OrderBy(v => v.PcName, StringComparer.CurrentCultureIgnoreCase)
         .ToList();
 
@@ -421,12 +421,19 @@ public sealed class HubLinkService : BackgroundService
                 {
                     if (link.Online) _logger.LogWarning("Linked PC {Name} unreachable: {Error}", link.Hub.PcName, reply.Error ?? $"HTTP {reply.Status}");
                     link.Online = false;
+                    var previous = link.Error;
                     if (reply.Status == 401)
                     {
-                        link.Error = "rejected";
+                        link.Error = LinkErrors.Rejected;
                         wait = RejectedRetry;
                     }
-                    else link.Error = reply.Status == 0 ? "unreachable" : $"HTTP {reply.Status}";
+                    else link.Error = reply.Status == 0 ? LinkErrors.Unreachable : $"HTTP {reply.Status}";
+                    // The PC answers but refuses the presence: its notifications are held back until it takes one
+                    // (RunInboxAsync), so say so instead of leaving the relay stalled without a word.
+                    // Once per change of error, not every 30 s.
+                    if (LinkErrors.IsRefused(link.Error) && link.LastDevices is null && link.Error != previous)
+                        _logger.LogWarning("Linked PC {Name} refuses this PC's presence ({Error}); its notifications are held back until it takes one.",
+                            link.Hub.PcName, link.Error);
                 }
                 link.Attempted();
                 await PauseAsync(wait, woken, ct);

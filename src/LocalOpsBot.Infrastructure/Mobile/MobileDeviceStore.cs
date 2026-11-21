@@ -48,6 +48,14 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         public string TokenSha256 { get; set; } = "";
         public DateTimeOffset PairedAt { get; set; }
         public DateTimeOffset? LastSeenAt { get; set; }
+        /// <summary>
+        /// The exact time of its last authenticated request since the Agent started. <see cref="LastSeenAt"/> is
+        /// written at most every <see cref="LastSeenPersistInterval"/>, so it can be up to that much behind; the
+        /// list reports the later of the two, so a phone that is in use is never taken for an old connection
+        /// (M-71) just because the file was not rewritten yet.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public DateTimeOffset? SeenNow { get; set; }
         /// <summary>UnifiedPush endpoint and RFC 8291 keys (public key + auth secret); not secret-free, so ACL'd like the rest.</summary>
         public PushSubscription? Push { get; set; }
     }
@@ -152,6 +160,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
             {
                 if (!CryptographicOperations.FixedTimeEquals(presented, Encoding.ASCII.GetBytes(d.TokenSha256))) continue;
                 var now = _time.GetUtcNow();
+                d.SeenNow = now;
                 if (d.LastSeenAt is null || now - d.LastSeenAt > LastSeenPersistInterval)
                 {
                     d.LastSeenAt = now;
@@ -190,7 +199,10 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         return dirty;
     }
 
-    private static MobileDeviceInfo ToInfo(Device d) => new(d.DeviceId, d.Name, d.Model, d.PairedAt, d.LastSeenAt, DeviceKind.Normalize(d.Kind));
+    private static MobileDeviceInfo ToInfo(Device d) =>
+        new(d.DeviceId, d.Name, d.Model, d.PairedAt, Later(d.LastSeenAt, d.SeenNow), DeviceKind.Normalize(d.Kind));
+
+    private static DateTimeOffset? Later(DateTimeOffset? a, DateTimeOffset? b) => a is null ? b : b is null || a >= b ? a : b;
 
     /// <summary>
     /// A corrupt file must neither take the Agent down (Telegram monitoring keeps running) nor be

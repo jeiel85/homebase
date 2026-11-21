@@ -1,5 +1,71 @@
 # Changelog
 
+## v0.60.0 — Hardening: old connections, clipboard, notification center, updates and logs
+
+Clears the open hardening issues from v0.41.0 to v0.58.0 (#74 #77 #80 #88 #106 #109 #111 #113 #115 #117 #119
+#121). What needs a real device, a product decision or a protocol change moved to #58.
+
+### Fixed
+- **A phone in use is no longer taken for an old connection** (marked in Settings › Phone, hidden from the device
+  lists since v0.59.0) just because its last-seen time had not been saved yet. The PC saves that time every 10
+  minutes; the check now uses the exact time of the phone's last request.
+- **Long text another phone sent through the PC keeps the sender's name** when the phone fetches it with a tap,
+  instead of showing only the PC's name in "받은 클립보드" (clipboard received).
+- The notification center's "클립보드에 복사" (Copy to clipboard) link goes back to its label two seconds after you
+  click it, instead of saying "복사했습니다" until the list was redrawn.
+- **Saving settings replaces the configuration file in one step**, so the service never reads it while it is
+  missing. Before, the old file was deleted and the new one moved in.
+- **Updates install into the folder Homebase was installed in.** The update always copied into
+  `C:\Program Files\Homebase`, so a PC installed elsewhere did not update. It now reads the folder from the
+  service (DECISIONS M-75).
+- Phone: a notification kind the app doesn't know yet (sent by a newer PC) stays quiet when the PC marks it
+  informational, instead of popping up with sound and vibration (DECISIONS M-74).
+- Phone (GitHub build): a background update download stops when Android stops the update job, instead of
+  finishing its retries first. A stopped download is not counted as a failed attempt.
+- Phone (Play build): the "새 버전" (new version) notification goes away once Play has installed the update,
+  instead of staying until the app is opened.
+
+### Changed
+- Clicking a clipboard balloon ("클립보드를 보냈습니다", "클립보드에 넣었습니다") opens the notification center on
+  "보낸 클립보드" or "받은 클립보드".
+- A linked PC that answers but refuses this PC's status reports now says so in the device list, and that its
+  notifications are not relayed until it accepts them — usually a version mismatch between the two PCs.
+- Settings › Phone reads the phone list only when it changed, not every 5 seconds while it is open.
+- The service no longer rewrites the data folder's permissions at every start when they are already right.
+- Phone: **tapping a receive notification** (receiving, waiting, failed) opens the notification center on
+  "받은 파일" (received files) at that transfer, like the send notifications since v0.55.0.
+- Phone: the notification center scrolls to the entry a notification opened, and opens a transfer's entry when
+  its record arrives if you tapped the notification while it was still under way. A notification tapped just
+  before the screen rotates still opens its entry.
+- Phone: the share center fits more device tiles per row on tablets and in landscape, asks for photo and video
+  thumbnails at the size they are shown (sharper on high-density screens), and shows "+n" when more than five
+  places are picked.
+- Phone: the history keeps the newest 100 clipboard entries (other entries keep the 500-entry, 30-day limit), so
+  the encrypted history file stays small (DECISIONS M-73).
+- Phone: Settings shows how the last automatic install went (GitHub build: installed, Android asked to confirm,
+  or why it failed) and why the last update check failed (Play build: for example, not installed from Play).
+- Phone (Play build): coming back to the app checks for a new version when the 6-hour check is due, not only
+  when the app starts.
+- Phone: the notification priority screen also says that a changed default (for example urgent → quiet) resets
+  what you changed for that kind in Android's settings.
+
+### Diagnostics
+- tray.log records how long preparing the Homebase window took, whether you clicked while it was being prepared,
+  and how long the first click took to show it (a warning above 500 ms).
+- The Agent log says which phones a forwarded notification was pushed to, or that every phone was skipped
+  because it already has it.
+- An unhandled tray error leaves at least one line in tray.log even when memory has run out.
+- The update log names the folder it installs into.
+- `docs/ELEVATED_CHECKS.md`: a manual checklist for releases that change the administrator steps (installing
+  updates, saving settings, data folder permissions, setup).
+- `docs/PLAY_RELEASE.md`: release to every Play test track in use (internal and closed), and how to build and
+  check the AAB when memory is low.
+- The Mobile CI check that the Play build carries no self-update code now looks only at manifest elements, so a
+  comment that names them no longer fails it.
+
+### Known limits
+- Setup scripts run by hand (`install-service.ps1`, `register-startup-tray.ps1`, `enable-temperature.ps1`) still
+  assume `C:\Program Files\Homebase`.
 ## v0.59.0 — Remote command keys that match the app, and old phone connections out of sight
 
 ### Changed

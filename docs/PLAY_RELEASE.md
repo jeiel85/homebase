@@ -28,6 +28,24 @@ Play 빌드는 CI가 아니라 관리자 PC에서 만듭니다. 업로드 키는
    cd mobile && ./gradlew testPlayDebugUnitTest bundlePlayRelease -Phomebase.version=X.Y.Z -Phomebase.requirePlaySigning=true
    ```
 
+   **메모리가 빠듯할 때**(다른 gradle 빌드·에뮬레이터와 겹칠 때): 커밋 여유가 수백 MB 아래로 떨어지면 AAPT2 데몬이
+   죽어 `processPlayDebugResources` 등에서 실패합니다. 이때는 데몬을 띄우지 않고 일꾼을 하나로 줄여 다시 합니다.
+
+   ```bash
+   cd mobile && ./gradlew --no-daemon --max-workers=1 -Dorg.gradle.jvmargs=-Xmx1000m testPlayDebugUnitTest bundlePlayRelease -Phomebase.version=X.Y.Z -Phomebase.requirePlaySigning=true; echo "exit=$?"
+   ```
+
+   백그라운드로 돌리면 실패해도 종료 코드가 가려지므로, 끝난 뒤 반드시 종료 코드와 아래 산출물을 확인합니다.
+   예전 빌드의 AAB가 남아 있어 실패를 놓치기 쉽습니다 — **AAB 수정 시각이 방금이고 versionCode가 이번 버전**이어야 합니다.
+
+   ```bash
+   aab=mobile/app/build/outputs/bundle/playRelease/app-play-release.aab
+   ls -l --time-style=full-iso "$aab"
+   unzip -p "$aab" base/manifest/AndroidManifest.xml | grep -aoE '[0-9]+\.[0-9]+\.[0-9]+' | head -1   # versionName = X.Y.Z
+   ```
+
+   versionCode는 versionName에서 `major*10000 + minor*100 + patch`로 정해집니다(예: 0.59.0 → 5900).
+
 4. 서명 파일을 지웁니다: `rm mobile/play-upload-signing.properties`
 5. 확인 — 업로드 키 인증서 SHA-256이 `a6aefcdda18a7f5935e63066d14cfa4e9b47db40048242f7bb87c12e33b44a5e`인지, 자체 업데이트 권한이 없는지:
 
@@ -52,8 +70,19 @@ Play 빌드는 CI가 아니라 관리자 PC에서 만듭니다. 업로드 키는
 
 ## 업로드
 
-Play Console(개발자 계정 EL Studio) → Homebase → 테스트 및 출시 → 테스트 트랙(처음에는 내부 테스트) → 새 버전 만들기 →
+Play Console(개발자 계정 EL Studio) → Homebase → 테스트 및 출시 → 테스트 트랙 → 새 버전 만들기 →
 `app-play-release.aab` 업로드 → 출시 노트(ko-KR) → 저장/검토.
+
+**지금 쓰는 테스트 트랙 모두를 같은 버전으로 맞춥니다**(내부 테스트와 비공개 테스트(Alpha)). 내부 테스트에만 올리면
+비공개 테스트가 옛 버전에 머뭅니다 — 실제로 비공개 테스트가 0.40.0에 17버전 동안 남아 테스터가 공유 메뉴(0.49.0~)를
+받지 못했습니다.
+
+1. 내부 테스트에 새 버전을 올리고 출시합니다(검토 없이 바로 배포).
+2. 내부 테스트 출시 화면의 **버전 승급** → 비공개 테스트(Alpha)로 같은 AAB를 올립니다(다시 업로드하지 않음).
+   비공개 테스트는 매번 Google 검토를 거치므로 몇 시간~며칠 걸릴 수 있습니다. 승급은 검토를 기다리지 말고 바로 보냅니다.
+3. 테스트 및 출시 → 개요(또는 각 트랙)에서 트랙마다 최신 버전이 이번 버전인지 확인합니다. 검토 중이면 "검토 중"으로
+   보이는 것까지 확인하고, 다음 릴리스 때 거절·보류가 없는지 다시 봅니다.
+4. 프로덕션은 공개하기로 정하기 전까지 올리지 않습니다.
 
 - 첫 업로드 때 Play 앱 서명(Play App Signing)이 켜지고 Google이 앱 서명 키를 만듭니다. 업로드 키는 위 키입니다.
 - Play에서 받은 앱의 페어링 링크가 '확인된 App Link'로 바로 열리려면, Play Console → 앱 무결성 → 앱 서명 키 인증서의
