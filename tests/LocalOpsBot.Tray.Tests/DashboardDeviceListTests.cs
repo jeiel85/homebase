@@ -92,4 +92,26 @@ public sealed class DashboardDeviceListTests
         Assert.Equal(new[] { "A", "B" }, items.Select(i => i.Name).OrderBy(n => n));
         Assert.DoesNotContain(items, i => i.Role == DeviceRole.ViaHub);
     }
+
+    [Fact]
+    public void A_reinstalled_phone_shows_as_its_new_pairing_not_the_old_one_listed_first()
+    {
+        // M-71: the store lists the old install first (paired first); it went quiet a day before.
+        var old = new DeviceEntry("old", "S24", DeviceKind.Phone, "SM-S921N", Now.AddDays(-1), false, null);
+        var fresh = new DeviceEntry("new", "S24", DeviceKind.Phone, "SM-S921N", Now, true, null);
+        var phone = Assert.Single(Others(Overview(Array.Empty<LinkedHubView>(), old, fresh)));
+
+        Assert.Equal("device:new", phone.Key);
+        Assert.True(phone.Online);
+    }
+
+    [Fact]
+    public void Through_another_pc_too_the_phone_in_use_wins()
+    {
+        var old = new DeviceEntry("old", "S24", DeviceKind.Phone, "SM-S921N", Now.AddDays(-1), false, null);
+        var fresh = new DeviceEntry("new", "S24", DeviceKind.Phone, "SM-S921N", Now, true, null);
+        var phone = Assert.Single(Others(Overview(new[] { Hub("pc-a", "A", online: true, old, fresh) })), i => !i.IsPc);
+
+        Assert.Equal("via:pc-a:new", phone.Key);
+    }
 }
