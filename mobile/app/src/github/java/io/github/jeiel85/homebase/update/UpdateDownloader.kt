@@ -20,6 +20,9 @@ internal class UpdateDownloader {
     sealed interface Result {
         data class Success(val file: File) : Result
         data object Failed : Result
+
+        /** [download]의 `isStopped`가 다음 시도 전에 참이 됐다 — 실패로 세지 않는다. */
+        data object Stopped : Result
     }
 
     /**
@@ -32,8 +35,13 @@ internal class UpdateDownloader {
      * 보여야 하는데, 일시적인 네트워크 끊김 한 번으로 그 실패 화면을 띄우고 싶지 않아서다.
      * 실패가 반복되면(진짜 문제) 그때는 사용자에게 알리는 것이 맞다 — 그래서 상한이 있다.
      */
-    fun download(url: String, destination: File, expectedSha256Hex: String): Result {
+    fun download(url: String, destination: File, expectedSha256Hex: String, isStopped: () -> Boolean = { false }): Result {
         repeat(MAX_ATTEMPTS) {
+            // 백그라운드 잡이 멈췄으면(네트워크 끊김·설정 끔) 남은 시도를 하지 않는다(#74). 받는 중인 시도는 끝까지 간다.
+            if (isStopped()) {
+                destination.delete()
+                return Result.Stopped
+            }
             destination.delete()
             if (attemptDownload(url, destination) && Sha256.matches(destination, expectedSha256Hex)) {
                 return Result.Success(destination)

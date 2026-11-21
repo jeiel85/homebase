@@ -98,7 +98,8 @@ internal static class ElevatedConfig
     /// <summary>
     /// The elevated helper: read the staged file once, check it is what the Tray wrote, and write those
     /// bytes as a new file (owned by Administrators, inheriting the folder's ACL — so a config a
-    /// non-admin created earlier, and still owns, is replaced rather than written into); then restart
+    /// non-admin created earlier, and still owns, is replaced rather than written into) and put in place
+    /// with one rename over the old one, so the config file never goes missing in between; then restart
     /// the Agent so it re-reads at startup. No JSON parsing in PowerShell.
     /// </summary>
     internal static string BuildApplyScript(string stagedPath, string sha256)
@@ -120,8 +121,18 @@ New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 $staged = Join-Path $configDir ('appsettings.' + [Guid]::NewGuid().ToString('N') + '.new')
 $out = [System.IO.File]::Open($staged, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
 try { $out.Write($bytes, 0, $bytes.Length) } finally { $out.Dispose() }
-if (Test-Path -LiteralPath $configFile) { Remove-Item -LiteralPath $configFile -Force }
-Move-Item -LiteralPath $staged -Destination $configFile
+# One rename over the old file (MoveFileEx, replace existing): the Agent, which reloads on change, never sees the
+# file missing, and the new file keeps its own owner and ACL (File.Replace would carry the old file's over).
+# A read-only old file would refuse the rename (the delete it replaced ignored that), so clear the attribute first;
+# on failure the staged copy is removed rather than left behind in the config folder.
+try {
+    if (Test-Path -LiteralPath $configFile) { [System.IO.File]::SetAttributes($configFile, [System.IO.FileAttributes]::Normal) }
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    [Microsoft.VisualBasic.FileIO.FileSystem]::MoveFile($staged, $configFile, $true)
+} catch {
+    Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+    throw
+}
 # Restart is best-effort: the config is already written and the service reads it at startup.
 try {
     $svc = Get-Service -Name 'Homebase.Agent' -ErrorAction SilentlyContinue

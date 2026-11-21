@@ -589,6 +589,12 @@ public static class L
     public static string DevUptime(TimeSpan t) => T($"up {(int)t.TotalDays}d {t.Hours}h", $"가동 {(int)t.TotalDays}일 {t.Hours}시간");
     public static string DevVia(string hub) => T($"via {hub}", $"{hub} 경유");
     public static string DevHubRejected => T("this link was removed on that PC", "그 PC에서 연결이 해제됨");
+    public static string DevHubRefused(string error) => T($"answers, but refuses this PC's status ({error})", $"응답하지만 이 PC의 상태 보고를 거부함({error})");
+    public static string DetHubRefused(string error, bool relayWaiting) => T(
+        $"That PC answers but refuses this PC's status report ({error}) — often a Homebase version the other doesn't know yet. Update both PCs." +
+        (relayWaiting ? " Its notifications are held here until it takes the report, so none are relayed meanwhile." : ""),
+        $"그 PC가 응답은 하지만 이 PC의 상태 보고를 거부합니다({error}). 대개 두 PC의 Homebase 버전이 달라서입니다. 두 PC 모두 업데이트하세요." +
+        (relayWaiting ? " 보고를 받을 때까지 그 PC의 알림을 여기서 중계하지 않습니다." : ""));
     public static string DevHubConnecting => T("connecting…", "연결하는 중…");
     public static string DevHubPhones(int n) => T($"{n} phone(s) there", $"휴대폰 {n}대 연결됨");
 

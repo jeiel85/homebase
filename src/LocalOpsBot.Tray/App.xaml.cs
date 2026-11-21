@@ -186,16 +186,18 @@ public partial class App : Application
     /// Errors nothing caught go to tray.log. One thrown by a tray icon or menu click (WinForms) used to
     /// show WinForms' own ".NET" error dialog (Continue / Quit) and leave no trace; it is now logged and
     /// the tray carries on, as Continue did. A WPF or background error still ends the tray, as before,
-    /// but says why first.
+    /// but says why first. Such errors often come from memory running out, when writing the whole entry
+    /// can fail too: <see cref="TrayLog.Error"/> then still writes one line from buffers set aside here (#106).
     /// </summary>
     private void LogUnhandledErrors()
     {
+        TrayLog.Prepare();
         System.Windows.Forms.Application.ThreadException += (_, args) =>
-            TrayLog.Warn("App", "Unhandled error in a tray icon or menu action (the tray keeps running)", args.Exception);
+            TrayLog.Error("App", "Unhandled error in a tray icon or menu action (the tray keeps running)", args.Exception);
         DispatcherUnhandledException += (_, args) =>
-            TrayLog.Warn("App", "Unhandled error on the UI thread; the tray closes", args.Exception);
+            TrayLog.Error("App", "Unhandled error on the UI thread; the tray closes", args.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-            TrayLog.Warn("App", "Unhandled error; the tray closes", args.ExceptionObject as Exception);
+            TrayLog.Error("App", "Unhandled error; the tray closes", args.ExceptionObject as Exception);
     }
 
     private static string? ArgAfter(string[] args, string name)

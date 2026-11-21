@@ -70,7 +70,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -312,6 +314,8 @@ internal fun ShareCenterFlow(shared: List<Uri>, text: String?, presetPcId: Strin
     }
 
     val chosenCount = chosenPcs.size + chosenPhones.size
+    // Tiles a row by the screen's width (#111): two on a phone, more on a tablet or in landscape.
+    val columns = ShareLayout.columns(LocalConfiguration.current.screenWidthDp, LocalDensity.current.fontScale)
     Column(Modifier.fillMaxSize().background(hb.background)) {
         ConsoleBar(title = "공유 센터", onBack = onDone, eyebrow = "Homebase")
         LazyColumn(
@@ -348,11 +352,11 @@ internal fun ShareCenterFlow(shared: List<Uri>, text: String?, presetPcId: Strin
             }
             val list = pcs
             if (list == null) {
-                item(key = "loading") { TileGrid(listOf(Unit, Unit)) { _, m -> PlaceholderTile(m) } }
+                item(key = "loading") { TileGrid(listOf(Unit, Unit), columns) { _, m -> PlaceholderTile(m) } }
             } else {
-                // Two tiles a row: a PC is picked by its badge and name at a glance, not read off a checklist.
-                items(list.chunked(2), key = { row -> "pcs:" + row.joinToString(",") { it.pcId } }) { row ->
-                    TileGrid(row) { pc, m ->
+                // Tiles, not a checklist: a PC is picked by its badge and name at a glance.
+                items(list.chunked(columns), key = { row -> "pcs:" + row.joinToString(",") { it.pcId } }) { row ->
+                    TileGrid(row, columns) { pc, m ->
                         val key = ShareChoice.pcKey(pc.pcId)
                         val state = reach[pc.pcId] ?: Reach.CHECKING
                         TargetTile(
@@ -383,8 +387,8 @@ internal fun ShareCenterFlow(shared: List<Uri>, text: String?, presetPcId: Strin
                     }
                 } else if (phones.isNotEmpty()) {
                     item(key = "phones") { SectionLabel("다른 휴대폰 · PC 경유", Modifier.padding(horizontal = 14.dp)) }
-                    items(phones.chunked(2), key = { row -> "phones:" + row.joinToString(",") { it.key } }) { row ->
-                        TileGrid(row) { t, m ->
+                    items(phones.chunked(columns), key = { row -> "phones:" + row.joinToString(",") { it.key } }) { row ->
+                        TileGrid(row, columns) { t, m ->
                             TargetTile(
                                 checked = t.key in checked,
                                 onToggle = { toggle(t.key, it) },
@@ -560,13 +564,17 @@ private fun SlabChip(text: String, onClick: () -> Unit, enabled: Boolean) {
     }
 }
 
-/** A file's thumbnail (pictures, videos; [Thumbnails]), loaded off the main thread; null until then or without one. */
+/**
+ * A file's thumbnail (pictures, videos; [Thumbnails]) sized for [dp] on this screen, loaded off the main thread; null
+ * until then or without one.
+ */
 @Composable
-private fun rememberThumbnail(file: OutgoingFile): ImageBitmap? {
+private fun rememberThumbnail(file: OutgoingFile, dp: Int): ImageBitmap? {
     val context = LocalContext.current
-    var bitmap by remember(file.uri) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(file.uri) {
-        if (isVisual(file)) bitmap = withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime) }?.asImageBitmap()
+    val px = ShareLayout.thumbnailPx(dp, LocalDensity.current.density)
+    var bitmap by remember(file.uri, px) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file.uri, px) {
+        if (isVisual(file)) bitmap = withContext(Dispatchers.IO) { Thumbnails.load(context, file.uri, file.mime, px) }?.asImageBitmap()
     }
     return bitmap
 }
@@ -580,7 +588,8 @@ private fun isVisual(file: OutgoingFile) = file.mime?.let { it.startsWith("image
 @Composable
 private fun LargeThumb(file: OutgoingFile, onRemove: () -> Unit, modifier: Modifier = Modifier) {
     val hb = Hb.colors
-    val image = rememberThumbnail(file)
+    // As wide as the panel, cropped to 200 dp high: the width decides the size to ask for.
+    val image = rememberThumbnail(file, LocalConfiguration.current.screenWidthDp)
     Box(
         modifier
             .fillMaxWidth()
@@ -600,7 +609,7 @@ private fun LargeThumb(file: OutgoingFile, onRemove: () -> Unit, modifier: Modif
 @Composable
 private fun Thumb(file: OutgoingFile, onRemove: () -> Unit) {
     val hb = Hb.colors
-    val image = rememberThumbnail(file)
+    val image = rememberThumbnail(file, THUMB)
     Column(Modifier.width(THUMB.dp)) {
         Box(Modifier.size(THUMB.dp).clip(RoundedCornerShape(8.dp)).background(hb.slabRaised)) {
             if (image != null) {
@@ -685,15 +694,15 @@ private fun typeLabel(file: OutgoingFile): String {
 /** What a target is, for the small glyph on its badge. */
 private enum class DeviceKind { PC, PHONE }
 
-/** [row] (one or two items) side by side as equal tiles of the same height, the page's gutters around them. */
+/** [row] (up to [columns] items) side by side as equal tiles of the same height, the page's gutters around them. */
 @Composable
-private fun <T> TileGrid(row: List<T>, tile: @Composable (T, Modifier) -> Unit) {
+private fun <T> TileGrid(row: List<T>, columns: Int, tile: @Composable (T, Modifier) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp).height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         row.forEach { tile(it, Modifier.weight(1f).fillMaxHeight()) }
-        repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
     }
 }
 
@@ -854,9 +863,19 @@ private fun ShareDock(
                 if (marks.isEmpty()) {
                     Text("보낼 곳을 골라 주세요", style = MaterialTheme.typography.bodySmall, color = hb.inkSoft)
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
-                        marks.take(DOCK_BADGES).forEach { mark ->
+                    Row(horizontalArrangement = Arrangement.spacedBy((-8).dp), verticalAlignment = Alignment.CenterVertically) {
+                        marks.take(ShareLayout.DOCK_BADGES).forEach { mark ->
                             Box(Modifier.clip(CircleShape).background(hb.plate).padding(2.dp)) { PcBadge(mark, size = 24.dp) }
+                        }
+                        // More picked than badges: say how many more, the names line may be cut short (#111).
+                        ShareLayout.dockOverflow(marks.size)?.let { more ->
+                            Box(
+                                Modifier.clip(CircleShape).background(hb.plate).padding(2.dp)
+                                    .size(28.dp).clip(CircleShape).background(hb.slabRaised),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(more, style = HbType.label.copy(fontSize = 10.sp), color = hb.onSlab, maxLines = 1)
+                            }
                         }
                     }
                     Spacer(Modifier.width(8.dp))
@@ -880,14 +899,12 @@ private fun ShareDock(
  * (videos too); before that a picture is decoded at a reduced size and a video gets none. Null whenever it can't.
  */
 internal object Thumbnails {
-    private const val PX = 256
-
-    /** Blocking: call it off the main thread. */
-    fun load(context: Context, uri: Uri, mime: String?): Bitmap? = try {
+    /** Blocking: call it off the main thread. [px]: the longest side wanted ([ShareLayout.thumbnailPx]). */
+    fun load(context: Context, uri: Uri, mime: String?, px: Int): Bitmap? = try {
         if (Build.VERSION.SDK_INT >= 29) {
-            context.contentResolver.loadThumbnail(uri, Size(PX, PX), null)
+            context.contentResolver.loadThumbnail(uri, Size(px, px), null)
         } else if (mime?.startsWith("image/") == true) {
-            decodeSmall(context, uri)
+            decodeSmall(context, uri, px)
         } else {
             null
         }
@@ -897,20 +914,19 @@ internal object Thumbnails {
         null
     }
 
-    private fun decodeSmall(context: Context, uri: Uri): Bitmap? {
+    private fun decodeSmall(context: Context, uri: Uri, px: Int): Bitmap? {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
-        while (bounds.outWidth / (sample * 2) >= PX && bounds.outHeight / (sample * 2) >= PX) sample *= 2
+        while (bounds.outWidth / (sample * 2) >= px && bounds.outHeight / (sample * 2) >= px) sample *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sample }
         return resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
     }
 }
 
 private const val THUMB = 96
-private const val DOCK_BADGES = 5
 private val PANEL_GUTTER = 16.dp
 private const val PREVIEW_CHARS = 1_000
 

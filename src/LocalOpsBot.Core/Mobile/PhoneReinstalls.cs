@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace LocalOpsBot.Core.Mobile;
 
 /// <summary>
@@ -34,4 +37,26 @@ public static class PhoneReinstalls
     /// leave these out (M-72): it only hides them — one that reports again is not marked any more and shows again.
     /// </summary>
     public static IReadOnlySet<string> Superseded(IMobileDeviceStore store) => Superseded(store.List());
+
+    private const char Sep = (char)0x1f, EntryEnd = (char)0x1e;
+
+    /// <summary>
+    /// A short value that changes when what Settings › Phone shows of <paramref name="devices"/> changes: the
+    /// entries, their names, models and kinds, the minute each was last heard from, and which look like old
+    /// connections. The tab compares it with <see cref="BridgeStatus.DevicesVersion"/> on every status poll
+    /// instead of reading the whole list each time.
+    /// </summary>
+    public static string ListVersion(IReadOnlyCollection<MobileDeviceInfo> devices)
+    {
+        var stale = Superseded(devices);
+        var text = new StringBuilder();
+        foreach (var d in devices.OrderBy(d => d.DeviceId, StringComparer.Ordinal))
+        {
+            var seenMinute = d.LastSeenAt is { } seen ? seen.ToUnixTimeSeconds() / 60 : -1;
+            text.Append(d.DeviceId).Append(Sep).Append(d.Name).Append(Sep).Append(d.Model).Append(Sep)
+                .Append(d.Kind).Append(Sep).Append(seenMinute).Append(Sep).Append(stale.Contains(d.DeviceId) ? '1' : '0')
+                .Append(EntryEnd);
+        }
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())), 0, 8).ToLowerInvariant();
+    }
 }

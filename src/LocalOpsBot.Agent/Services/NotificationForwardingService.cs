@@ -257,7 +257,10 @@ public sealed class NotificationForwardingService : BackgroundService
             if (result.Delivered)
             {
                 Interlocked.Exchange(ref _lastFailure, null);
-                _logger.LogInformation("Forwarded {Count} notification(s) from {App}", batch.Count, batch.SourceApp);
+                // Says what each channel did: a push that skipped every phone (they already had it) also counts as
+                // delivered, and was indistinguishable from one that reached them.
+                _logger.LogInformation("Forwarded {Count} notification(s) from {App}: {Outcome}", batch.Count, batch.SourceApp,
+                    result.SuccessNotes ?? string.Join(", ", result.Attempts.Where(a => a.Success).Select(a => a.ChannelId)));
                 return;
             }
 

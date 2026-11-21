@@ -15,5 +15,14 @@
             android:name=".update.StoreUpdateJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- After Play updated the app: clears the "new version" notification it answered. -->
+        <receiver
+            android:name=".update.StoreUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

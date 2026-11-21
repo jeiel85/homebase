@@ -41,6 +41,7 @@ public class UnifiedPushChannelTests
 
         // Success, so the router does not fall back to Telegram for something the user turned off.
         Assert.True(result.Success);
+        Assert.Equal("skipped, every phone muted process_watch", result.Note); // the log tells it from a real push
         Assert.Empty(_http.Requests);
     }
 
@@ -72,7 +73,9 @@ public class UnifiedPushChannelTests
             [PushRelay.SkipHashesKey] = PushHash.Of("https://ntfy.sh/upTablet"),
         };
 
-        Assert.True((await _channel.SendAsync(Alert(category: "device-notification", meta: meta), default)).Success);
+        var result = await _channel.SendAsync(Alert(category: "device-notification", meta: meta), default);
+        Assert.True(result.Success);
+        Assert.Equal("pushed to 1 phone(s): Other; 2 skipped", result.Note);
         Assert.Equal("https://ntfy.sh/upOther", Assert.Single(_http.Requests).Uri);
     }
 
@@ -81,7 +84,9 @@ public class UnifiedPushChannelTests
     {
         Subscribe("https://ntfy.sh/upPhone");
         var meta = new Dictionary<string, string> { [PushRelay.OriginDeviceKey] = _deviceId };
-        Assert.True((await _channel.SendAsync(Alert(category: "device-notification", meta: meta), default)).Success);
+        var result = await _channel.SendAsync(Alert(category: "device-notification", meta: meta), default);
+        Assert.True(result.Success);
+        Assert.Equal("skipped, every phone already has it", result.Note);
         Assert.Empty(_http.Requests);
     }
 
@@ -296,7 +301,9 @@ public class UnifiedPushChannelTests
         _http.Next = () => _http.Requests[^1].Uri.Contains("upGone")
             ? new HttpResponseMessage(HttpStatusCode.Gone) : new HttpResponseMessage(HttpStatusCode.Created);
 
-        Assert.True((await _channel.SendAsync(Alert(), default)).Success);
+        var result = await _channel.SendAsync(Alert(), default);
+        Assert.True(result.Success);
+        Assert.Equal("pushed to 1 phone(s): Tablet; 1 failed", result.Note); // the log names who got it (#113)
         Assert.Equal(2, _http.Requests.Count);
     }
 

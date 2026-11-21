@@ -259,4 +259,24 @@ class UpdateDecisionTest {
     private companion object {
         const val NOW = 1_800_000_000_000L
     }
+
+    @Test
+    fun autoInstallLine_saysHowTheLastAutomaticInstallEnded() {
+        fun rec(o: AutoInstallResult.Outcome, status: Int = 0) = AutoInstallResult.Record(o, 5800, 0L, status)
+        assertEquals("자동 설치: 오늘 14:05 · 0.58.0 설치함", AutoInstallResult.line(rec(AutoInstallResult.Outcome.INSTALLED), "오늘 14:05", false))
+        assertEquals(
+            "자동 설치: 오늘 14:05 · 0.58.0 — Android가 설치 확인을 요구해 알림으로 알렸습니다",
+            AutoInstallResult.line(rec(AutoInstallResult.Outcome.NEEDS_CONFIRM), "오늘 14:05", false),
+        )
+        assertEquals(
+            "자동 설치: 어제 09:00 · 0.58.0 받지 못함 — 다음 확인 때 다시 시도합니다",
+            AutoInstallResult.line(rec(AutoInstallResult.Outcome.DOWNLOAD_FAILED), "어제 09:00", false),
+        )
+        assertEquals(
+            "자동 설치: 어제 09:00 · 0.58.0 설치 실패(저장 공간 부족) — 이 버전은 더 시도하지 않고 알림으로 알립니다",
+            AutoInstallResult.line(rec(AutoInstallResult.Outcome.INSTALL_FAILED, status = 6), "어제 09:00", true),
+        )
+        assertEquals("코드 99", AutoInstallResult.statusText(99))
+        assertEquals("1.2.3", AutoInstallResult.versionName(10203))
+    }
 }

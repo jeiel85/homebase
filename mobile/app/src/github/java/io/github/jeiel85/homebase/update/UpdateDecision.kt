@@ -10,6 +10,48 @@ import java.util.concurrent.TimeUnit
  *
  * 상태(마지막 확인 시각, 건너뛴 버전)는 인자로 받는다. 저장은 호출부의 몫이다.
  */
+/** 마지막 자동 설치(M-56)가 어떻게 끝났는가 — 설정 "마지막 확인" 아래 한 줄(#74). 순수 — `UpdateDecisionTest`. */
+internal object AutoInstallResult {
+    enum class Outcome { INSTALLED, NEEDS_CONFIRM, DOWNLOAD_FAILED, INSTALL_FAILED }
+
+    data class Record(val outcome: Outcome, val versionCode: Int, val at: Long, val status: Int = 0)
+
+    /** versionCode(주×10000 + 부×100 + 수)를 "0.58.0"으로. */
+    fun versionName(code: Int): String = "${code / 10000}.${code / 100 % 100}.${code % 100}"
+
+    /**
+     * "자동 설치: 오늘 14:05 · 0.58.0 설치함". [label]은 시각 표기("오늘 14:05"). 실패는 왜인지와 다음에 무엇을 하는지를
+     * 붙인다 — 지금까지는 logcat에만 남아 사용자 기기에서 원인을 알 수 없었다.
+     */
+    fun line(record: Record, label: String, gaveUp: Boolean): String {
+        val version = versionName(record.versionCode)
+        val what = when (record.outcome) {
+            Outcome.INSTALLED -> "$version 설치함"
+            Outcome.NEEDS_CONFIRM -> "$version — Android가 설치 확인을 요구해 알림으로 알렸습니다"
+            Outcome.DOWNLOAD_FAILED -> "$version 받지 못함" + next(gaveUp)
+            Outcome.INSTALL_FAILED -> "$version 설치 실패(${statusText(record.status)})" + next(gaveUp)
+        }
+        return "자동 설치: $label · $what"
+    }
+
+    private fun next(gaveUp: Boolean) =
+        if (gaveUp) " — 이 버전은 더 시도하지 않고 알림으로 알립니다" else " — 다음 확인 때 다시 시도합니다"
+
+    /** `PackageInstaller.STATUS_*` 실패 코드의 뜻. 0은 세션을 만들기 전에 난 오류. */
+    fun statusText(status: Int): String = when (status) {
+        1 -> "설치하지 못함" // STATUS_FAILURE
+        2 -> "다른 앱이나 정책이 막음" // STATUS_FAILURE_BLOCKED
+        3 -> "중단됨" // STATUS_FAILURE_ABORTED
+        4 -> "APK가 올바르지 않음" // STATUS_FAILURE_INVALID
+        5 -> "설치된 앱과 충돌(서명이 다름)" // STATUS_FAILURE_CONFLICT
+        6 -> "저장 공간 부족" // STATUS_FAILURE_STORAGE
+        7 -> "이 기기와 호환되지 않음" // STATUS_FAILURE_INCOMPATIBLE
+        8 -> "시간 초과" // STATUS_FAILURE_TIMEOUT
+        0 -> "설치를 시작하지 못함"
+        else -> "코드 $status"
+    }
+}
+
 internal object UpdateDecision {
 
     val CHECK_INTERVAL_MILLIS: Long = TimeUnit.DAYS.toMillis(1)

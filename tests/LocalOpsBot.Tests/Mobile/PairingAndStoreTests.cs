@@ -95,6 +95,25 @@ public class MobileDeviceStoreTests : IDisposable
         Assert.False(store.Revoke(d.DeviceId));
     }
 
+    [Fact]
+    public void The_list_says_when_a_device_was_last_heard_from_to_the_moment_but_the_file_is_written_every_ten_minutes()
+    {
+        var store = new MobileDeviceStore(_dir, _time, restrictAcl: false);
+        store.Add("Phone", null, PairingService.HashToken("t"));
+        var first = _time.GetUtcNow();
+        store.Authenticate("t");
+        var written = File.ReadAllText(Path.Combine(_dir, "state.json"));
+
+        _time.Advance(TimeSpan.FromMinutes(3));
+        store.Authenticate("t");
+
+        // Exact in the list, so a phone in use is not taken for an old connection (M-71, #121)…
+        Assert.Equal(first + TimeSpan.FromMinutes(3), store.List().Single().LastSeenAt);
+        // …without rewriting the file on every request.
+        Assert.Equal(written, File.ReadAllText(Path.Combine(_dir, "state.json")));
+        Assert.Equal(first, new MobileDeviceStore(_dir, _time, restrictAcl: false).List().Single().LastSeenAt);
+    }
+
     private static LocalOpsBot.Core.Push.PushSubscription Sub(string endpoint) =>
         new(endpoint, "p256dh", "auth", DateTimeOffset.UnixEpoch);
 

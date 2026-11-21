@@ -40,6 +40,41 @@ public sealed class ProgramDataAclTests
     }
 
     [Fact]
+    public void A_folder_that_already_has_the_rule_is_not_written_again()
+    {
+        var dir = Directory.CreateTempSubdirectory("homebase-acl-");
+        var logs = dir.CreateSubdirectory("logs");
+        try
+        {
+            Assert.False(ProgramDataAcl.AlreadyApplied(dir.GetAccessControl(), ProgramDataAcl.RootSecurity()));
+            Assert.False(ProgramDataAcl.AlreadyApplied(logs.GetAccessControl(), ProgramDataAcl.LogsSecurity()));
+
+            // As Windows stores them and reads them back: then they match and the start-up check skips the write.
+            dir.SetAccessControl(ProgramDataAcl.RootSecurity());
+            logs.SetAccessControl(ProgramDataAcl.LogsSecurity());
+
+            Assert.True(ProgramDataAcl.AlreadyApplied(dir.GetAccessControl(), ProgramDataAcl.RootSecurity()));
+            Assert.True(ProgramDataAcl.AlreadyApplied(logs.GetAccessControl(), ProgramDataAcl.LogsSecurity()));
+            Assert.False(ProgramDataAcl.AlreadyApplied(logs.GetAccessControl(), ProgramDataAcl.RootSecurity()));
+        }
+        finally
+        {
+            // The owner may always set the ACL again: give this user the folders back, then delete them.
+            OpenToMe(dir);
+            OpenToMe(logs);
+            Directory.Delete(dir.FullName, recursive: true);
+        }
+    }
+
+    private static void OpenToMe(DirectoryInfo dir)
+    {
+        var s = new DirectorySecurity();
+        s.AddAccessRule(new FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User!, FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        dir.SetAccessControl(s);
+    }
+
+    [Fact]
     public void Outside_the_service_it_changes_nothing()
     {
         var dir = Directory.CreateTempSubdirectory("homebase-acl-").FullName;

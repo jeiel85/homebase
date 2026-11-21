@@ -259,9 +259,16 @@ $zip = '__ZIP_PATH__'
 $expectedSha256 = '__SHA256__'
 $work = Join-Path $env:ProgramData ('Homebase_Update_' + [Guid]::NewGuid().ToString('N'))
 $extract = Join-Path $work 'package'
-$agentDir = 'C:\Program Files\Homebase\Agent'
-$trayDir = 'C:\Program Files\Homebase\Tray'
 $serviceName = 'Homebase.Agent'
+# Where this PC has Homebase: the folder the service runs from (setup lets the user pick another folder), else
+# the default. Only an administrator can change a service's path.
+$installRoot = 'C:\Program Files\Homebase'
+try {
+    $bin = (Get-CimInstance Win32_Service -Filter ""Name='Homebase.Agent'"" -ErrorAction Stop).PathName
+    if ($bin -match '^\s*""?(.+?)\\Agent\\Homebase\.Agent\.exe""?') { $installRoot = $Matches[1] }
+} catch { }
+$agentDir = Join-Path $installRoot 'Agent'
+$trayDir = Join-Path $installRoot 'Tray'
 $logDir = Join-Path $env:ProgramData 'Homebase\logs'
 $log = Join-Path $logDir 'update.log'
 
@@ -301,6 +308,7 @@ function Copy-WithRetry($src, $dest) {
 }
 
 try { New-Item -ItemType Directory -Force -Path $logDir | Out-Null } catch { }
+Write-Log ('Installing into ' + $installRoot)
 
 try {
     New-PrivateDirectory $work

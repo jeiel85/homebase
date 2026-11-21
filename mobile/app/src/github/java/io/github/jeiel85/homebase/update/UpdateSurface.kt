@@ -64,6 +64,10 @@ internal object UpdateSurface {
         UpdateCheckScheduler.sync(context)
     }
 
+    /** Play판은 화면으로 돌아올 때 다시 묻는다(#77). 이 판의 확인은 잡과 배너의 새로 고침이 맡는다. */
+    @Suppress("UNUSED_PARAMETER")
+    fun onResume(context: Context) = Unit
+
     /** 업데이트 알림을 눌러 앱이 열렸는가. */
     fun isUpdateTap(intent: Intent?): Boolean =
         intent?.getBooleanExtra(UpdateNotifier.EXTRA_OPEN_UPDATE, false) == true
@@ -101,12 +105,33 @@ internal object UpdateSurface {
         // 백그라운드 확인이 실제로 도는지 보이게 한다 — 배터리 정책이 잡을 미루거나 건너뛰는 기기가 있다.
         if (enabled) {
             val lastChecked = remember { preferences.lastCheckedAt() }
+            val now = System.currentTimeMillis()
             Text(
-                text = lastUpdateCheckLine(lastChecked, System.currentTimeMillis()),
+                text = lastUpdateCheckLine(lastChecked, now),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
+            // 마지막 자동 설치가 어떻게 끝났는지(#74) — 실패는 이 화면 말고는 남는 곳이 없다.
+            // 그 버전을 이미 (손으로) 설치했으면 지난 실패는 더 할 일이 없으니 보이지 않는다.
+            val autoResult = remember { preferences.lastAutoInstall() }?.takeIf {
+                it.outcome == AutoInstallResult.Outcome.INSTALLED || it.versionCode > BuildConfig.VERSION_CODE
+            }
+            if (autoInstall && autoResult != null) {
+                val gaveUp = autoResult.outcome == AutoInstallResult.Outcome.DOWNLOAD_FAILED ||
+                    autoResult.outcome == AutoInstallResult.Outcome.INSTALL_FAILED
+                Text(
+                    text = AutoInstallResult.line(
+                        autoResult,
+                        updateTimeLabel(autoResult.at, now),
+                        gaveUp = gaveUp && preferences.silentFailedVersionCode() == autoResult.versionCode &&
+                            preferences.silentFailures() >= UpdateDecision.MAX_SILENT_ATTEMPTS,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             UpdateNotificationPermissionRow()
         }
         // 확인 없는 설치(DECISIONS M-56). 확인을 끄면 받을 새 버전도 모르므로 함께 숨긴다.
@@ -351,7 +376,8 @@ internal object UpdateSurface {
                 // 설치 앱은 메인 스레드에서 띄운다 — 이 LaunchedEffect의 기본 디스패처다.
                 val installed = when (downloaded) {
                     is UpdateDownloader.Result.Success -> UpdateInstaller.install(context, downloaded.file)
-                    UpdateDownloader.Result.Failed -> false
+                    // 이 대화상자는 멈추라고 하지 않는다(isStopped 없음) — 여기 오지 않는다.
+                    UpdateDownloader.Result.Failed, UpdateDownloader.Result.Stopped -> false
                 }
                 // 성공하면 이 모달이 더 할 일이 없다 — 그다음(확인, 진행, 완료/열기)은 시스템 설치
                 // 앱이 그린다. 실패하면 "다시 시도"와 "브라우저에서 열기" 중 고르게 한다(디자인

@@ -135,6 +135,27 @@ public sealed class UpdateServiceTests
     }
 
     [Theory]
+    [InlineData(@"""C:\Program Files\Homebase\Agent\Homebase.Agent.exe""", @"C:\Program Files\Homebase")]
+    [InlineData(@"D:\Apps\Homebase\Agent\Homebase.Agent.exe", @"D:\Apps\Homebase")]
+    [InlineData(@"""D:\My Apps\HB\agent\Homebase.Agent.exe"" --run", @"D:\My Apps\HB")]
+    [InlineData(@"C:\Other\thing.exe", null)]
+    public void ApplyScript_UpdatesTheFolderTheServiceRunsFrom(string binPath, string? root)
+    {
+        var script = UpdateService.BuildApplyScript(new DownloadedUpdate(@"C:\a.zip", Digest));
+
+        // Setup lets the user pick the install folder (#80): Agent and Tray go where the service runs from.
+        Assert.Contains("$installRoot = 'C:\\Program Files\\Homebase'", script); // when the service can't be read
+        Assert.Contains("$agentDir = Join-Path $installRoot 'Agent'", script);
+        Assert.Contains("$trayDir = Join-Path $installRoot 'Tray'", script);
+        Assert.DoesNotContain(@"'C:\Program Files\Homebase\Agent'", script);
+        // The script's own pattern, as PowerShell's -match runs it (case-insensitive .NET regex).
+        var start = script.IndexOf("-match '", StringComparison.Ordinal) + "-match '".Length;
+        var pattern = script[start..script.IndexOf('\'', start)];
+        var m = System.Text.RegularExpressions.Regex.Match(binPath, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        Assert.Equal(root, m.Success ? m.Groups[1].Value : null);
+    }
+
+    [Theory]
     [InlineData(@"C:\a.zip", "nothex")]
     [InlineData(@"C:\a.zip", "0123")]
     [InlineData("C:\\a\r\n.zip", Digest)]

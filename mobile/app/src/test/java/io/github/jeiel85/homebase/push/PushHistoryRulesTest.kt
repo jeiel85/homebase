@@ -139,4 +139,28 @@ class PushHistoryRulesTest {
         root.getJSONArray("entries").getJSONObject(0).put("color", 99)
         assertNull(PushHistoryRules.fromJson(root.toString()).single().color)
     }
+
+    @Test
+    fun clipboardEntriesAreCappedApartFromTheRest() {
+        val now = at(2026, 11, 21)
+        val text = "가".repeat(ClipHistory.KEPT_CHARS)
+        // Newest first: 150 clipboard entries (received and sent) mixed with 150 others.
+        val list = (0 until 300).map { i ->
+            val category = when {
+                i % 2 == 1 -> "windows-toast"
+                i % 4 == 0 -> ClipHistory.RECEIVED
+                else -> ClipHistory.SENT
+            }
+            entry("e$i", now - i * 1000L, category, body = if (ClipHistory.isClip(category)) text else "본문")
+        }
+        val kept = PushHistoryRules.prune(list, now)
+        assertEquals(PushHistoryRules.MAX_CLIP_ENTRIES, kept.count { ClipHistory.isClip(it.category) })
+        // Every other entry stays, and the clipboard entries kept are the newest.
+        assertEquals(150, kept.count { it.category == "windows-toast" })
+        assertEquals("e0", kept.first().id)
+        assertTrue(kept.none { it.id == "e200" })
+        // What that costs on disk before encryption: about 6 KB a full entry, so the cap holds the file well under 1 MB.
+        val bytes = PushHistoryRules.toJson(kept.filter { ClipHistory.isClip(it.category) }).toByteArray(Charsets.UTF_8).size
+        assertTrue("clipboard entries take $bytes bytes", bytes in 600_000..700_000)
+    }
 }
