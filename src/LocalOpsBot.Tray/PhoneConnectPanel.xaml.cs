@@ -814,11 +814,15 @@ public partial class PhoneConnectPanel : UserControl
     private async void CleanStale_Click(object sender, RoutedEventArgs e)
     {
         if (_stale.Count == 0 || MobileHost.Client is not { } client) return;
-        var list = string.Join("\n", _stale.Select(d => "• " + DeviceNames.Show(d.Kind, d.Name, PhoneKey(d)) +
+        // Only what the dialog lists: the status poll keeps running under it and may reload the list.
+        var shown = _stale.ToList();
+        var list = string.Join("\n", shown.Select(d => "• " + DeviceNames.Show(d.Kind, d.Name, PhoneKey(d)) +
             $" ({d.Model ?? "Android"}, " + L.PhoneStaleLastSeen((d.LastSeenAt ?? d.PairedAt).ToLocalTime()) + ")"));
         if (!MessageDialog.Show("Homebase", L.PhoneStaleConfirm(list), L.PhoneStaleClean, L.Cancel, owner: Window.GetWindow(this)))
             return;
-        foreach (var d in _stale)
+        // ...and still marked now: one that reported again meanwhile is in use after all.
+        var still = _stale.Select(d => d.DeviceId).ToHashSet(StringComparer.Ordinal);
+        foreach (var d in shown.Where(d => still.Contains(d.DeviceId)))
             await TryRequestAsync(client, MobileBridge.OpDevicesRevoke, new { deviceId = d.DeviceId }, TimeSpan.FromSeconds(20));
         await LoadDevicesAsync();
     }
