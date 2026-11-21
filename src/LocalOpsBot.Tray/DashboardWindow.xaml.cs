@@ -304,6 +304,16 @@ public partial class DashboardWindow : ThemedWindow
             }
             RailPanel.Children.Add(Tile(d));
         }
+        // Old entries a reinstalled phone left behind (M-72): left out of the list above, cleaned up where they are listed.
+        if (_overview is { Replaced: > 0 } overview)
+        {
+            var note = Text(L.RailReplaced(overview.Replaced) + " ", 11, InkSoft, wrap: true);
+            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(L.RailReplacedClean));
+            link.Click += (_, _) => ShowTab(DashTab.Settings, SettingsTab.Phone);
+            note.Inlines.Add(link);
+            note.Margin = new Thickness(6, 14, 6, 0);
+            RailPanel.Children.Add(note);
+        }
         if (_items.Count == 1)
         {
             var hint = Text(_source.FeatureEnabled ? L.DevNone : L.DevFeatureOff, 11.5, InkSoft, wrap: true);

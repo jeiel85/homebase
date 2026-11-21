@@ -199,12 +199,15 @@ public sealed record LinkedHubView(
 
 /// <summary>
 /// <c>devices.overview</c>: what is paired here, and the PCs this one is linked to. <c>Local</c> (v0.34.0)
-/// adds what only this PC knows about its own devices: when they paired and whether they take push.
+/// adds what only this PC knows about its own devices: when they paired and whether they take push. <c>Replaced</c>
+/// (v0.59.0, M-72): how many phones paired here look like the old entry of a phone that connected again — left out of
+/// <c>Here</c>, and cleaned up in Settings › Phone.
 /// </summary>
 public sealed record DeviceOverview(
     DevicesResponse Here,
     IReadOnlyList<LinkedHubView> Hubs,
-    IReadOnlyList<LocalDeviceInfo>? Local = null);
+    IReadOnlyList<LocalDeviceInfo>? Local = null,
+    int Replaced = 0);
 
 /// <summary>
 /// <c>devices.refresh</c> (M-59): the Tray's refresh asked every PC this one is linked to again at once.

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.59.0 — Remote command keys that match the app, and old phone connections out of sight
+
+### Changed
+- **Phone app: the PC screen's remote commands look like the rest of the screen.** They were a card of outlined
+  buttons with text symbols (the mute one came out as a colour emoji), which read as a separate design. They are now a
+  "원격 명령" section like the other headings, with keys cut from the same faceplate as the app cards below and drawn
+  glyphs in one weight for screen off, the media and volume keys and sleep. The key being sent gets an amber edge, the
+  way the tabs mark the one chosen, and a restart counting down shows with the amber rail of the app in use. **AI 조언
+  받기** above them is the same kind of key instead of an outlined button.
+
+### Fixed
+- **The old connection a reinstalled phone leaves behind no longer shows as another phone.** After reinstalling the
+  Homebase app (or switching between the GitHub and Play versions) and connecting again, the old entry showed in the
+  phone's 다른 기기 list and as a place to send to ("다른 휴대폰 · PC 경유", the PC's 보내기). Entries that v0.58.0 marks
+  as such are now left out of those lists and the Homebase window's Devices tab; one that reports again shows again.
+  They are still removed only when you confirm: the Devices tab now says how many are hidden, with **정리…** taking you
+  to Settings › Phone, where **예전 연결 정리** removes them.
+
 ## v0.58.0 — Clean up the old connection of a phone you connected again
 
 ### Added

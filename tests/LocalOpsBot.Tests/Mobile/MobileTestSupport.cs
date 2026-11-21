@@ -26,6 +26,14 @@ internal sealed class InMemoryDeviceStore : IMobileDeviceStore
         return info;
     }
 
+    /// <summary>A device paired at <paramref name="pairedAt"/> and last heard from at <paramref name="lastSeen"/>.</summary>
+    public MobileDeviceInfo AddAt(string name, string? model, string tokenSha256Hex, DateTimeOffset pairedAt, DateTimeOffset? lastSeen)
+    {
+        var info = new MobileDeviceInfo($"dev{_devices.Count + 1}", name, model, pairedAt, lastSeen, DeviceKind.Phone);
+        _devices.Add((info, tokenSha256Hex));
+        return info;
+    }
+
     private readonly Dictionary<string, PushSubscription> _push = new();
 
     public bool Revoke(string deviceId)

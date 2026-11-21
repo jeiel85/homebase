@@ -560,6 +560,11 @@ public static class L
         "Looks like this phone's connection from before it connected again",
         "다시 연결하기 전의 예전 연결로 보입니다");
     public static string PhoneStaleClean => T("CLEAN UP", "예전 연결 정리");
+    // The Devices tab's note (M-72): those entries are left out of the list, and cleaned up in Settings › Phone.
+    public static string RailReplaced(int n) => T(
+        n == 1 ? "1 old connection of a phone that connected again is hidden." : $"{n} old connections of phones that connected again are hidden.",
+        $"다시 연결한 휴대폰의 예전 연결 {n}개를 숨겼습니다.");
+    public static string RailReplacedClean => T("Clean up…", "정리…");
     public static string PhoneStaleLastSeen(DateTimeOffset at) => T($"last heard {at:MM-dd HH:mm}", $"마지막 소식 {at:MM-dd HH:mm}");
     public static string PhoneStaleConfirm(string list) => T(
         $"Take these old connections out of the group?\n\n{list}\n\nThe phone you connected again stays. If one of them is actually another phone with the same name that has been off, it needs a QR code to connect again.",

@@ -434,7 +434,8 @@ public sealed class MobileBridgeServer : BackgroundService
             MobileBridge.OpDevicesOverview => _deviceHub is null
                 ? MobileBridge.Response(id, false, error: "unsupported")
                 : MobileBridge.Response(id, true, new DeviceOverview(_deviceHub.Devices(),
-                    _hubLinks?.Views() ?? (IReadOnlyList<LinkedHubView>)Array.Empty<LinkedHubView>(), _deviceHub.LocalInfo())),
+                    _hubLinks?.Views() ?? (IReadOnlyList<LinkedHubView>)Array.Empty<LinkedHubView>(), _deviceHub.LocalInfo(),
+                    PhoneReinstalls.Superseded(_devices).Count)),
             _ => MobileBridge.Response(id, false, error: "unsupported"),
         };
         await SendAsync(conn, response, ct);

@@ -8,25 +8,27 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,9 +45,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,13 +69,13 @@ import io.github.jeiel85.homebase.net.CommandOutcome
 import io.github.jeiel85.homebase.net.CommandPending
 import io.github.jeiel85.homebase.net.HomebaseApi
 import io.github.jeiel85.homebase.net.RemoteCommandNames
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * The PC screen's remote commands (DECISIONS M-69, docs/REMOTE_COMMANDS.md §4.4): what the PC turned on, the question
@@ -208,9 +214,10 @@ internal fun rememberCommandPanel(pc: PcEntry, api: HomebaseApi, connected: Bool
 }
 
 /**
- * Under the AI advice: the commands [CommandLayout] lays out, a restart counting down with [취소], what came of the
- * last one, and [깨우기] while the PC is [unreachable] and its MAC addresses are known. Nothing for a PC older than
- * remote commands.
+ * Under the AI advice, as a section of the page like the tabs and cards below it (it was a card of outlined buttons,
+ * which read as a different design): a [SectionLabel], the commands [CommandLayout] lays out as keys cut from the same
+ * faceplate as the app cards, a restart counting down with [취소], what came of the last one, and [깨우기] while the PC
+ * is [unreachable] and its MAC addresses are known. Nothing for a PC older than remote commands.
  */
 @Composable
 internal fun RemoteCommandCard(panel: CommandPanel, unreachable: Boolean) {
@@ -230,31 +237,33 @@ internal fun RemoteCommandCard(panel: CommandPanel, unreachable: Boolean) {
     if (list == null && !canWake) return
     val pending = list?.pending?.takeIf { p -> p.atMillis.let { it != null && it > now } }
     val small = MaterialTheme.typography.bodySmall
-    Plate(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-        Column(Modifier.padding(14.dp)) {
-            Text("원격 명령", style = HbType.label, color = hb.inkSoft, modifier = Modifier.padding(bottom = 8.dp))
-            if (list != null) {
-                if (list.commands.isEmpty()) Text(CommandText.NONE_TURNED_ON, style = small, color = hb.inkSoft)
-                CommandLayout.rows(list.commands).forEachIndexed { i, row ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = if (i > 0) 8.dp else 0.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        row.forEach { info ->
-                            CommandButton(
-                                info,
-                                enabled = panel.sending == null && !unreachable,
-                                onClick = { panel.tap(info) },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        SectionLabel("원격 명령", Modifier.padding(horizontal = 2.dp), trailing = if (unreachable) "PC에 닿지 않음" else null)
+        if (list != null) {
+            if (list.commands.isEmpty()) Text(CommandText.NONE_TURNED_ON, style = small, color = hb.inkSoft)
+            CommandLayout.rows(list.commands).forEachIndexed { i, row ->
+                Row(
+                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = if (i > 0) 8.dp else 0.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.forEach { info ->
+                        CommandKey(
+                            info,
+                            enabled = panel.sending == null && !unreachable,
+                            sending = panel.sending == info.name,
+                            onClick = { panel.tap(info) },
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
                     }
                 }
             }
-            if (list != null && pending != null) {
-                val label = list.commands.firstOrNull { it.name == pending.name }?.label ?: RemoteCommandNames.label(pending.name)
-                val at = pending.atMillis?.let { TIME.format(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) }
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        }
+        if (list != null && pending != null) {
+            val label = list.commands.firstOrNull { it.name == pending.name }?.label ?: RemoteCommandNames.label(pending.name)
+            val at = pending.atMillis?.let { TIME.format(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) }
+            // The one thing under way, marked like the app in use: the amber rail.
+            Plate(Modifier.padding(top = 10.dp), rail = true) {
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Led(hb.accent, size = 7.dp, pulse = true)
                     Text(
                         if (at == null) "$label 예정" else "$label 예정 · $at",
@@ -265,9 +274,18 @@ internal fun RemoteCommandCard(panel: CommandPanel, unreachable: Boolean) {
                     TextButton(onClick = { panel.cancelPending(pending, label) }, enabled = panel.sending == null) { Text("취소") }
                 }
             }
-            panel.lastLine?.let { Text(it, style = small, color = hb.inkSoft, modifier = Modifier.padding(top = 10.dp)) }
-            if (canWake) WakeBlock(panel, Modifier.padding(top = 12.dp))
         }
+        panel.lastLine?.let {
+            Row(Modifier.fillMaxWidth().padding(start = 2.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (panel.sending != null) {
+                    Led(hb.accent, size = 7.dp, pulse = true)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(it, style = small, color = hb.inkSoft)
+            }
+        }
+        if (canWake) WakeBlock(panel, Modifier.padding(top = 12.dp))
+        Spacer(Modifier.height(6.dp))
     }
 }
 
@@ -301,43 +319,55 @@ internal fun CommandConfirmDialog(panel: CommandPanel, pcName: String) {
     )
 }
 
-/** A command's button: a symbol or icon over the PC's label, narrow enough for three in a row on a 360 dp phone. */
+/**
+ * A command's key: a small faceplate like the app cards (plate face, bevel along the bottom) with its glyph over the
+ * PC's label, narrow enough for three in a row on a 360 dp phone. The key being sent gets an amber bevel, the way the
+ * tabs mark the one chosen.
+ */
 @Composable
-private fun CommandButton(info: CommandInfo, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CommandKey(info: CommandInfo, enabled: Boolean, sending: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val hb = Hb.colors
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(6.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = hb.ink),
-        border = BorderStroke(1.5.dp, if (enabled) hb.inkSoft else hb.hairline),
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-        modifier = modifier.heightIn(min = 56.dp),
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            val icon = iconOf(info.name)
-            val symbol = CommandLayout.symbol(info.name)
-            if (icon != null) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-            } else if (symbol != null) {
-                // The label says it; a screen reader needn't read the symbol too.
-                Text(symbol, style = HbType.readout.copy(fontSize = 16.sp), maxLines = 1, modifier = Modifier.clearAndSetSemantics { })
+    val content = if (enabled || sending) hb.ink else hb.ink.copy(alpha = 0.4f)
+    val edge = if (sending) hb.accent else hb.plateEdge
+    Column(
+        modifier
+            .heightIn(min = 64.dp)
+            .clip(PlateShape)
+            .background(hb.plate)
+            .drawBehind {
+                val bevel = (if (sending) 3.dp else 2.dp).toPx()
+                drawRect(edge, topLeft = Offset(0f, size.height - bevel), size = Size(size.width, bevel))
             }
-            Text(
-                info.label,
-                style = HbType.label.copy(fontSize = 12.sp, letterSpacing = 0.2.sp),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        iconOf(info.name)?.let { Icon(it, contentDescription = null, tint = content, modifier = Modifier.size(20.dp)) }
+        Text(
+            info.label,
+            style = HbType.label.copy(fontSize = 12.sp, letterSpacing = 0.2.sp),
+            color = content,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 
-/** Icons of material-icons-core only; the media and volume buttons carry a symbol instead ([CommandLayout.symbol]). */
+/** Every command this app knows has a glyph; custom ones the play arrow, names a newer PC adds none. */
 private fun iconOf(name: String): ImageVector? = when {
     name == RemoteCommandNames.LOCK -> Icons.Filled.Lock
+    name == RemoteCommandNames.SCREEN_OFF -> CommandIcons.ScreenOff
+    name == RemoteCommandNames.PREVIOUS -> CommandIcons.Previous
+    name == RemoteCommandNames.PLAY_PAUSE -> CommandIcons.PlayPause
+    name == RemoteCommandNames.NEXT -> CommandIcons.Next
+    name == RemoteCommandNames.MUTE -> CommandIcons.Mute
+    name == RemoteCommandNames.VOLUME_DOWN -> CommandIcons.VolumeDown
+    name == RemoteCommandNames.VOLUME_UP -> CommandIcons.VolumeUp
     name == RemoteCommandNames.RESTART -> Icons.Filled.Refresh
+    name == RemoteCommandNames.SLEEP -> CommandIcons.Sleep
     RemoteCommandNames.isCustom(name) -> Icons.Filled.PlayArrow
     else -> null
 }

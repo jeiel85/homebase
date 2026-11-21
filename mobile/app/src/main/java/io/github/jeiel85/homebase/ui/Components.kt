@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.jeiel85.homebase.data.PcMark
 
-private val PlateShape = RoundedCornerShape(8.dp)
+internal val PlateShape = RoundedCornerShape(8.dp)
 
 /**
  * Carbon command slab across the top, drawn under the status bar, closed by an amber stripe —
