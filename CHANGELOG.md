@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.58.0 — Clean up the old connection of a phone you connected again
+
+### Added
+- **Settings › Phone marks the old connection a reinstalled phone leaves behind, and cleans it up in one step.**
+  Reinstalling the Homebase app, or switching between the GitHub and Play versions, and connecting again adds the
+  phone anew, so the old entry stayed listed and showed on the phone as another phone ("다른 휴대폰 · PC 경유" in the
+  share center, 다른 기기). When a phone with the same name and model connects again and the older entry has been
+  quiet since, that entry says "다시 연결하기 전의 예전 연결로 보입니다", and **예전 연결 정리** above the list takes such
+  entries out of the whole group after you confirm. The phone you connected again stays. It appears right after you
+  scan the QR code. Nothing is removed by itself: a second phone with the same name that has been off looks the
+  same, so the confirmation lists each entry with when it was last heard from.
+
+### Fixed
+- **The Devices tab shows the phone you use, not its old connection.** Phones with the same name are shown once; the
+  one paired first used to win, so after connecting again the tab showed the old, offline entry. It now shows the
+  one that is online or was heard from last.
+
 ## v0.57.1 — The Play build no longer asks for a portrait screen
 
 ### Fixed

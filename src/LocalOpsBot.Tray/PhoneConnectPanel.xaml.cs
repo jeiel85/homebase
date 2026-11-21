@@ -40,7 +40,14 @@ public partial class PhoneConnectPanel : UserControl
     private bool _started;
     private bool _inView;
 
-    private sealed record DeviceRow(string DeviceId, string Name, string Detail);
+    private sealed record DeviceRow(string DeviceId, string Name, string Detail, bool Stale = false)
+    {
+        public Visibility StaleVisibility => Stale ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Phones a reinstall left behind (M-71), and what the list showed last — the status poll reloads it when that changes.
+    private IReadOnlyList<MobileDeviceInfo> _stale = Array.Empty<MobileDeviceInfo>();
+    private string _devicesKey = "";
 
     private sealed record PcRow(LinkedPc Pc, string Name, string Detail, Brush Dot);
 
@@ -210,6 +217,21 @@ public partial class PhoneConnectPanel : UserControl
             ShowReady();
             await NewOfferAsync();
         }
+        // A phone just scanned the QR (or the group paired or removed one): show it, and any old entry it replaces (M-71).
+        if (await ReadDevicesKeyAsync(client) is { } key && key != _devicesKey) await LoadDevicesAsync();
+    }
+
+    private static string DevicesKey(IEnumerable<MobileDeviceInfo> devices) =>
+        string.Join("|", devices.Select(d => d.DeviceId).Order(StringComparer.Ordinal));
+
+    private static async Task<string?> ReadDevicesKeyAsync(MobileBridgeClient client)
+    {
+        try
+        {
+            var r = await client.RequestAsync(MobileBridge.OpDevicesList);
+            return (bool?)r["ok"] == true ? DevicesKey(r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new()) : null;
+        }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { return null; }
     }
 
     private static string EndpointsKey(IEnumerable<MobileEndpoint> endpoints) =>
@@ -312,16 +334,22 @@ public partial class PhoneConnectPanel : UserControl
             {
                 // Phones only: a PC paired here is on the PC list below, together with this PC's link to it —
                 // a group links PCs both ways (M-47), so it would otherwise show twice.
-                var phones = (r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new())
-                    .Where(d => d.Kind != DeviceKind.Pc).ToList();
+                var all = r["payload"]?.Deserialize<List<MobileDeviceInfo>>(MobileProtocol.Json) ?? new();
+                _devicesKey = DevicesKey(all);
+                var phones = all.Where(d => d.Kind != DeviceKind.Pc).ToList();
+                var stale = PhoneReinstalls.Superseded(phones);
+                _stale = phones.Where(d => stale.Contains(d.DeviceId)).ToList();
                 // The group's alias for a device (M-51) in place of its name, which then leads the detail line.
                 DeviceList.ItemsSource = phones.Select(d => new DeviceRow(
                     d.DeviceId,
                     DeviceNames.Show(d.Kind, d.Name, PhoneKey(d)),
                     AliasedFrom(d.Kind, d.Name, PhoneKey(d)) +
                     (d.Model ?? "Android") + $" · 연결 {d.PairedAt.ToLocalTime():yyyy-MM-dd HH:mm}" +
-                    (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""))).ToList();
+                    (d.LastSeenAt is { } seen ? $" · 최근 {seen.ToLocalTime():MM-dd HH:mm}" : ""),
+                    stale.Contains(d.DeviceId))).ToList();
                 NoDevicesText.Visibility = phones.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                StaleTitle.Text = L.PhoneStaleTitle(_stale.Count);
+                StaleBar.Visibility = _stale.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException or JsonException) { }
@@ -775,6 +803,22 @@ public partial class PhoneConnectPanel : UserControl
             return;
         try { await client.RequestAsync(MobileBridge.OpDevicesRevoke, new { deviceId = id }); }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException) { }
+        await LoadDevicesAsync();
+    }
+
+    /// <summary>
+    /// Takes the marked old entries out of the group (M-71), the same way their own 연결 해제 would: each by its
+    /// own key (its push endpoint), so the phone that replaced them stays.
+    /// </summary>
+    private async void CleanStale_Click(object sender, RoutedEventArgs e)
+    {
+        if (_stale.Count == 0 || MobileHost.Client is not { } client) return;
+        var list = string.Join("\n", _stale.Select(d => "• " + DeviceNames.Show(d.Kind, d.Name, PhoneKey(d)) +
+            $" ({d.Model ?? "Android"}, " + L.PhoneStaleLastSeen((d.LastSeenAt ?? d.PairedAt).ToLocalTime()) + ")"));
+        if (!MessageDialog.Show("Homebase", L.PhoneStaleConfirm(list), L.PhoneStaleClean, L.Cancel, owner: Window.GetWindow(this)))
+            return;
+        foreach (var d in _stale)
+            await TryRequestAsync(client, MobileBridge.OpDevicesRevoke, new { deviceId = d.DeviceId }, TimeSpan.FromSeconds(20));
         await LoadDevicesAsync();
     }
 }

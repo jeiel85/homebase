@@ -549,6 +549,22 @@ public static class L
         "Take this phone out of the group? Every PC in the group disconnects it. To use it again, scan a QR code on any PC.",
         "이 휴대폰을 그룹에서 뺄까요? 그룹의 모든 PC에서 연결이 해제됩니다. 다시 쓰려면 아무 PC에서나 QR로 다시 연결하세요.");
 
+    // Old entries a reinstalled phone left behind (DECISIONS M-71).
+    public static string PhoneStaleTitle(int n) => T(
+        n == 1 ? "1 old connection of a phone that connected again" : $"{n} old connections of phones that connected again",
+        $"다시 연결한 휴대폰의 예전 연결 {n}개");
+    public static string PhoneStaleHint => T(
+        "Reinstalling the Homebase app (or switching between the GitHub and Play versions) and connecting again adds the phone anew. The old entry has been quiet since then.",
+        "Homebase 앱을 다시 설치하거나 GitHub판과 Play판을 바꿔 연결하면 휴대폰이 새로 추가됩니다. 예전 연결은 그 뒤로 소식이 없습니다.");
+    public static string PhoneStaleNote => T(
+        "Looks like this phone's connection from before it connected again",
+        "다시 연결하기 전의 예전 연결로 보입니다");
+    public static string PhoneStaleClean => T("CLEAN UP", "예전 연결 정리");
+    public static string PhoneStaleLastSeen(DateTimeOffset at) => T($"last heard {at:MM-dd HH:mm}", $"마지막 소식 {at:MM-dd HH:mm}");
+    public static string PhoneStaleConfirm(string list) => T(
+        $"Take these old connections out of the group?\n\n{list}\n\nThe phone you connected again stays. If one of them is actually another phone with the same name that has been off, it needs a QR code to connect again.",
+        $"이 예전 연결을 그룹에서 뺄까요?\n\n{list}\n\n다시 연결한 휴대폰은 그대로입니다. 이 중에 이름이 같은 다른 휴대폰이 꺼져 있던 것이라면 그 휴대폰은 QR로 다시 연결해야 합니다.");
+
     // ── Devices (dashboard and Phone tab; DECISIONS M-27, M-29) ──────────────
     public static string DevNone => T(
         "No other devices yet. Pair a phone or link another PC in Settings › Phone.",

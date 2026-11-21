@@ -73,6 +73,17 @@
         <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.PhonePaired}"/>
       </Border>
       <TextBlock x:Name="NoDevicesText" Style="{StaticResource Type.Body}" Text="아직 연결된 휴대폰이 없습니다."/>
+      <!-- Entries a reinstalled phone left behind (DECISIONS M-71): marked, removed only when the user says so. -->
+      <Border x:Name="StaleBar" Style="{StaticResource Card}" Margin="0,0,0,8" Visibility="Collapsed">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Style="{StaticResource Button.Amber}" Content="{x:Static local:L.PhoneStaleClean}"
+                  Click="CleanStale_Click" VerticalAlignment="Center" Margin="12,0,0,0"/>
+          <StackPanel>
+            <TextBlock x:Name="StaleTitle" Style="{StaticResource Type.BodyStrong}" TextWrapping="Wrap"/>
+            <TextBlock Style="{StaticResource Type.Micro}" Text="{x:Static local:L.PhoneStaleHint}" TextWrapping="Wrap"/>
+          </StackPanel>
+        </DockPanel>
+      </Border>
       <ItemsControl x:Name="DeviceList">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
@@ -83,6 +94,8 @@
                 <StackPanel>
                   <TextBlock Style="{StaticResource Type.BodyStrong}" Text="{Binding Name}"/>
                   <TextBlock Style="{StaticResource Type.Micro}" Text="{Binding Detail}"/>
+                  <TextBlock Style="{StaticResource Type.Micro}" Text="{x:Static local:L.PhoneStaleNote}"
+                             Foreground="{DynamicResource Brush.StatusWarn}" Visibility="{Binding StaleVisibility}"/>
                 </StackPanel>
               </DockPanel>
             </Border>

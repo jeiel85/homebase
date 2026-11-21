@@ -102,7 +102,9 @@ internal static class DeviceList
             seen.UnionWith(names);
             items.Add(PcItem(link, local));
         }
-        foreach (var d in overview.Here.Devices.Where(d => d.Kind != DeviceKind.Pc))
+        // One entry per name: the copy in use wins over an old one a reinstall left behind (M-71), which
+        // the store lists first because it was paired first.
+        foreach (var d in Freshest(overview.Here.Devices.Where(d => d.Kind != DeviceKind.Pc)))
         {
             if (!seen.Add(Seen(d.Kind, d.Name))) continue;
             local.TryGetValue(d.DeviceId, out var info);
@@ -111,7 +113,7 @@ internal static class DeviceList
         }
         foreach (var h in overview.Hubs)
         {
-            foreach (var d in h.Devices)
+            foreach (var d in Freshest(h.Devices))
             {
                 if (d.DeviceId == h.SelfDeviceId || !seen.Add(Seen(d.Kind, d.Name))) continue;
                 items.Add(new DeviceItem($"via:{h.PcId}:{d.DeviceId}", DeviceRole.ViaHub, d.Kind, d.Name, d.Model,
@@ -146,6 +148,9 @@ internal static class DeviceList
     }
 
     private static string Seen(string kind, string name) => kind + "|" + name.Trim();
+
+    private static IEnumerable<DeviceEntry> Freshest(IEnumerable<DeviceEntry> devices) =>
+        devices.OrderByDescending(d => d.Online).ThenByDescending(d => d.LastSeenAt ?? DateTimeOffset.MinValue);
 
     /// <summary>The one line under a device's name on the list.</summary>
     public static string Summary(DeviceItem d)
