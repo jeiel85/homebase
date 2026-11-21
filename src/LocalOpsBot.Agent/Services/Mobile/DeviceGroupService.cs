@@ -169,6 +169,20 @@ public sealed class DeviceGroupService : BackgroundService
         return push is not null ? GroupKeys.PhoneByPush(PushHash.Of(push.Subscription.Endpoint)) : GroupKeys.PhoneByName(d.Name, d.Model);
     }
 
+    /// <summary>
+    /// The key that takes <paramref name="d"/> out of the whole group, or null when only this PC's entry can
+    /// go: a phone without a push subscription is known by name and model, and that key would take every
+    /// phone of that name with it — the phone it was reinstalled as, too (M-71).
+    /// </summary>
+    public string? RemovalKeyOf(MobileDeviceInfo d)
+    {
+        var key = KeyOf(d);
+        if (key is null || !key.StartsWith("phone-name:", StringComparison.Ordinal)) return key;
+        return _devices.List().Any(o => o.DeviceId != d.DeviceId && o.Kind == DeviceKind.Phone && GroupKeys.PhoneByName(o.Name, o.Model) == key)
+            ? null
+            : key;
+    }
+
     private async Task<int> ApplyAsync(string key)
     {
         var n = 0;

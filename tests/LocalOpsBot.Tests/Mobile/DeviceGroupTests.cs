@@ -114,6 +114,25 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         await Until(() => a.Store.List().All(d => d.Kind != DeviceKind.Pc) ? "gone" : null, _cts.Token);
     }
 
+    // M-71: an old install whose push subscription was dropped is known only by name and model. Taking it
+    // out of the group by that key would take the phone it was reinstalled as too — so it goes from here only.
+    [Fact]
+    public async Task A_phone_known_only_by_name_is_not_removed_group_wide_while_another_of_that_name_is_paired()
+    {
+        var a = await Node.StartAsync("pc-a", _cts.Token);
+        _nodes.Add(a);
+        var old = a.Store.Add("S24", "SM-S921N", "h-old");
+        var fresh = a.Store.Add("S24", "SM-S921N", "h-new");
+        a.Store.SetPushSubscription(fresh.DeviceId, new LocalOpsBot.Core.Push.PushSubscription("https://ntfy.sh/upnew", "k", "a", DateTimeOffset.UtcNow));
+
+        Assert.Null(a.Group.RemovalKeyOf(old));
+        Assert.StartsWith("phone:", a.Group.RemovalKeyOf(fresh));
+
+        // Alone with its name, the name key is still how it leaves every PC.
+        a.Store.Revoke(fresh.DeviceId);
+        Assert.Equal(GroupKeys.PhoneByName("S24", "SM-S921N"), a.Group.RemovalKeyOf(old));
+    }
+
     [Fact]
     public async Task An_alias_set_on_a_tray_or_a_phone_reaches_every_member()
     {

@@ -415,7 +415,8 @@ public sealed class MobileBridgeServer : BackgroundService
         {
             // Removing a device takes it out of the whole group (M-47): every member revokes it.
             var deviceId = (string?)payload?["deviceId"] ?? "";
-            if (_devices.List().FirstOrDefault(d => d.DeviceId == deviceId) is { } device && _group.KeyOf(device) is { } key)
+            // A phone known only by name and model, with another of that name here, goes from this PC alone (M-71).
+            if (_devices.List().FirstOrDefault(d => d.DeviceId == deviceId) is { } device && _group.RemovalKeyOf(device) is { } key)
                 await _group.RemoveAsync(key, fanOut: true, ct);
             var revoked = _devices.Revoke(deviceId) || !_devices.IsPaired(deviceId);
             await SendAsync(conn, MobileBridge.Response(id, revoked), ct);

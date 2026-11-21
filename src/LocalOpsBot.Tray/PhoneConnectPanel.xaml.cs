@@ -221,8 +221,9 @@ public partial class PhoneConnectPanel : UserControl
         if (await ReadDevicesKeyAsync(client) is { } key && key != _devicesKey) await LoadDevicesAsync();
     }
 
+    // With the last-seen times: a phone marked as an old connection that reports again is unmarked (M-71).
     private static string DevicesKey(IEnumerable<MobileDeviceInfo> devices) =>
-        string.Join("|", devices.Select(d => d.DeviceId).Order(StringComparer.Ordinal));
+        string.Join("|", devices.Select(d => $"{d.DeviceId}@{d.LastSeenAt?.ToUnixTimeSeconds()}").Order(StringComparer.Ordinal));
 
     private static async Task<string?> ReadDevicesKeyAsync(MobileBridgeClient client)
     {
