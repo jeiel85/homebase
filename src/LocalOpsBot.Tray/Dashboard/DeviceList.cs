@@ -41,7 +41,8 @@ internal sealed record DeviceItem(
     string? Alias = null,
     string? AliasKey = null,
     string? ViaKey = null,
-    bool TwoWay = false)
+    bool TwoWay = false,
+    bool RelayWaiting = false)
 {
     public bool IsPc => Kind == DeviceKind.Pc;
 
@@ -142,7 +143,7 @@ internal static class DeviceList
             viaHub ? DeviceRole.Hub : DeviceRole.LinkedHere,
             DeviceKind.Pc, pc.Name, null, pc.Online, pc.LastSeen, pc.Status,
             viaHub ? Core.Mobile.LiveTarget.Hub(h!.PcId) : Core.Mobile.LiveTarget.Device(here!.DeviceId),
-            Local: info, Error: h?.Error, Phones: pc.Phones,
+            Local: info, Error: h?.Error, Phones: pc.Phones, RelayWaiting: h?.RelayWaiting == true,
             AliasKey: pc.PcId is { } pcId ? GroupKeys.Pc(pcId) : null,
             TwoWay: h is not null && here is not null);
     }
@@ -157,7 +158,9 @@ internal static class DeviceList
     {
         var s = d.Status;
         if (d.Role == DeviceRole.Hub && !d.Online)
-            return d.Error == "rejected" ? L.DevHubRejected : d.LastSeen is { } at ? L.DevSeen(Fmt.Ago(at, DateTimeOffset.UtcNow)) : L.DevHubConnecting;
+            return d.Error == LinkErrors.Rejected ? L.DevHubRejected
+                : LinkErrors.IsRefused(d.Error) ? L.DevHubRefused(d.Error!)
+                : d.LastSeen is { } at ? L.DevSeen(Fmt.Ago(at, DateTimeOffset.UtcNow)) : L.DevHubConnecting;
         if (s is null) return d.Online ? L.DevOnline : d.LastSeen is { } seen ? L.DevSeen(Fmt.Ago(seen, DateTimeOffset.UtcNow)) : L.DevNoReport;
         var parts = new List<string>();
         if (!d.IsPc)

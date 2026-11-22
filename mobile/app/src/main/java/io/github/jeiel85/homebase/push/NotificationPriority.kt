@@ -85,7 +85,8 @@ data class NotificationRules(
     val groups: Map<String, AlertProfile> = emptyMap(),
     val sources: Map<String, AlertProfile> = emptyMap(),
 ) {
-    fun resolve(category: String, source: String): AlertProfile = NotificationPriority.resolve(category, source, this)
+    fun resolve(category: String, source: String, priority: String? = null): AlertProfile =
+        NotificationPriority.resolve(category, source, this, priority)
 }
 
 /** Pure rules of the notification priorities (DECISIONS M-37). No Android types, so unit tests pin them. */
@@ -118,13 +119,21 @@ object NotificationPriority {
     /** The category part of a [sourceKey]. */
     fun categoryOfKey(key: String): String = key.substringBefore('|')
 
-    /** Per-app choice first, then the group's, then the group's default. */
-    fun resolve(category: String, source: String, rules: NotificationRules): AlertProfile {
+    /**
+     * Per-app choice first, then the group's, then the group's default. A category no group knows (a newer PC's) has
+     * no group to choose for: it rings, unless the PC marked it informational ([priority] `info` or `recovery`, #88) —
+     * then it is quiet like the other non-urgent kinds, rather than popping up on every older app.
+     */
+    fun resolve(category: String, source: String, rules: NotificationRules, priority: String? = null): AlertProfile {
         if (category == NotificationGroups.TEST) return TEST_PROFILE
         if (hasApps(category)) rules.sources[sourceKey(category, source)]?.let { return it }
         val group = NotificationGroups.ALL.firstOrNull { category in it.categories }?.key
+        if (group == null && priority in INFORMATIONAL) return AlertLevel.QUIET.applyTo(AlertProfile())
         return group?.let { rules.groups[it] } ?: defaultFor(group)
     }
+
+    /** `priority` values (docs/MOBILE_PROTOCOL.md) that say nothing needs the user now. */
+    private val INFORMATIONAL = setOf("info", "recovery")
 
     /**
      * What notifications are bundled by: their source on their PC. A relayed notification can arrive
@@ -214,7 +223,7 @@ class NotificationRuleStore(context: Context) {
         }.toMap()
     }
 
-    fun resolve(category: String, source: String): AlertProfile = rules().resolve(category, source)
+    fun resolve(category: String, source: String, priority: String? = null): AlertProfile = rules().resolve(category, source, priority)
 
     /** [profile] for a group; null or the default clears the choice. */
     fun setGroup(groupKey: String, profile: AlertProfile?) {

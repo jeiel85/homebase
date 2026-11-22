@@ -8,6 +8,7 @@ import android.app.job.JobParameters
 import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -94,6 +95,22 @@ internal object StoreUpdateRules {
     fun shouldNotify(stopped: Boolean, enabled: Boolean, offeredVersionCode: Int, notifiedVersionCode: Int, visible: () -> Boolean): Boolean =
         !stopped && enabled && offeredVersionCode > notifiedVersionCode && visible()
 
+    /**
+     * 설정 "마지막 확인" 아래 줄(#77): 마지막 성공([lastCheckedAt]) 뒤에 실패한 확인([failure])이 있으면 그 시각과 이유.
+     * 성공이 더 나중이면 null. Play 밖에서 설치한 앱은 확인이 계속 실패하므로 그 사실을 여기서 말한다.
+     */
+    fun failureLine(failure: Failure?, lastCheckedAt: Long, now: Long): String? {
+        if (failure == null || failure.at <= lastCheckedAt) return null
+        val why = when (failure.result) {
+            Result.NotFromPlay -> "Play 스토어에서 설치한 앱이 아니라 새 버전을 확인할 수 없습니다"
+            else -> "Google Play에 묻지 못했습니다(네트워크 등). 다음 확인 때 다시 묻습니다"
+        }
+        return "마지막 시도: ${updateTimeLabel(failure.at, now)} · $why"
+    }
+
+    /** 실패한 확인 하나: 결과([Result.NotFromPlay]·[Result.Failed])와 시각. */
+    data class Failure(val result: Result, val at: Long)
+
     /** 앱을 열 때 다시 물을까. 시계가 뒤로 갔으면(마지막 값이 미래) 묻는다. */
     fun isDueOnOpen(lastCheckedAt: Long, lastAttemptAt: Long, now: Long): Boolean {
         val last = maxOf(lastCheckedAt, lastAttemptAt)
@@ -122,6 +139,22 @@ internal class StoreUpdatePreferences(context: Context) {
         prefs.edit().putLong(KEY_LAST_CHECKED_AT, at).putInt(KEY_AVAILABLE, availableVersionCode).apply()
     }
 
+    /** 실패한 확인을 기억한다 — "마지막 확인"과 배너는 그대로 두고 설정 화면의 한 줄만 쓴다(#77). */
+    fun recordFailure(at: Long, result: StoreUpdateRules.Result) {
+        val kind = if (result == StoreUpdateRules.Result.NotFromPlay) FAILURE_NOT_FROM_PLAY else FAILURE_OTHER
+        prefs.edit().putLong(KEY_FAILED_AT, at).putString(KEY_FAILURE, kind).apply()
+    }
+
+    fun lastFailure(): StoreUpdateRules.Failure? {
+        val at = prefs.getLong(KEY_FAILED_AT, 0L).takeIf { it > 0L } ?: return null
+        val result = if (prefs.getString(KEY_FAILURE, null) == FAILURE_NOT_FROM_PLAY) {
+            StoreUpdateRules.Result.NotFromPlay
+        } else {
+            StoreUpdateRules.Result.Failed
+        }
+        return StoreUpdateRules.Failure(result, at)
+    }
+
     fun offeredVersionCode(): Int? =
         StoreUpdateRules.offeredVersionCode(isEnabled(), availableVersionCode(), BuildConfig.VERSION_CODE)
 
@@ -131,6 +164,10 @@ internal class StoreUpdatePreferences(context: Context) {
         const val KEY_LAST_CHECKED_AT = "last_checked_at"
         const val KEY_AVAILABLE = "available_version_code"
         const val KEY_NOTIFIED = "notified_version_code"
+        const val KEY_FAILED_AT = "failed_at"
+        const val KEY_FAILURE = "failure"
+        const val FAILURE_NOT_FROM_PLAY = "not_from_play"
+        const val FAILURE_OTHER = "failed"
     }
 }
 
@@ -145,7 +182,7 @@ internal object StoreUpdateChecker {
             Log.i(TAG, "Play update check timed out")
             StoreUpdateRules.Result.Failed
         }
-        // 실패는 기억하지 않는다 — 잠깐 오프라인이었다고 배너가 사라지거나 "마지막 확인"이 바뀌지 않게.
+        // 실패는 배너·"마지막 확인"을 바꾸지 않는다 — 잠깐 오프라인이었다고 배너가 사라지지 않게. 그 아래 한 줄로만 남긴다.
         when (result) {
             is StoreUpdateRules.Result.Available ->
                 StoreUpdatePreferences(app).recordCheck(System.currentTimeMillis(), result.versionCode)
@@ -153,7 +190,8 @@ internal object StoreUpdateChecker {
                 StoreUpdatePreferences(app).recordCheck(System.currentTimeMillis(), 0)
                 StoreUpdateNotifier.cancel(app)
             }
-            StoreUpdateRules.Result.NotFromPlay, StoreUpdateRules.Result.Failed -> Unit
+            StoreUpdateRules.Result.NotFromPlay, StoreUpdateRules.Result.Failed ->
+                StoreUpdatePreferences(app).recordFailure(System.currentTimeMillis(), result)
         }
         return result
     }
@@ -306,6 +344,17 @@ class StoreUpdateJobService : JobService() {
         stopped = true
         running?.cancel()
         return false
+    }
+}
+
+/**
+ * Play가 이 앱을 업데이트하고 나면(`MY_PACKAGE_REPLACED`, 새 프로세스) 남은 "새 버전" 알림을 치운다(#77) — 설치된
+ * versionCode가 알린 버전 이상이면. 그러지 않으면 다음에 앱을 열어 배너가 판단할 때까지 알림이 남는다.
+ */
+class StoreUpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        if (StoreUpdatePreferences(context).offeredVersionCode() == null) StoreUpdateNotifier.cancel(context)
     }
 }
 

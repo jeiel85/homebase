@@ -159,6 +159,8 @@ public sealed record MobileDeviceInfo(
 /// <summary>
 /// What the Tray's Settings › Phone tab shows. <c>Hosts</c> is the v1 Tailscale list;
 /// <c>Endpoints</c> covers every path. <c>Cloudflare</c> is null while the tunnel is off.
+/// <c>DevicesVersion</c> (v0.59.0) is <see cref="PhoneReinstalls.ListVersion"/> of <c>devices.list</c>: the tab
+/// polls this status and reads the list again only when it changes. An older Agent leaves it out.
 /// </summary>
 public sealed record BridgeStatus(
     bool ApiListening,
@@ -167,7 +169,8 @@ public sealed record BridgeStatus(
     int Watchers,
     IReadOnlyList<MobileEndpoint> Endpoints,
     MobileOptionsSummary Options,
-    CloudflareStatus? Cloudflare);
+    CloudflareStatus? Cloudflare,
+    string? DevicesVersion = null);
 
 /// <summary>Which paths are configured on (independent of whether each is currently reachable).</summary>
 public sealed record MobileOptionsSummary(bool Tailscale, bool Lan, bool Cloudflare);
@@ -185,7 +188,10 @@ public sealed record TrayToast(string Title, string? Body, string? Source = null
 /// <summary>
 /// A hub PC this PC is linked to, as the Tray shows it (DECISIONS M-29). <c>Devices</c> is the hub's
 /// own device list from its last answer (this PC included, as <c>SelfDeviceId</c>); <c>Error</c> is the
-/// last failure while <c>Online</c> is false.
+/// last failure while <c>Online</c> is false: <c>rejected</c>, <c>unreachable</c> or <c>HTTP nnn</c> (it answers but
+/// refuses this PC's presence). <c>RelayWaiting</c> (v0.59.0): this PC has not had a presence answer from it since it
+/// started, so it holds back that PC's notifications (they would be relayed without knowing which phones it already
+/// pushes to, M-28) — with <c>HTTP nnn</c>, the relay is stalled until the presence is taken again.
 /// </summary>
 public sealed record LinkedHubView(
     string PcId,
@@ -195,7 +201,22 @@ public sealed record LinkedHubView(
     DeviceStatus? Status,
     IReadOnlyList<DeviceEntry> Devices,
     string? Error,
-    string? SelfDeviceId = null);
+    string? SelfDeviceId = null,
+    bool RelayWaiting = false);
+
+/// <summary>The <see cref="LinkedHubView.Error"/> values.</summary>
+public static class LinkErrors
+{
+    public const string Rejected = "rejected";
+    public const string Unreachable = "unreachable";
+
+    /// <summary>
+    /// The PC answered but refused the presence (<c>HTTP nnn</c> other than 2xx), e.g. an older or newer Homebase there.
+    /// A 2xx whose body could not be read is not a refusal.
+    /// </summary>
+    public static bool IsRefused(string? error) =>
+        error is not null && error.StartsWith("HTTP ", StringComparison.Ordinal) && !error.StartsWith("HTTP 2", StringComparison.Ordinal);
+}
 
 /// <summary>
 /// <c>devices.overview</c>: what is paired here, and the PCs this one is linked to. <c>Local</c> (v0.34.0)

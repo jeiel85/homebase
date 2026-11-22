@@ -55,6 +55,16 @@ internal object UpdateSurface {
     fun sync(context: Context) {
         val app = context.applicationContext
         StoreUpdateScheduler.sync(app)
+        checkIfDue(app)
+    }
+
+    /**
+     * 앱 화면으로 돌아올 때(MainActivity.onResume): 백그라운드에 오래 살아 있던 앱도 6시간 규칙대로 다시 묻는다
+     * (#77) — 그러지 않으면 다음 잡(최대 12시간)까지 배너가 늦는다.
+     */
+    fun onResume(context: Context) = checkIfDue(context.applicationContext)
+
+    private fun checkIfDue(app: Context) {
         val preferences = StoreUpdatePreferences(app)
         if (!preferences.isEnabled()) return
         val now = System.currentTimeMillis()
@@ -150,12 +160,23 @@ internal object UpdateSurface {
         )
         if (enabled) {
             val lastChecked = remember { preferences.lastCheckedAt() }
+            val now = System.currentTimeMillis()
             Text(
-                text = lastUpdateCheckLine(lastChecked, System.currentTimeMillis()),
+                text = lastUpdateCheckLine(lastChecked, now),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
+            // 그 뒤로 실패한 확인이 있으면 왜인지(#77) — 백그라운드 실패는 화면에 다른 흔적이 없다.
+            val failure = remember { preferences.lastFailure() }
+            StoreUpdateRules.failureLine(failure, lastChecked, now)?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             UpdateNotificationPermissionRow()
         }
     }

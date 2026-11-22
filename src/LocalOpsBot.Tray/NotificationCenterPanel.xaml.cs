@@ -70,6 +70,19 @@ public partial class NotificationCenterPanel : UserControl
         await ReloadAsync();
     }
 
+    /// <summary>
+    /// Opens on "Clipboard received" or "Clipboard sent" (M-70): a clipboard balloon was clicked. A tab already in view
+    /// reads the list again for the entry that balloon was about; one coming into view reads it anyway. Falls back to
+    /// everything when there is no such entry.
+    /// </summary>
+    internal async void ShowClipboard(bool received)
+    {
+        _filter = received ? ClipReceivedFilter : ClipSentFilter;
+        if (!_inView) return;
+        await ReloadAsync();
+        ListScroll.ScrollToTop();
+    }
+
     /// <summary>The tray is shutting down.</summary>
     internal void Stop()
     {
@@ -349,6 +362,30 @@ public partial class NotificationCenterPanel : UserControl
         var name => e.Kind == HistoryKind.Device && e.Source == name,
     };
 
+    /// <summary>How long a clipboard entry's link says "Copied" (or why it could not) before it reads "Copy" again.</summary>
+    internal static readonly TimeSpan CopiedFor = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// A clipboard entry's [Copy] link (M-70): puts <paramref name="text"/> back with <paramref name="put"/>, says how
+    /// it went, and after <paramref name="showFor"/> reads "Copy" again, so it can be clicked again and does not
+    /// claim a copy that the clipboard may no longer hold.
+    /// </summary>
+    internal static System.Windows.Documents.Hyperlink CopyLink(string text, Func<string, Task<bool>> put, TimeSpan showFor)
+    {
+        var run = new System.Windows.Documents.Run(L.CenterCopy);
+        var link = new System.Windows.Documents.Hyperlink(run);
+        var shown = 0;
+        link.Click += async (_, _) =>
+        {
+            var ok = await put(text);
+            run.Text = ok ? L.CenterCopied : L.ClipBusy;
+            var mine = ++shown;
+            await Task.Delay(showFor);
+            if (mine == shown) run.Text = L.CenterCopy; // a later click restarts the wait
+        };
+        return link;
+    }
+
     private FrameworkElement Row(HistoryEntry e)
     {
         var grid = new Grid();
@@ -423,15 +460,10 @@ public partial class NotificationCenterPanel : UserControl
         // Clipboard text kept in an entry goes back on the clipboard (M-70); sensitive text was never kept.
         else if (e.Kind == HistoryKind.Device && ClipHistory.IsClip(e.App) && !string.IsNullOrEmpty(e.Body))
         {
-            var run = new System.Windows.Documents.Run(L.CenterCopy);
-            var link = new System.Windows.Documents.Hyperlink(run);
-            var text = e.Body;
-            link.Click += async (_, _) =>
+            folderLink = new TextBlock(CopyLink(e.Body, t => ClipboardShare.PutAsync(t, sensitive: false), CopiedFor))
             {
-                var ok = await ClipboardShare.PutAsync(text, sensitive: false);
-                run.Text = ok ? L.CenterCopied : L.ClipBusy;
+                Style = Res<Style>("Type.Micro"), Margin = new Thickness(0, 4, 0, 0),
             };
-            folderLink = new TextBlock(link) { Style = Res<Style>("Type.Micro"), Margin = new Thickness(0, 4, 0, 0) };
         }
 
         if (!string.IsNullOrWhiteSpace(e.Body))

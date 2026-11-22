@@ -218,13 +218,14 @@ public partial class PhoneConnectPanel : UserControl
             await NewOfferAsync();
         }
         // A phone just scanned the QR (or the group paired or removed one): show it, and any old entry it replaces (M-71).
-        if (await ReadDevicesKeyAsync(client) is { } key && key != _devicesKey) await LoadDevicesAsync();
+        // The status carries the list's version, so the list itself is read only when it changed.
+        if ((status.DevicesVersion ?? await ReadDevicesKeyAsync(client)) is { } key && key != _devicesKey) await LoadDevicesAsync();
     }
 
     // With the last-seen times: a phone marked as an old connection that reports again is unmarked (M-71).
-    private static string DevicesKey(IEnumerable<MobileDeviceInfo> devices) =>
-        string.Join("|", devices.Select(d => $"{d.DeviceId}@{d.LastSeenAt?.ToUnixTimeSeconds()}").Order(StringComparer.Ordinal));
+    private static string DevicesKey(IReadOnlyCollection<MobileDeviceInfo> devices) => PhoneReinstalls.ListVersion(devices);
 
+    /// <summary>For an Agent older than v0.59.0, whose status has no list version: reads the list to compare.</summary>
     private static async Task<string?> ReadDevicesKeyAsync(MobileBridgeClient client)
     {
         try

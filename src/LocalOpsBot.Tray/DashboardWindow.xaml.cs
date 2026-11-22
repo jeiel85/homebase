@@ -130,6 +130,13 @@ public partial class DashboardWindow : ThemedWindow
     /// <summary>The page in front, as the tray needs to know whether a new notification is being looked at.</summary>
     internal bool ShowsNotifications => CenterView.InView;
 
+    /// <summary>The notification center on the clipboard text received or sent (M-70). The window is not shown here.</summary>
+    public void ShowClipboardHistory(bool received)
+    {
+        CenterView.ShowClipboard(received);
+        ShowTab(DashTab.Notifications);
+    }
+
     /// <summary>Brings a page to the front (and, for Settings, one of its areas). The window is not shown here.</summary>
     public void ShowTab(DashTab tab, SettingsTab? area = null)
     {
@@ -551,7 +558,11 @@ public partial class DashboardWindow : ThemedWindow
         if (d.Role == DeviceRole.ViaHub) return L.DetViaHubOnly(d.Via ?? "");
         if (!_source.Connected) return null;
         if (_source.LiveUnsupported) return L.DetAgentTooOld;
-        if (!d.Online) return d.Role == DeviceRole.Hub && d.Error == "rejected" ? L.DevHubRejected : L.DetPcOffline;
+        if (!d.Online) return d.Role != DeviceRole.Hub ? L.DetPcOffline
+            : d.Error == LinkErrors.Rejected ? L.DevHubRejected
+            // It answers but refuses this PC's presence (#113): its notifications wait for that, so say it.
+            : LinkErrors.IsRefused(d.Error) ? L.DetHubRefused(d.Error!, d.RelayWaiting)
+            : L.DetPcOffline;
         if (d.Role == DeviceRole.LinkedHere && d.Status?.AppVersion is { } v) return L.DetPcTooOld(v);
         return L.DetNoLiveYet;
     }
@@ -763,6 +774,32 @@ public partial class DashboardWindow : ThemedWindow
     }
 
     private bool _prewarming;
+    private bool _prewarmed;
+    private bool _firstShowReported;
+    private System.Diagnostics.Stopwatch? _prewarmClock;
+
+    /// <summary>A first show slower than this is logged as a warning: the prewarm did not do its job.</summary>
+    internal const int SlowFirstShowMs = 500;
+
+    /// <summary>
+    /// Logs, once per tray run, how long the first click took to show this window, counted from
+    /// <paramref name="clickedAt"/> (a <see cref="System.Diagnostics.Stopwatch"/> timestamp) to when the dispatcher
+    /// has drawn it, and whether it had been prepared ahead. A line over <see cref="SlowFirstShowMs"/> is a warning,
+    /// so a window that has grown slow again shows up in tray.log.
+    /// </summary>
+    internal void ReportFirstShow(long clickedAt)
+    {
+        if (_firstShowReported) return;
+        _firstShowReported = true;
+        var prepared = _prewarmed;
+        Dispatcher.BeginInvoke(() =>
+        {
+            var ms = (long)System.Diagnostics.Stopwatch.GetElapsedTime(clickedAt).TotalMilliseconds;
+            var line = $"First click showed the Homebase window in {ms} ms ({(prepared ? "prepared ahead" : "not prepared ahead")})";
+            if (ms > SlowFirstShowMs) TrayLog.Warn("Dashboard", $"{line}; slower than {SlowFirstShowMs} ms");
+            else TrayLog.Info("Dashboard", line);
+        }, DispatcherPriority.ContextIdle);
+    }
 
     /// <summary>
     /// Off screen, the nearest monitor may be another, shorter one than the one the window will be shown on:
@@ -784,6 +821,7 @@ public partial class DashboardWindow : ThemedWindow
         // Only a window that has never been shown: afterwards the work is done and the user may be using it.
         if (_prewarming || IsVisible || new System.Windows.Interop.WindowInteropHelper(this).Handle != IntPtr.Zero) return;
         _prewarming = true;
+        _prewarmClock = System.Diagnostics.Stopwatch.StartNew();
         ShowActivated = false;
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.Manual;
@@ -803,6 +841,11 @@ public partial class DashboardWindow : ThemedWindow
         if (!_prewarming) return false;
         if (hide) Hide(); // still prewarming here, so the hide saves no size
         _prewarming = false;
+        _prewarmed = hide;
+        var ms = _prewarmClock?.ElapsedMilliseconds ?? 0;
+        TrayLog.Info("Dashboard", hide
+            ? $"Prepared the Homebase window in {ms} ms"
+            : $"Asked to show the Homebase window while preparing it ({ms} ms in); shown without waiting for the rest");
         ShowInTaskbar = true;
         ShowActivated = true;
         return true;

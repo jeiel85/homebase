@@ -27,6 +27,14 @@ public sealed class ElevatedConfigTests
         Assert.DoesNotContain("Copy-Item", script);
         // Written as a new file, never into one that already exists (and may belong to someone else).
         Assert.Contains("[System.IO.FileMode]::CreateNew", script);
+        // Put in place by one rename over the old file (#80): never deleted first, so it is never missing.
+        Assert.Contains("[Microsoft.VisualBasic.FileIO.FileSystem]::MoveFile($staged, $configFile, $true)", script);
+        Assert.DoesNotContain("Remove-Item -LiteralPath $configFile", script);
+        Assert.DoesNotContain("Delete($configFile", script);
+        // Only the staged copy is ever removed, when the rename fails.
+        Assert.Equal(1, CountOf(script, "Remove-Item"));
+        Assert.Contains("Remove-Item -LiteralPath $staged", script);
+        Assert.DoesNotContain("File]::Replace", script); // that would carry the old file's owner and ACL over
     }
 
     [Fact]

@@ -36,14 +36,18 @@ private val STALE_CHECK_MILLIS = TimeUnit.DAYS.toMillis(3)
  */
 internal fun lastUpdateCheckLine(at: Long, now: Long): String {
     if (at <= 0L) return "마지막 확인: 아직 없음"
-    val zone = ZoneId.systemDefault()
-    val time = DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(at).atZone(zone))
-    val line = "마지막 확인: ${PushHistoryRules.dayLabel(at, now, zone)} $time"
+    val line = "마지막 확인: ${updateTimeLabel(at, now)}"
     return if (now - at > STALE_CHECK_MILLIS) {
         "$line · 며칠째 확인하지 못했습니다. 배터리 최적화가 백그라운드 확인을 막고 있을 수 있습니다."
     } else {
         line
     }
+}
+
+/** "오늘 14:05", "11월 12일 (목) 09:30" — 업데이트 설정의 시각 표기. */
+internal fun updateTimeLabel(at: Long, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+    val time = DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(at).atZone(zone))
+    return "${PushHistoryRules.dayLabel(at, now, zone)} $time"
 }
 
 /**

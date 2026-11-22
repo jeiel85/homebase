@@ -79,4 +79,19 @@ class StoreUpdateRulesTest {
         assertFalse(StoreUpdateRules.isDueOnOpen(lastCheckedAt = 0, lastAttemptAt = now - 1000, now = now))
         assertTrue(StoreUpdateRules.isDueOnOpen(lastCheckedAt = now + 1000, lastAttemptAt = 0, now = now))
     }
+
+    @Test
+    fun aFailureAfterTheLastCheckSaysWhy() {
+        val now = 1_800_000_000_000L
+        val hour = TimeUnit.HOURS.toMillis(1)
+        // Nothing failed, or the last check succeeded after the failure: no line.
+        assertNull(StoreUpdateRules.failureLine(null, now - hour, now))
+        assertNull(StoreUpdateRules.failureLine(StoreUpdateRules.Failure(Result.Failed, now - 2 * hour), now - hour, now))
+        // #77: an install from outside Play keeps failing — say so instead of only an old "last check".
+        val notFromPlay = StoreUpdateRules.failureLine(StoreUpdateRules.Failure(Result.NotFromPlay, now - hour), 0L, now)!!
+        assertTrue(notFromPlay, notFromPlay.startsWith("마지막 시도: "))
+        assertTrue(notFromPlay, notFromPlay.endsWith("Play 스토어에서 설치한 앱이 아니라 새 버전을 확인할 수 없습니다"))
+        val failed = StoreUpdateRules.failureLine(StoreUpdateRules.Failure(Result.Failed, now - hour), now - 3 * hour, now)!!
+        assertTrue(failed, failed.contains("Google Play에 묻지 못했습니다"))
+    }
 }

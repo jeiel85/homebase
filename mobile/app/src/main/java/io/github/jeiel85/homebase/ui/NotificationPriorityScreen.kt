@@ -144,9 +144,9 @@ fun NotificationPriorityScreen(onBack: () -> Unit) {
             }
             item {
                 Text(
-                    "Android 알림 설정에서 끈 앱·PC는 여기서 바꿔도 꺼진 채로 둡니다. 여기서 우선순위를 바꾸면 그 앱의 " +
-                        "Android 알림 채널을 새로 만들므로, Android 설정에서 따로 바꿔 둔 소리 같은 세부 설정은 처음 상태로 " +
-                        "돌아갑니다. 묶은 알림은 PC·앱과 상관없이 알림 창의 Homebase 묶음 하나에 모이고, 거기에는 출처별로 최근 " +
+                    "Android 알림 설정에서 끈 앱·PC는 여기서 바꿔도 꺼진 채로 둡니다. 여기서 우선순위를 바꾸거나 앱 업데이트로 " +
+                        "기본값이 바뀌면(예: 긴급 → 조용히) 그 알림의 Android 알림 채널을 새로 만들므로, Android 설정에서 따로 " +
+                        "바꿔 둔 소리 같은 세부 설정은 처음 상태로 돌아갑니다. 묶은 알림은 PC·앱과 상관없이 알림 창의 Homebase 묶음 하나에 모이고, 거기에는 출처별로 최근 " +
                         "${PushNotifier.MAX_IN_BUNDLE}건(모두 합쳐 ${PushNotifier.MAX_IN_STACK}건)까지 두며, 전부는 알림 센터에 남습니다. " +
                         "PC 트레이의 '테스트' 알림은 경로 확인용이라 늘 팝업으로 뜹니다.",
                     style = MaterialTheme.typography.bodySmall,

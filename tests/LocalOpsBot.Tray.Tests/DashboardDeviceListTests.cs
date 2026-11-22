@@ -114,4 +114,16 @@ public sealed class DashboardDeviceListTests
 
         Assert.Equal("via:pc-a:new", phone.Key);
     }
+
+    [Fact]
+    public void A_pc_that_refuses_this_pcs_status_says_so_and_that_its_notifications_wait()
+    {
+        var hub = Hub("pc-a", "A", online: false) with { Error = "HTTP 400", RelayWaiting = true };
+
+        var pc = Assert.Single(Others(Overview(new[] { hub })));
+
+        Assert.True(pc.RelayWaiting);
+        Assert.Equal(L.DevHubRefused("HTTP 400"), DeviceList.Summary(pc));
+        Assert.Equal(L.DevHubConnecting, DeviceList.Summary(pc with { Error = LinkErrors.Unreachable, LastSeen = null }));
+    }
 }

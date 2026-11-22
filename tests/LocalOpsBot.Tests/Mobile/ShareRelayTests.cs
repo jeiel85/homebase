@@ -131,6 +131,27 @@ public class ShareRelayTests : IDisposable
     }
 
     [Fact]
+    public async Task Long_text_for_another_phone_is_fetched_with_the_senders_name()
+    {
+        var (tokenA, keyA, _) = Phone("Galaxy S24");
+        var (tokenTab, keyTab, tab) = Phone("Galaxy Tab S9");
+        var text = string.Concat(Enumerable.Repeat("긴 로그 한 줄입니다.\n", 400));
+        var content = new ClipContent(MobileProtocol.Schema, text, text.Length, _time.GetUtcNow(), To: [tab.DeviceId]);
+
+        var (status, _) = await Api().HandleRestAsync(Req("POST", ClipProtocol.Path, tokenA),
+            Body(ClipMessages.Seal(keyA, ClipProtocol.NewId(), content)), default);
+
+        Assert.Equal(200, status);
+        var push = JsonSerializer.Deserialize<ClipPushEnvelope>(Assert.Single(_pushed).Plaintext, MobileProtocol.Json)!;
+        var announced = JsonSerializer.Deserialize<ClipContent>(ClipCrypto.Open(keyTab, push.Nonce, push.Data)!, ClipProtocol.ContentJson)!;
+        Assert.Equal((null, "Galaxy S24"), (announced.Text, announced.From)); // too long for the push: only its length
+        var (fetched, json) = await Api().HandleRestAsync(Req("GET", ClipProtocol.Path, tokenTab, $"id={push.Id}"), null, default);
+        Assert.Equal(200, fetched);
+        var opened = ClipMessages.Open(keyTab, JsonSerializer.Deserialize<ClipEnvelope>(json, MobileProtocol.Json))!;
+        Assert.Equal((text, "Galaxy S24"), (opened.Text, opened.From));
+    }
+
+    [Fact]
     public async Task Text_without_to_still_goes_onto_this_pcs_clipboard()
     {
         var (tokenA, keyA, _) = Phone("Galaxy S24");

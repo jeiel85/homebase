@@ -65,15 +65,22 @@ internal object SilentInstaller {
         val preferences = UpdatePreferences(context)
         val file = File(UpdateDownloads.dir(context).apply { mkdirs() }, UpdateDownloads.FILE_NAME)
         try {
-            val downloaded = UpdateDownloader().download(manifest.apkUrl, file, manifest.sha256)
+            val downloaded = UpdateDownloader().download(manifest.apkUrl, file, manifest.sha256, isStopped)
+            if (downloaded == UpdateDownloader.Result.Stopped) {
+                // 잡이 멈췄다 — 실패가 아니다. 다음 확인에서 다시 받는다.
+                Log.i(TAG, "download of ${manifest.versionCode} stopped with the job")
+                return false
+            }
             if (downloaded !is UpdateDownloader.Result.Success) {
                 Log.w(TAG, "download or checksum failed for ${manifest.versionCode}")
                 preferences.addSilentFailure(manifest.versionCode)
+                preferences.recordAutoInstall(AutoInstallResult.Outcome.DOWNLOAD_FAILED, manifest.versionCode)
                 return false
             }
             if (!isExpectedArchive(context, file, manifest.versionCode)) {
                 Log.w(TAG, "downloaded APK is not ${context.packageName} ${manifest.versionCode}")
                 preferences.addSilentFailure(manifest.versionCode)
+                preferences.recordAutoInstall(AutoInstallResult.Outcome.INSTALL_FAILED, manifest.versionCode, status = 4)
                 return false
             }
             // 받는 사이 앱이 화면에 올라왔거나 잡이 멈췄거나, 사용자가 설정에서 "새 버전 자동 설치"를
@@ -83,6 +90,7 @@ internal object SilentInstaller {
         } catch (e: Exception) {
             Log.w(TAG, "silent install failed to start", e)
             preferences.addSilentFailure(manifest.versionCode)
+            preferences.recordAutoInstall(AutoInstallResult.Outcome.INSTALL_FAILED, manifest.versionCode)
             return false
         } finally {
             // 세션이 바이트를 이미 복사했다 — 파일은 더 쓸 데가 없다.
@@ -165,9 +173,11 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                     val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
                     if (sessionId >= 0) runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
                     preferences.setNeedsConfirmVersionCode(versionCode)
+                    preferences.recordAutoInstall(AutoInstallResult.Outcome.NEEDS_CONFIRM, versionCode)
                     Log.i(TAG, "system asks to confirm $versionCode; falling back to the notification")
                 } else {
                     preferences.addSilentFailure(versionCode)
+                    preferences.recordAutoInstall(AutoInstallResult.Outcome.INSTALL_FAILED, versionCode, status)
                     Log.w(TAG, "silent install of $versionCode failed: $status ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}")
                 }
                 // 새 버전이 있다는 사실은 알려야 한다. 캐시된 manifest로만 판단한다(네트워크 없음).
@@ -190,6 +200,7 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         if (installed != 0) preferences.setSilentInstallingVersionCode(0)
         UpdateDownloads.dir(context).listFiles()?.forEach { it.delete() }
         if (installed == BuildConfig.VERSION_CODE) {
+            preferences.recordAutoInstall(AutoInstallResult.Outcome.INSTALLED, installed)
             UpdateNotifier.showUpdated(context, BuildConfig.VERSION_NAME)
         } else {
             // 사용자가 직접 설치했다 — "새 버전이 있습니다" 알림이 남아 있으면 치운다.

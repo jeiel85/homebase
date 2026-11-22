@@ -65,7 +65,9 @@ public sealed class ClipShareService
     private readonly Dictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Offer> _offers = new(StringComparer.Ordinal);
 
-    private sealed record Offer(string Text, bool Sensitive, DateTimeOffset Ts, HashSet<string> DeviceIds, DateTimeOffset Expires);
+    // From: the phone that sent it through this PC (M-67), handed back with the text like the push carries it.
+    private sealed record Offer(string Text, bool Sensitive, DateTimeOffset Ts, HashSet<string> DeviceIds, DateTimeOffset Expires,
+        string? From = null);
 
     public ClipShareService(IMobileDeviceStore devices, IClipKeyStore keys, PushSender? push, HubLinkService? hubs,
         TimeProvider time, ILogger logger, INotificationHistoryStore? history = null)
@@ -218,7 +220,7 @@ public sealed class ClipShareService
         }
         _logger.LogInformation("Long clipboard text {Id} fetched by {Name}.", id, device.Name);
         return ClipMessages.Seal(key, id!,
-            new ClipContent(MobileProtocol.Schema, offer.Text, offer.Text.Length, offer.Ts, offer.Sensitive ? true : null));
+            new ClipContent(MobileProtocol.Schema, offer.Text, offer.Text.Length, offer.Ts, offer.Sensitive ? true : null, From: offer.From));
     }
 
     /// <summary>
@@ -417,7 +419,7 @@ public sealed class ClipShareService
             if (_offers.Count >= MaxOffers)
                 _offers.Remove(_offers.OrderBy(p => p.Value.Expires).First().Key);
             _offers[id] = new Offer(content.Text!, content.Sensitive == true, content.Ts,
-                new HashSet<string>(StringComparer.Ordinal) { deviceId }, now + ClipProtocol.OfferLifetime);
+                new HashSet<string>(StringComparer.Ordinal) { deviceId }, now + ClipProtocol.OfferLifetime, content.From);
         }
     }
 

@@ -11,7 +11,8 @@ namespace LocalOpsBot.Agent.Services;
 /// or a junction where <c>mobile\</c> will be. After this: SYSTEM and Administrators full control,
 /// Users read — except <c>logs\</c>, where each user's Tray still creates its own log file (no folders,
 /// so no junctions). <c>data\</c> and <c>mobile\</c> keep their own SYSTEM/Administrators-only ACLs.
-/// Applied at every service start so installs from before this rule are closed by the next update.
+/// Checked at every service start so installs from before this rule are closed by the next update; written
+/// only when it differs, since a write propagates to everything under the folder.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class ProgramDataAcl
@@ -37,10 +38,29 @@ public static class ProgramDataAcl
         RemoveLinks(root, notes);
         if (Directory.Exists(logs)) RemoveLinks(logs, notes);
 
-        new DirectoryInfo(root).SetAccessControl(RootSecurity());
-        if (Directory.Exists(logs)) new DirectoryInfo(logs).SetAccessControl(LogsSecurity());
+        Apply(new DirectoryInfo(root), RootSecurity());
+        if (Directory.Exists(logs)) Apply(new DirectoryInfo(logs), LogsSecurity());
         return notes;
     }
+
+    private static void Apply(DirectoryInfo dir, DirectorySecurity wanted)
+    {
+        if (!AlreadyApplied(dir.GetAccessControl(), wanted)) dir.SetAccessControl(wanted);
+    }
+
+    /// <summary>
+    /// True when <paramref name="actual"/> already has what writing <paramref name="wanted"/> would give it: the same
+    /// inheritance protection and the same explicit rules (inherited ones follow from the parent).
+    /// </summary>
+    internal static bool AlreadyApplied(DirectorySecurity actual, DirectorySecurity wanted) =>
+        actual.AreAccessRulesProtected == wanted.AreAccessRulesProtected
+        && ExplicitRules(actual).SetEquals(ExplicitRules(wanted));
+
+    private static HashSet<(string, FileSystemRights, InheritanceFlags, PropagationFlags, AccessControlType)> ExplicitRules(DirectorySecurity s) =>
+        s.GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .Select(r => (r.IdentityReference.Value, r.FileSystemRights, r.InheritanceFlags, r.PropagationFlags, r.AccessControlType))
+            .ToHashSet();
 
     internal static DirectorySecurity RootSecurity()
     {

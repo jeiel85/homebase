@@ -28,15 +28,19 @@ internal sealed class RollingLogFile
     public static RollingLogFile For(string path) =>
         Files.GetOrAdd(Path.GetFullPath(path), p => new RollingLogFile(p));
 
-    /// <summary>Appends one line (a newline is added).</summary>
-    public void Append(string line)
+    /// <summary>Appends one line (a newline is added). False when it could not be written.</summary>
+    public bool Append(string line)
     {
         lock (_gate)
         {
             try { RollIfFull(); }
             catch { /* a failed roll only means the live file keeps growing until the next try */ }
-            try { File.AppendAllText(_path, line + Environment.NewLine); }
-            catch { /* logging must never throw into the caller */ }
+            try
+            {
+                File.AppendAllText(_path, line + Environment.NewLine);
+                return true;
+            }
+            catch { return false; /* logging must never throw into the caller */ }
         }
     }
 
