@@ -209,7 +209,7 @@ PC의 트레이가 보낸 파일(2b). 다른 PC로는 Agent가 위 "파일"(2a) 
 
 - 배포자 찾기: `queryBroadcastReceivers(org.unifiedpush.android.distributor.REGISTER)`(매니페스트 `<queries>`). 하나면 자동으로 쓰고, 여럿이면 고르게 하고, 없으면 ntfy 설치를 안내한다.
 - 등록: `REGISTER`에 `token`(UUID, 등록마다 새로), `message`, `pi`(`org.unifiedpush.dummy_app`을 향한 IMMUTABLE PendingIntent), 구버전 호환용 `application`을 넣는다. API 34+는 `BroadcastOptions.setShareIdentityEnabled(true)`로 보낸다.
-- 수신(`PushReceiver`, exported): `NEW_ENDPOINT`, `MESSAGE`(`bytesMessage`), `REGISTRATION_FAILED`, `UNREGISTERED`, `TEMP_UNAVAILABLE`. 현재 `token`이 아니면 무시하고, `id`가 있으면 `MESSAGE_ACK`로 답한다.
+- 수신(`PushReceiver`, exported): `NEW_ENDPOINT`, `MESSAGE`(`bytesMessage`), `REGISTRATION_FAILED`, `UNREGISTERED`, `TEMP_UNAVAILABLE`. 현재 `token`이면 `id`가 있을 때 `MESSAGE_ACK`로 답한다. 현재 `token`이 아니면 처리하지 않는다 — 그중 `NEW_ENDPOINT`·`MESSAGE`는 다시 설치하기 전 등이 남긴 등록이므로, 설치된 배포자에 그 토큰의 `UNREGISTER`를 보내 배포자에서 지우게 한다(M-76). 다시 등록할 때는 이전 토큰을 먼저 해제한다.
   `MESSAGE`는 이 휴대폰 키·auth로 복호화되어야(GCM 태그) 표시되므로, 다른 앱이 보낸 가짜 브로드캐스트는 아무것도 띄우지 못한다. 송신 측 공개키는 곡선 위의 점인지 먼저 검사한다.
 - `RAISE_TO_FOREGROUND` 서비스는 바인드만 받는다(규약 요구).
 - 키: P-256 키쌍과 auth secret은 설치마다 하나이고 모든 PC가 같이 쓴다. 개인키(PKCS#8)와 auth는 Android Keystore AES-GCM 키로 감싸 SharedPreferences에 둔다.

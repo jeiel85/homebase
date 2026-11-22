@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.60.1 — Phone: leftover ntfy subscriptions are let go
+
+### Fixed
+- Phone: **a reinstalled app no longer leaves its old subscription in ntfy** (or another UnifiedPush
+  distributor). Uninstalling the app doesn't end its registration, and the new install doesn't know the old
+  one, so each reinstall — or a switch between the GitHub and Play builds — added a subscription to ntfy's list,
+  and a PC that still had the old connection kept pushing to it. The app now unregisters a registration that
+  isn't its own as soon as the distributor delivers anything for it (DECISIONS M-76). One left before this
+  version goes with the next notification a PC sends to the old connection, so remove the old connection on the
+  PC (Settings › Phone › clean up old connections) after that, not before — or delete the subscription in ntfy
+  by hand.
+- Phone: choosing the distributor again while push is on lets the previous registration go instead of keeping
+  it next to the new one.
+
 ## v0.60.0 — Hardening: old connections, clipboard, notification center, updates and logs
 
 Clears the open hardening issues from v0.41.0 to v0.58.0 (#74 #77 #80 #88 #106 #109 #111 #113 #115 #117 #119
