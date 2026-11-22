@@ -74,8 +74,13 @@ object UnifiedPush {
      */
     fun register(context: Context, distributor: String) {
         val state = PushState(context)
+        // A registration this replaces is let go first; left alone, the distributor would keep it (and its
+        // subscription) for good, since nothing would ever answer for its token again (M-76).
+        val previousToken = state.token
+        val previousDistributor = state.distributor
         val token = UUID.randomUUID().toString()
         state.startRegistration(token, distributor)
+        if (previousToken != null && previousDistributor != null) sendUnregister(context, previousDistributor, previousToken)
         val intent = Intent(ACTION_REGISTER)
             .setPackage(distributor)
             .putExtra(EXTRA_TOKEN, token)
@@ -92,6 +97,28 @@ object UnifiedPush {
         val distributor = state.distributor
         state.clear()
         if (token == null || distributor == null) return
+        sendUnregister(context, distributor, token)
+    }
+
+    /**
+     * Whether a distributor broadcast is for a registration this install doesn't hold, and worth ending: a
+     * NEW_ENDPOINT or MESSAGE (the distributor still delivers to it). The spec has the connector ignore these;
+     * Homebase also lets them go, because the distributor never drops one by itself — not when the app is
+     * uninstalled — so a reinstalled app would leave one subscription behind each time (M-76). The other
+     * actions are answers (UNREGISTERED to our own UNREGISTER, …) and are only ignored, so this never loops.
+     */
+    fun isStale(action: String?, token: String?, current: String?): Boolean =
+        token != null && token != current && (action == ACTION_NEW_ENDPOINT || action == ACTION_MESSAGE)
+
+    /**
+     * UNREGISTER for [token] to every installed distributor. The broadcast doesn't say which one sent it, and
+     * one that doesn't know the token ignores the request (spec).
+     */
+    fun unregisterStale(context: Context, token: String) {
+        for (distributor in distributors(context)) sendUnregister(context, distributor, token)
+    }
+
+    private fun sendUnregister(context: Context, distributor: String, token: String) {
         val intent = Intent(ACTION_UNREGISTER)
             .setPackage(distributor)
             .putExtra(EXTRA_TOKEN, token)

@@ -22,7 +22,8 @@ import java.util.concurrent.RejectedExecutionException
 
 /**
  * Broadcasts from the distributor (UnifiedPush AND_3). Anything whose token isn't our current one is
- * ignored; a MESSAGE must also decrypt with this phone's key and auth secret (AES-GCM tag), so a
+ * not handled — a NEW_ENDPOINT or MESSAGE for such a token is answered with UNREGISTER so the distributor
+ * drops that leftover registration (M-76); a MESSAGE must also decrypt with this phone's key and auth secret (AES-GCM tag), so a
  * forged broadcast from another app shows nothing. Messages for a PC that isn't paired are dropped.
  */
 class PushReceiver : BroadcastReceiver() {
@@ -30,6 +31,13 @@ class PushReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val state = PushState(context)
         val token = intent.getStringExtra(UnifiedPush.EXTRA_TOKEN)
+        if (UnifiedPush.isStale(intent.action, token, state.token)) {
+            // A registration this install no longer has — one left by the app before it was reinstalled, or
+            // replaced without being let go. Only this app can end it, and it learns the token only now (M-76).
+            UnifiedPush.unregisterStale(context, token!!)
+            Log.i(TAG, "let go of a registration this install doesn't hold (${intent.action?.substringAfterLast('.')})")
+            return
+        }
         if (token == null || token != state.token) return
         val distributor = state.distributor ?: return
         val id = intent.getStringExtra(UnifiedPush.EXTRA_ID)
