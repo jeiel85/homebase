@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$InstallDir = "",
     [switch]$Purge
 )
@@ -70,10 +70,24 @@ foreach ($dr in ($driverRoots | Select-Object -Unique)) {
     }
 }
 
+function Test-PathHasReparsePoint($BaseDir, $RelativeSegments) {
+    $current = $BaseDir
+    foreach ($seg in $RelativeSegments) {
+        $current = Join-Path $current $seg
+        if (-not (Test-Path -LiteralPath $current)) { return $false }
+        try {
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $true }
+        } catch {
+            return $true
+        }
+    }
+    return $false
+}
+
 # 4b) Take the Claude Code phone-approval hook (DECISIONS M-48) out of each user's settings.json,
-#     before the Tray that knows the format is deleted. Only our hook goes; the rest of the file stays
-#     (the previous file is kept as settings.json.homebase.bak). A hook left behind would only be
-#     refused at once, but it stays in the user's own file (#64).
+#     before the Tray that knows the format is deleted. Only our hook goes; the rest of the file stays.
+#     Skip any path containing a symlink/junction so a standard user cannot redirect elevated writes.
 $hookRoots = @($DefaultRoot)
 if ($InstallDir) { $hookRoots += $InstallDir }
 $trayExe = $hookRoots | Select-Object -Unique |
@@ -82,8 +96,13 @@ $trayExe = $hookRoots | Select-Object -Unique |
 $profileRoot = Split-Path -Parent $env:PUBLIC
 if ($trayExe -and $profileRoot) {
     Get-ChildItem -Path $profileRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        if (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return }
+        if (Test-PathHasReparsePoint $_.FullName @('.claude', 'settings.json')) {
+            Write-Warning "Skipping Claude Code hook cleanup under $($_.FullName): symlink/junction detected."
+            return
+        }
         $settings = Join-Path $_.FullName ".claude\settings.json"
-        if ((Test-Path $settings) -and (Select-String -Path $settings -Pattern "X-Homebase-Token" -SimpleMatch -Quiet)) {
+        if ((Test-Path -LiteralPath $settings) -and (Select-String -LiteralPath $settings -Pattern "X-Homebase-Token" -SimpleMatch -Quiet)) {
             $p = Start-Process -FilePath $trayExe -ArgumentList @("--remove-claude-hook", "`"$settings`"") -Wait -PassThru -WindowStyle Hidden
             if ($p.ExitCode -eq 0) { Write-Host "Removed the Claude Code hook from $settings" }
             else { Write-Warning "Couldn't remove the Claude Code hook from $settings (exit $($p.ExitCode))" }
@@ -97,8 +116,13 @@ if ($profileRoot) {
     $shell = $null
     try { $shell = New-Object -ComObject WScript.Shell } catch { }
     Get-ChildItem -Path $profileRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        if (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return }
+        if (Test-PathHasReparsePoint $_.FullName @('AppData', 'Roaming', 'Microsoft', 'Windows', 'SendTo', 'Homebase.lnk')) {
+            Write-Warning "Skipping SendTo cleanup under $($_.FullName): symlink/junction detected."
+            return
+        }
         $lnk = Join-Path $_.FullName "AppData\Roaming\Microsoft\Windows\SendTo\Homebase.lnk"
-        if (-not (Test-Path $lnk)) { return }
+        if (-not (Test-Path -LiteralPath $lnk)) { return }
         $target = $null
         try { if ($shell) { $target = $shell.CreateShortcut($lnk).TargetPath } } catch { }
         if ($target -and ((Split-Path -Leaf $target) -ieq "Homebase.Tray.exe")) {

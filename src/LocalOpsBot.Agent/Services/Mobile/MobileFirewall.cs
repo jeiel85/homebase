@@ -50,7 +50,8 @@ public static class MobileFirewall
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("netsh.exe", args)
+            var netsh = Path.Combine(Environment.SystemDirectory, "netsh.exe");
+            using var p = Process.Start(new ProcessStartInfo(netsh, args)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,

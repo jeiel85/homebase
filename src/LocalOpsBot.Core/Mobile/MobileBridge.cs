@@ -154,7 +154,7 @@ public sealed record SessionReport(
 
 /// <summary>A paired device. <c>Kind</c> is <see cref="DeviceKind.Phone"/> or <see cref="DeviceKind.Pc"/> (DECISIONS M-27).</summary>
 public sealed record MobileDeviceInfo(
-    string DeviceId, string Name, string? Model, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt, string Kind = DeviceKind.Phone);
+    string DeviceId, string Name, string? Model, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt, string Kind = DeviceKind.Phone, string? PcId = null);
 
 /// <summary>
 /// What the Tray's Settings › Phone tab shows. <c>Hosts</c> is the v1 Tailscale list;

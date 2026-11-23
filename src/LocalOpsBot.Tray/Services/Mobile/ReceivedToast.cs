@@ -28,8 +28,18 @@ internal static class ReceivedToast
     /// <summary>Windows shows toast images up to 3 MB.</summary>
     private const long MaxPictureBytes = 3 * 1024 * 1024;
 
-    private static readonly string[] Runnable =
-        [".exe", ".msi", ".msix", ".appx", ".bat", ".cmd", ".com", ".scr", ".pif", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".lnk", ".cpl", ".reg", ".jar"];
+    /// <summary>
+    /// Safe document/media extensions allowed to open directly via <c>UseShellExecute</c> from a <c>homebase://</c>
+    /// link. Everything else (executables, scripts, shortcuts, archives, Office macro formats, .url/.msc/.chm/.appref-ms,
+    /// etc.) is shown in Explorer with <c>/select</c> instead of executed.
+    /// </summary>
+    private static readonly HashSet<string> SafeToOpen = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".heic", ".avif", ".tif", ".tiff",
+        ".pdf", ".txt", ".md", ".csv", ".json", ".log",
+        ".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aac",
+        ".mp4", ".mkv", ".mov", ".webm", ".avi",
+    };
 
     private static bool _registered;
     /// <summary>The block last logged, so a PC with Homebase's notifications off says so once, not for every file.</summary>
@@ -239,7 +249,8 @@ internal static class ReceivedToast
         return string.Equals(Path.GetDirectoryName(path), root, StringComparison.OrdinalIgnoreCase) && File.Exists(path) ? path : null;
     }
 
-    internal static bool IsRunnable(string path) => Runnable.Contains(Path.GetExtension(path).ToLowerInvariant());
+    /// <summary>True when <paramref name="path"/> is not on the safe-to-open allowlist and must be revealed in Explorer instead.</summary>
+    internal static bool IsRunnable(string path) => !SafeToOpen.Contains(Path.GetExtension(path));
 
     /// <summary>
     /// For this Windows user: the app id toasts show as (name and icon), and the <c>homebase:</c> links pointing at this tray.

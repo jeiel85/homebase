@@ -538,6 +538,15 @@ class HomebaseApi(
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS) // snapshots arrive every second; 30 s silence = dead
             .pingInterval(15, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .addInterceptor { chain ->
+                val req = chain.request()
+                if (!req.url.isHttps && !Endpoint.allowsCleartextHost(req.url.host)) {
+                    throw IOException("Cleartext HTTP is only allowed over Tailscale or loopback.")
+                }
+                chain.proceed(req)
+            }
             .build()
 
         /** Short reason for a failed path; a certificate pin mismatch is called out as such. */

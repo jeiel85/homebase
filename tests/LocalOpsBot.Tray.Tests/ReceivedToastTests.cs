@@ -83,10 +83,63 @@ public class ReceivedToastTests : IDisposable
     [InlineData("setup.exe", true)]
     [InlineData("run.BAT", true)]
     [InlineData("script.ps1", true)]
+    [InlineData("evil.url", true)]
+    [InlineData("console.msc", true)]
+    [InlineData("help.chm", true)]
+    [InlineData("clickonce.appref-ms", true)]
+    [InlineData("macro.xlsm", true)]
+    [InlineData("script.py", true)]
+    [InlineData("disk.iso", true)]
     [InlineData("photo.jpg", false)]
     [InlineData("report.pdf", false)]
+    [InlineData("notes.txt", false)]
+    [InlineData("clip.mp4", false)]
     public void Programs_and_scripts_are_shown_rather_than_run(string name, bool runnable) =>
         Assert.Equal(runnable, ReceivedToast.IsRunnable(name));
+
+    [Fact]
+    public void RemoveFrom_removes_hook_in_place_and_rejects_junctions()
+    {
+        var claudeDir = Path.Combine(_dir, ".claude");
+        Directory.CreateDirectory(claudeDir);
+        var settings = Path.Combine(claudeDir, "settings.json");
+        var hookCmd = LocalOpsBot.Core.Mobile.ClaudeHook.Command(47391, new string('a', 48));
+        File.WriteAllText(settings, LocalOpsBot.Core.Mobile.ClaudeHook.ApplyToSettings("{\"theme\":\"dark\"}", hookCmd));
+
+        Assert.True(ClaudeHookSetup.RemoveFrom(settings));
+        var after = File.ReadAllText(settings);
+        Assert.Null(LocalOpsBot.Core.Mobile.ClaudeHook.InstalledCommand(after));
+        Assert.Contains("\"theme\"", after);
+        Assert.False(File.Exists(settings + ".homebase.bak"));
+        Assert.False(File.Exists(settings + ".homebase.tmp"));
+
+        // Reparse point (directory junction) on the chain must be detected and refused.
+        var target = Path.Combine(_dir, "real-target");
+        Directory.CreateDirectory(target);
+        var targetSettings = Path.Combine(target, "settings.json");
+        var targetBefore = LocalOpsBot.Core.Mobile.ClaudeHook.ApplyToSettings("{\"keep\":true}", hookCmd);
+        File.WriteAllText(targetSettings, targetBefore);
+        var junction = Path.Combine(_dir, "junc");
+        using (var mk = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{target}\"")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!)
+        {
+            mk.WaitForExit(5000);
+        }
+        try
+        {
+            var throughJunction = Path.Combine(junction, "settings.json");
+            Assert.True(ClaudeHookSetup.HasReparsePointOnChain(throughJunction));
+            Assert.False(ClaudeHookSetup.RemoveFrom(throughJunction));
+            Assert.Equal(targetBefore, File.ReadAllText(targetSettings));
+        }
+        finally
+        {
+            if (Directory.Exists(junction)) Directory.Delete(junction, recursive: false);
+        }
+    }
 
     [Fact]
     public void Only_enabled_lets_the_toast_show_and_every_block_says_why()

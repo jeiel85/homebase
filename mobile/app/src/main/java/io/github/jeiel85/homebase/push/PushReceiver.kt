@@ -116,6 +116,12 @@ class PushReceiver : BroadcastReceiver() {
             Log.i(TAG, "dropped a push from an unpaired PC")
             return
         }
+        // Every paired PC shares this phone's WebPush keys: verify per-PC MAC when present, and require it
+        // for Claude Code approval prompts so another PC cannot spoof an Allow/Deny prompt for this PC.
+        if ((message.mac != null || message.approval != null) && !message.verifyMac(pc.token)) {
+            Log.w(TAG, "dropped a push with missing or invalid per-PC MAC")
+            return
+        }
         // The PC skips muted categories itself (M-25); this catches PCs from before that and the
         // moments between changing the choice and the PC hearing about it.
         if (NotificationGroups.isMuted(message.category, state.mutedCategories)) {

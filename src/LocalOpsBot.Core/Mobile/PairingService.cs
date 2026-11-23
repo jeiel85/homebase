@@ -10,7 +10,14 @@ public interface IMobileDeviceStore
 
     IReadOnlyList<MobileDeviceInfo> List();
 
-    MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone);
+    MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone, string? pcId = null);
+
+    /// <summary>
+    /// Binds a paired PC device to its immutable <paramref name="pcId"/> (on first presence for pairings from
+    /// before <c>pcId</c> was stored). Returns <c>true</c> when the device is bound to <paramref name="pcId"/>,
+    /// or <c>false</c> when it is already bound to a different PC id or another paired PC owns <paramref name="pcId"/>.
+    /// </summary>
+    bool BindPcId(string deviceId, string pcId);
 
     bool Revoke(string deviceId);
 
@@ -31,7 +38,7 @@ public interface IMobileDeviceStore
     IReadOnlyList<LocalOpsBot.Core.Push.PushTarget> PushTargets();
 }
 
-public enum PairOutcome { Paired, InvalidCode, Expired, Locked }
+public enum PairOutcome { Paired, InvalidCode, Expired, Locked, Forbidden }
 
 public sealed record PairResult(PairOutcome Outcome, string? DeviceId = null, string? Token = null);
 
@@ -55,9 +62,10 @@ public sealed class PairingService
 
     /// <summary>
     /// Group introduction codes (M-47): handed by one member to another so it can pair without a QR. Kept
-    /// apart from the QR code so an introduction never cancels a code on screen; each is single use.
+    /// apart from the QR code so an introduction never cancels a code on screen; each is single use and
+    /// bound to an allowed <see cref="DeviceKind"/> so a linked PC cannot mint a phone token.
     /// </summary>
-    private readonly Dictionary<string, DateTimeOffset> _introductions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (DateTimeOffset ExpiresAt, string AllowedKind)> _introductions = new(StringComparer.Ordinal);
     public const int MaxIntroductions = 8;
 
     public PairingService(IMobileDeviceStore store, TimeProvider time)
@@ -76,22 +84,23 @@ public sealed class PairingService
         }
     }
 
-    /// <summary>A one-time code for a group introduction (M-47); the QR code stays valid.</summary>
-    public (string Code, DateTimeOffset ExpiresAt) BeginIntroduction()
+    /// <summary>A one-time code for a group introduction (M-47); the QR code stays valid. Defaults to PC-only pairing.</summary>
+    public (string Code, DateTimeOffset ExpiresAt) BeginIntroduction(string allowedKind = DeviceKind.Pc)
     {
+        var kind = DeviceKind.Normalize(allowedKind);
         lock (_gate)
         {
             var now = _time.GetUtcNow();
-            foreach (var old in _introductions.Where(kv => kv.Value < now).Select(kv => kv.Key).ToList()) _introductions.Remove(old);
-            while (_introductions.Count >= MaxIntroductions) _introductions.Remove(_introductions.MinBy(kv => kv.Value).Key);
+            foreach (var old in _introductions.Where(kv => kv.Value.ExpiresAt < now).Select(kv => kv.Key).ToList()) _introductions.Remove(old);
+            while (_introductions.Count >= MaxIntroductions) _introductions.Remove(_introductions.MinBy(kv => kv.Value.ExpiresAt).Key);
             var code = Base64Url(RandomNumberGenerator.GetBytes(16));
             var expires = now + CodeLifetime;
-            _introductions[code] = expires;
+            _introductions[code] = (expires, kind);
             return (code, expires);
         }
     }
 
-    public PairResult TryPair(string? code, string? deviceName, string? deviceModel, string? kind = null)
+    public PairResult TryPair(string? code, string? deviceName, string? deviceModel, string? kind = null, string? pcId = null)
     {
         lock (_gate)
         {
@@ -99,11 +108,16 @@ public sealed class PairingService
             while (_failures.Count > 0 && now - _failures.Peek() > FailureWindow) _failures.Dequeue();
             if (_failures.Count >= MaxFailures) return new PairResult(PairOutcome.Locked);
 
-            if (!string.IsNullOrEmpty(code) && _introductions.Remove(code, out var introExpires))
+            var normalizedKind = DeviceKind.Normalize(kind);
+            var cleanPcId = normalizedKind == DeviceKind.Pc ? CleanPcId(pcId) : null;
+
+            if (!string.IsNullOrEmpty(code) && _introductions.Remove(code, out var intro))
             {
-                if (now > introExpires) return new PairResult(PairOutcome.Expired);
+                if (now > intro.ExpiresAt) return new PairResult(PairOutcome.Expired);
+                if (!string.Equals(normalizedKind, intro.AllowedKind, StringComparison.Ordinal))
+                    return new PairResult(PairOutcome.Forbidden);
                 var introToken = Base64Url(RandomNumberGenerator.GetBytes(32));
-                var introduced = _store.Add(CleanName(deviceName, kind), CleanModel(deviceModel), HashToken(introToken), DeviceKind.Normalize(kind));
+                var introduced = _store.Add(CleanName(deviceName, kind), CleanModel(deviceModel), HashToken(introToken), normalizedKind, cleanPcId);
                 return new PairResult(PairOutcome.Paired, introduced.DeviceId, introToken);
             }
 
@@ -123,7 +137,7 @@ public sealed class PairingService
 
             _code = null; // single use
             var token = Base64Url(RandomNumberGenerator.GetBytes(32));
-            var device = _store.Add(CleanName(deviceName, kind), CleanModel(deviceModel), HashToken(token), DeviceKind.Normalize(kind));
+            var device = _store.Add(CleanName(deviceName, kind), CleanModel(deviceModel), HashToken(token), normalizedKind, cleanPcId);
             return new PairResult(PairOutcome.Paired, device.DeviceId, token);
         }
     }
@@ -146,5 +160,12 @@ public sealed class PairingService
         var m = model?.Trim();
         if (string.IsNullOrEmpty(m)) return null;
         return m.Length > 64 ? m[..64] : m;
+    }
+
+    private static string? CleanPcId(string? pcId)
+    {
+        var id = pcId?.Trim();
+        if (string.IsNullOrEmpty(id)) return null;
+        return id.Length > 64 ? id[..64] : id;
     }
 }

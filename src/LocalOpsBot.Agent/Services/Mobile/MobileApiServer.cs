@@ -41,6 +41,8 @@ public sealed class MobileApiServer : BackgroundService
     /// <summary>Body cap for a transfer's description and hashes (M-64): 20 names of up to 1024 characters, sealed.</summary>
     internal const int TransferInfoBodyBytes = 256 * 1024;
     private const int MaxConnections = 32;
+    /// <summary>Cap on concurrent unauthenticated requests so an unauthenticated caller cannot starve paired devices.</summary>
+    private const int MaxUnauthenticated = 8;
 
     private enum PathKind { Tailnet, Lan, Loopback }
 
@@ -66,6 +68,7 @@ public sealed class MobileApiServer : BackgroundService
     private readonly MobileOptions _options;
     private readonly ILogger<MobileApiServer> _logger;
     private readonly SemaphoreSlim _connections = new(MaxConnections);
+    private readonly SemaphoreSlim _unauthenticated = new(MaxUnauthenticated);
     private readonly object _gate = new();
     private IReadOnlyList<Binding> _bound = Array.Empty<Binding>();
     private string? _magicDns;
@@ -397,12 +400,25 @@ public sealed class MobileApiServer : BackgroundService
 
         byte[]? body = null;
         var chunkTurn = false;
+        var unauthTurn = false;
         try
         {
             if (r.Head.Method == "POST")
             {
                 var maxBody = MiniHttp.MaxBodyBytes;
-                if (r.Head.Path == LiveSharePath)
+                var bodyTimeout = BodyTimeout;
+                if (r.Head.Path == "/api/v1/pair")
+                {
+                    // Unauthenticated pairing request: shorter body timeout and bounded concurrency.
+                    if (!await _unauthenticated.WaitAsync(0, ct))
+                    {
+                        await MiniHttp.WriteResponseAsync(stream, 429, Error("busy", "Too many pairing requests in progress."), ct);
+                        return;
+                    }
+                    unauthTurn = true;
+                    bodyTimeout = HeadTimeout;
+                }
+                else if (r.Head.Path == LiveSharePath)
                 {
                     // The one large body: only a paired device may make us read it (M-46).
                     if (_devices.Authenticate(r.Head.BearerToken() ?? "") is null)
@@ -452,7 +468,7 @@ public sealed class MobileApiServer : BackgroundService
                 }
                 using (var bodyLimit = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
-                    bodyLimit.CancelAfter(BodyTimeout);
+                    bodyLimit.CancelAfter(bodyTimeout);
                     try { body = await MiniHttp.ReadBodyAsync(stream, r.Head, r.Leftover, bodyLimit.Token, maxBody); }
                     catch (OperationCanceledException) when (!ct.IsCancellationRequested) { body = null; }
                 }
@@ -471,6 +487,7 @@ public sealed class MobileApiServer : BackgroundService
         finally
         {
             if (chunkTurn) _files!.LeaveChunk();
+            if (unauthTurn) _unauthenticated.Release();
         }
     }
 
@@ -516,7 +533,7 @@ public sealed class MobileApiServer : BackgroundService
                 catch (JsonException) { req = null; }
                 if (req is null) return (400, Error("bad_request", "Invalid pairing request."));
 
-                var result = _pairing.TryPair(req.Code, req.DeviceName, req.DeviceModel, req.Kind);
+                var result = _pairing.TryPair(req.Code, req.DeviceName, req.DeviceModel, req.Kind, req.PcId);
                 switch (result.Outcome)
                 {
                     case PairOutcome.Paired:
@@ -533,6 +550,9 @@ public sealed class MobileApiServer : BackgroundService
                     case PairOutcome.Locked:
                         _logger.LogWarning("Mobile pairing locked after repeated wrong codes.");
                         return (429, Error("locked", "Too many wrong codes. Try again in a few minutes."));
+                    case PairOutcome.Forbidden:
+                        _logger.LogWarning("Rejected group introduction code for disallowed device kind {Kind}.", DeviceKind.Normalize(req.Kind));
+                        return (403, Error("forbidden", "This introduction code cannot pair that kind of device."));
                     default:
                         return (400, Error("invalid_code", "The pairing code is not valid."));
                 }
@@ -605,9 +625,15 @@ public sealed class MobileApiServer : BackgroundService
                 try { report = JsonSerializer.Deserialize<PresenceReport>(body!, MobileProtocol.Json); }
                 catch (JsonException) { report = null; }
                 if (PresenceReport.Validate(report) is { } invalid) return (400, Error("invalid_presence", invalid));
-                var answer = _deviceHub.Presence(device, report!);
+                var sanitized = report!.Sanitized();
+                if (device.Kind == DeviceKind.Pc && sanitized.PcId is { Length: > 0 } reportedPcId
+                    && (reportedPcId == _devices.PcId || !_devices.BindPcId(device.DeviceId, reportedPcId)))
+                {
+                    return (403, Error("forbidden", "Presence pcId does not match this paired PC."));
+                }
+                var answer = _deviceHub.Presence(device, sanitized);
                 // A linked PC's paths reach this PC's own link to it when that one went stale (M-59).
-                _group?.AdoptPaths(device, report!.Sanitized());
+                _group?.AdoptPaths(device, sanitized);
                 return (200, Json(answer));
             }
 

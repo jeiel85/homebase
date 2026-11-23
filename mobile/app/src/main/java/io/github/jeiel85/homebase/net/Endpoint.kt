@@ -49,27 +49,59 @@ data class Endpoint(
         const val CLOUDFLARE = "cloudflare"
         const val LOOPBACK = "loopback"
 
-        /** null for malformed entries, and for a LAN endpoint without a pin (never trust it blindly). */
+        /** null for malformed entries, disallowed hosts, or transport/TLS mismatches. */
         fun parse(o: JSONObject): Endpoint? {
             val transport = o.optString("transport")
-            val host = o.optString("host")
+            val host = o.optString("host").trim()
             val port = o.optInt("port", -1)
             val tls = o.optBoolean("tls")
             val pin = o.optString("certSha256").lowercase().ifBlank { null }
-            if (transport.isBlank() || host.isBlank() || port !in 1..65535) return null
-            if (transport == LAN && (!tls || pin == null || !pin.matches(PIN))) return null
-            return Endpoint(transport, host, port, tls, pin)
+            if (transport.isBlank() || !isSafeHost(host) || port !in 1..65535) return null
+            val ipv4 = RouteSelector.ipv4(host)
+            val ok = when (transport) {
+                LAN -> tls && ipv4 != null && isPrivateIpv4(ipv4) && pin != null && pin.matches(PIN)
+                TAILSCALE -> !tls && (if (ipv4 != null) RouteSelector.isTailnet(ipv4) else isMagicDns(host))
+                CLOUDFLARE -> tls && ipv4 == null && isDnsName(host)
+                LOOPBACK -> !tls && (host == "127.0.0.1" || host == "::1")
+                else -> false
+            }
+            return if (ok) Endpoint(transport, host, port, tls, pin) else null
         }
 
         fun parseList(arr: JSONArray?): List<Endpoint> = arr.objects().mapNotNull(::parse)
 
         /** v1 QR / stored entries: Tailscale hosts over plain HTTP on one port. */
         fun fromLegacyHosts(hosts: List<String>, port: Int): List<Endpoint> =
-            hosts.filter { it.isNotBlank() }.map { h ->
+            hosts.map { it.trim() }.filter(::isSafeHost).map { h ->
                 Endpoint(if (h == "127.0.0.1") LOOPBACK else TAILSCALE, h, port, tls = false)
             }
 
+        internal fun isSafeHost(host: String): Boolean =
+            host.isNotEmpty() && host.length <= 253 && host.none { c ->
+                c.isWhitespace() || c.code < 0x20 || c in "@/?#\\"
+            }
+
+        internal fun isPrivateIpv4(ip: Int): Boolean {
+            val a = (ip ushr 24) and 0xFF
+            val b = (ip ushr 16) and 0xFF
+            return a == 10 || (a == 172 && b in 16..31) || (a == 192 && b == 168)
+        }
+
+        internal fun isDnsName(host: String): Boolean =
+            host.contains('.') && !host.endsWith('.') && DNS_NAME.matches(host)
+
+        internal fun isMagicDns(host: String): Boolean =
+            isDnsName(host) && host.endsWith(".ts.net", ignoreCase = true)
+
+        /** True when cleartext HTTP is allowed to [host] (Tailscale WireGuard hop or local emulator loopback). */
+        internal fun allowsCleartextHost(host: String): Boolean {
+            if (host.equals("localhost", ignoreCase = true) || host == "127.0.0.1" || host == "::1") return true
+            val ip = RouteSelector.ipv4(host)
+            return if (ip != null) RouteSelector.isTailnet(ip) else isMagicDns(host)
+        }
+
         private val PIN = Regex("^[0-9a-f]{64}$")
+        private val DNS_NAME = Regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
     }
 }
 

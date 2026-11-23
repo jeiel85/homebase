@@ -114,6 +114,26 @@ class PushProtocolTest {
         assertNull(PushMessage.parse(o.toString()).approval)
     }
 
+    @Test
+    fun push_message_per_pc_mac_verifies_authentic_messages_and_rejects_forgeries() {
+        val token = "test-token-for-push-mac"
+        val base = PushMessage.parse(fixture("push-approval.v1.json"))
+        // Compute expected MAC matching PC's PushPayload.ComputeMac.
+        val key = java.security.MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+        val canonical = "homebase-push-v1\n1\n${base.id}\n${base.pcId}\n${base.category}\n${base.title}\n${base.body ?: ""}\n${base.approval?.id ?: ""}"
+        val mac = WebPush.b64url(
+            javax.crypto.Mac.getInstance("HmacSHA256").apply {
+                init(javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"))
+            }.doFinal(canonical.toByteArray(Charsets.UTF_8)),
+        )
+        val signedJson = JSONObject(fixture("push-approval.v1.json")).put("mac", mac).toString()
+        val parsed = PushMessage.parse(signedJson)
+        assertTrue(parsed.verifyMac(token))
+        assertTrue(!parsed.verifyMac("wrong-token"))
+        assertTrue(!parsed.copy(title = "위조된 승인 요청").verifyMac(token))
+        assertTrue(!base.verifyMac(token)) // missing mac fails
+    }
+
     @Test(expected = io.github.jeiel85.homebase.net.ProtocolException::class)
     fun another_schema_is_rejected() {
         PushMessage.parse(fixture("push-message.v1.json").replaceFirst("\"schema\": 1", "\"schema\": 2"))

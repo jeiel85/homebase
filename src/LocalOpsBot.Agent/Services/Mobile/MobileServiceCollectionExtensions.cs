@@ -1,6 +1,9 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.Versioning;
 using LocalOpsBot.Core.Delivery;
 using LocalOpsBot.Core.Mobile;
+using LocalOpsBot.Core.Push;
 using LocalOpsBot.Infrastructure.Push;
 using LocalOpsBot.Infrastructure.Mobile;
 using Microsoft.Extensions.Configuration;
@@ -34,7 +37,33 @@ public static class MobileServiceCollectionExtensions
         services.AddSingleton<PairingService>();
         // Encrypted UnifiedPush to paired phones that registered an endpoint (DECISIONS M-19).
         // The router prefers it over Telegram; it never subscribes to the live hub (M-13).
-        services.AddHttpClient(UnifiedPushHttpClient, c => c.Timeout = TimeSpan.FromSeconds(15));
+        // SSRF defense: block redirects and reject private/loopback/link-local IPs after DNS resolution.
+        services.AddHttpClient(UnifiedPushHttpClient, c => c.Timeout = TimeSpan.FromSeconds(15))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = async (context, ct) =>
+                {
+                    var host = context.DnsEndPoint.Host;
+                    var addresses = IPAddress.TryParse(host, out var literal)
+                        ? new[] { literal }
+                        : await Dns.GetHostAddressesAsync(host, ct);
+                    var safe = addresses.Where(ip => !PushPayload.IsBlockedIp(ip)).ToArray();
+                    if (safe.Length == 0)
+                        throw new HttpRequestException($"Blocked push connection to non-public address for '{host}'.");
+                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                    try
+                    {
+                        await socket.ConnectAsync(safe, context.DnsEndPoint.Port, ct);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                },
+            });
         services.AddSingleton(sp => new UnifiedPushOutboundChannel(
             sp.GetRequiredService<IMobileDeviceStore>(),
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(UnifiedPushHttpClient),

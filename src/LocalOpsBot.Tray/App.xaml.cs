@@ -24,21 +24,23 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // A click on a "files received" toast (M-67): homebase://files/… opens a received file or the folder, then exits.
+        // Checked first with exact arity so a crafted homebase:// URI cannot inject another flag such as --remove-claude-hook.
+        //   Homebase.Tray.exe --toast <link>
+        if (e.Args.Contains(Services.Mobile.ReceivedToast.Argument))
+        {
+            if (e.Args.Length == 2 && e.Args[0] == Services.Mobile.ReceivedToast.Argument)
+                Services.Mobile.ReceivedToast.Handle(e.Args[1]);
+            Shutdown();
+            return;
+        }
+
         // Uninstall: take our Claude Code hook out of one settings.json and exit — no window, no mutex
         // (uninstall-service.ps1, once per user profile). Exit code 0 = done or nothing to do (#64).
         //   Homebase.Tray.exe --remove-claude-hook <path to .claude\settings.json>
         if (ArgAfter(e.Args, "--remove-claude-hook") is { } settingsPath)
         {
             Shutdown(Services.Mobile.ClaudeHookSetup.RemoveFrom(settingsPath) ? 0 : 1);
-            return;
-        }
-
-        // A click on a "files received" toast (M-67): homebase://files/… opens a received file or the folder, then exits.
-        //   Homebase.Tray.exe --toast <link>
-        if (ArgAfter(e.Args, Services.Mobile.ReceivedToast.Argument) is { } link)
-        {
-            Services.Mobile.ReceivedToast.Handle(link);
-            Shutdown();
             return;
         }
 

@@ -223,6 +223,8 @@ public sealed class DeviceGroupService : BackgroundService
     public bool AdoptPaths(MobileDeviceInfo device, PresenceReport report)
     {
         if (device.Kind != DeviceKind.Pc || report.PcId is not { } pcId || pcId == _devices.PcId) return false;
+        // Verify this paired PC device actually owns pcId so one linked PC cannot rewrite another PC's endpoints.
+        if (!_devices.BindPcId(device.DeviceId, pcId)) return false;
         if (_removed.IsRemoved(GroupKeys.Pc(pcId))) return false;
         var paths = HubPaths.Usable(report.Endpoints, _links.AllowsLoopback);
         return paths.Count > 0 && _links.AdoptPaths(pcId, paths);

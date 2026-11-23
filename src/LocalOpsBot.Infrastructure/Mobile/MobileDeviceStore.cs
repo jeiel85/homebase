@@ -45,6 +45,8 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         public string? Model { get; set; }
         /// <summary><c>phone</c> or <c>pc</c>; absent in files written before v0.23.0 (all phones then).</summary>
         public string? Kind { get; set; }
+        /// <summary>Stable PC id of a linked PC device; bound at pairing or first presence so one PC cannot spoof another.</summary>
+        public string? PcId { get; set; }
         public string TokenSha256 { get; set; } = "";
         public DateTimeOffset PairedAt { get; set; }
         public DateTimeOffset? LastSeenAt { get; set; }
@@ -91,22 +93,43 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
         lock (_gate) return _state.Devices.Select(ToInfo).ToList();
     }
 
-    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone)
+    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone, string? pcId = null)
     {
         lock (_gate)
         {
+            var normalizedKind = DeviceKind.Normalize(kind);
+            var cleanPcId = normalizedKind == DeviceKind.Pc && !string.IsNullOrWhiteSpace(pcId) ? pcId.Trim() : null;
             var device = new Device
             {
                 DeviceId = Guid.NewGuid().ToString("N")[..12],
                 Name = name,
                 Model = model,
-                Kind = DeviceKind.Normalize(kind),
+                Kind = normalizedKind,
+                PcId = cleanPcId,
                 TokenSha256 = tokenSha256Hex,
                 PairedAt = _time.GetUtcNow(),
             };
             _state.Devices.Add(device);
             Save();
             return ToInfo(device);
+        }
+    }
+
+    public bool BindPcId(string deviceId, string pcId)
+    {
+        if (string.IsNullOrWhiteSpace(pcId)) return false;
+        var trimmed = pcId.Trim();
+        lock (_gate)
+        {
+            var device = _state.Devices.Find(d => d.DeviceId == deviceId);
+            if (device is null || DeviceKind.Normalize(device.Kind) != DeviceKind.Pc) return false;
+            if (!string.IsNullOrEmpty(device.PcId))
+                return string.Equals(device.PcId, trimmed, StringComparison.Ordinal);
+            if (_state.Devices.Any(d => d.DeviceId != deviceId && string.Equals(d.PcId, trimmed, StringComparison.Ordinal)))
+                return false;
+            device.PcId = trimmed;
+            Save();
+            return true;
         }
     }
 
@@ -200,7 +223,7 @@ public sealed class MobileDeviceStore : IMobileDeviceStore
     }
 
     private static MobileDeviceInfo ToInfo(Device d) =>
-        new(d.DeviceId, d.Name, d.Model, d.PairedAt, Later(d.LastSeenAt, d.SeenNow), DeviceKind.Normalize(d.Kind));
+        new(d.DeviceId, d.Name, d.Model, d.PairedAt, Later(d.LastSeenAt, d.SeenNow), DeviceKind.Normalize(d.Kind), d.PcId);
 
     private static DateTimeOffset? Later(DateTimeOffset? a, DateTimeOffset? b) => a is null ? b : b is null || a >= b ? a : b;
 
