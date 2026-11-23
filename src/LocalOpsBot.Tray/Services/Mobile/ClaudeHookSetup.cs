@@ -1,6 +1,9 @@
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
+using Microsoft.Win32.SafeHandles;
 
 namespace LocalOpsBot.Tray.Services.Mobile;
 
@@ -72,17 +75,44 @@ internal static class ClaudeHookSetup
     /// <summary>
     /// Uninstall (<c>Homebase.Tray.exe --remove-claude-hook &lt;settings.json&gt;</c>, run by
     /// uninstall-service.ps1 for each user profile): takes our hook out of that file and leaves the
-    /// rest, with the previous file kept as <c>.homebase.bak</c>. A hook left behind did no harm — its
-    /// call is refused at once — but it stayed in the user's file (#64). True when nothing is left to do.
+    /// rest. Runs elevated during uninstall, so it rejects reparse points (junctions/symlinks) and
+    /// hardlinks, verifies the opened handle's final path matches <paramref name="settingsPath"/>,
+    /// and updates that handle in place without creating auxiliary files in the user's folder.
     /// </summary>
     public static bool RemoveFrom(string settingsPath)
     {
         try
         {
-            var text = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
+            var fullPath = Path.GetFullPath(settingsPath);
+            if (!File.Exists(fullPath)) return true;
+            if (HasReparsePointOnChain(fullPath))
+            {
+                TrayLog.Warn("claude-hook", $"Skipped {fullPath}: path contains a symlink or junction.");
+                return false;
+            }
+            using var handle = OpenWithoutFollowingReparse(fullPath, FileAccess.ReadWrite);
+            if (handle is null)
+            {
+                TrayLog.Warn("claude-hook", $"Skipped {fullPath}: could not open safely without following links.");
+                return false;
+            }
+            if (!IsSafeSingleLinkTarget(handle, fullPath))
+            {
+                TrayLog.Warn("claude-hook", $"Skipped {fullPath}: file is a reparse point, hardlink, or resolved outside expected path.");
+                return false;
+            }
+            using var stream = new FileStream(handle, FileAccess.ReadWrite);
+            string text;
+            using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true))
+                text = reader.ReadToEnd();
             if (ClaudeHook.InstalledCommand(text) is null) return true;
-            WriteSettings(settingsPath, ClaudeHook.ApplyToSettings(text, null));
-            TrayLog.Info("claude-hook", $"Phone approval hook removed from {settingsPath} (uninstall).");
+            var updated = ClaudeHook.ApplyToSettings(text, null);
+            var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(updated);
+            stream.SetLength(0);
+            stream.Position = 0;
+            stream.Write(bytes, 0, bytes.Length);
+            stream.Flush();
+            TrayLog.Info("claude-hook", $"Phone approval hook removed from {fullPath} (uninstall).");
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
@@ -90,6 +120,83 @@ internal static class ClaudeHookSetup
             TrayLog.Warn("claude-hook", $"Removing the phone approval hook from {settingsPath} failed.", ex);
             return false;
         }
+    }
+
+    internal static bool HasReparsePointOnChain(string fullPath)
+    {
+        var current = fullPath;
+        while (!string.IsNullOrEmpty(current))
+        {
+            try
+            {
+                var attrs = File.GetAttributes(current);
+                if ((attrs & FileAttributes.ReparsePoint) != 0) return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                return true;
+            }
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrEmpty(parent) || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase)) break;
+            current = parent;
+        }
+        return false;
+    }
+
+    private const uint GenericRead = 0x80000000;
+    private const uint GenericWrite = 0x40000000;
+    private const uint OpenExisting = 3;
+    private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileAttributeReparsePoint = 0x00000400;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public uint CreationTimeLow, CreationTimeHigh;
+        public uint LastAccessTimeLow, LastAccessTimeHigh;
+        public uint LastWriteTimeLow, LastWriteTimeHigh;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh, FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh, FileIndexLow;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle hFile, out ByHandleFileInformation lpFileInformation);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(SafeFileHandle hFile, [Out] char[] lpszFilePath, uint cchFilePath, uint dwFlags);
+
+    private static SafeFileHandle? OpenWithoutFollowingReparse(string fullPath, FileAccess access)
+    {
+        var desired = access == FileAccess.Read ? GenericRead : GenericRead | GenericWrite;
+        var handle = CreateFileW(fullPath, desired, 0, IntPtr.Zero, OpenExisting, FileFlagOpenReparsePoint, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            handle.Dispose();
+            return null;
+        }
+        return handle;
+    }
+
+    private static bool IsSafeSingleLinkTarget(SafeFileHandle handle, string expectedFullPath)
+    {
+        if (!GetFileInformationByHandle(handle, out var info)) return false;
+        if ((info.FileAttributes & FileAttributeReparsePoint) != 0) return false;
+        if (info.NumberOfLinks != 1) return false;
+
+        var buf = new char[1024];
+        var len = GetFinalPathNameByHandleW(handle, buf, (uint)buf.Length, 0);
+        if (len == 0 || len >= buf.Length) return false;
+        var finalPath = new string(buf, 0, (int)len);
+        if (finalPath.StartsWith(@"\\?\", StringComparison.Ordinal)) finalPath = finalPath[4..];
+        return string.Equals(finalPath, expectedFullPath, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>At Tray start: when the hook is installed, listen again (and fix the hook if the port changed).</summary>

@@ -313,7 +313,7 @@ public sealed class RemoteCommandService : BackgroundService
             PushPriority.Info, title, body, HistoryApp, 1, _time.GetUtcNow());
         try
         {
-            var (ok, error) = await _push(target, PushPayload.Serialize(message), CancellationToken.None);
+            var (ok, error) = await _push(target, PushPayload.Serialize(message, target.TokenSha256), CancellationToken.None);
             if (!ok) _logger.LogWarning("Telling {Device} about the restart failed: {Error}", target.DeviceName, error);
         }
         catch (Exception ex)

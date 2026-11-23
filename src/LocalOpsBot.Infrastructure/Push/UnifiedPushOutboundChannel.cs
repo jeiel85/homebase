@@ -83,12 +83,13 @@ public sealed class UnifiedPushOutboundChannel : IOutboundChannel
             return new OutboundAttemptResult(ChannelId, true, Note: $"skipped, every phone muted {notification.Category}");
         }
 
-        var plaintext = PushPayload.Serialize(ToMessage(notification));
+        var baseMessage = ToMessage(notification);
         var failures = new List<(OutboundFailureKind Kind, string Error)>();
         var delivered = new List<string>();
 
         foreach (var target in wanted)
         {
+            var plaintext = PushPayload.Serialize(baseMessage, target.TokenSha256);
             var (ok, kind, error) = await SendOneAsync(target, plaintext, TtlSeconds(notification), Urgency(notification.Priority), ct);
             if (ok) delivered.Add(target.DeviceName);
             else failures.Add((kind, $"{target.DeviceName}: {error}"));

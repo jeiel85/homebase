@@ -234,7 +234,10 @@ public static class ChunkRanges
         }
     }
 
-    /// <summary>The chunk numbers in <paramref name="text"/>; null when it isn't in the format.</summary>
+    /// <summary>Upper bound on chunk indices/count accepted from a remote range string (a 2 GiB file has 512 chunks).</summary>
+    public const long MaxChunkIndex = 4096;
+
+    /// <summary>The chunk numbers in <paramref name="text"/>; null when it isn't in the format or exceeds bounds.</summary>
     public static IReadOnlyList<long>? Parse(string? text)
     {
         var result = new List<long>();
@@ -244,13 +247,16 @@ public static class ChunkRanges
             var dash = part.IndexOf('-');
             if (dash < 0)
             {
-                if (!long.TryParse(part, System.Globalization.NumberStyles.None, null, out var one)) return null;
+                if (!long.TryParse(part, System.Globalization.NumberStyles.None, null, out var one) || one > MaxChunkIndex) return null;
+                if (result.Count >= MaxChunkIndex) return null;
                 result.Add(one);
                 continue;
             }
             if (!long.TryParse(part[..dash], System.Globalization.NumberStyles.None, null, out var from)
-                || !long.TryParse(part[(dash + 1)..], System.Globalization.NumberStyles.None, null, out var to) || to < from)
+                || !long.TryParse(part[(dash + 1)..], System.Globalization.NumberStyles.None, null, out var to)
+                || to < from || to > MaxChunkIndex)
                 return null;
+            if (result.Count + (to - from + 1) > MaxChunkIndex) return null;
             for (var n = from; n <= to; n++) result.Add(n);
         }
         return result;

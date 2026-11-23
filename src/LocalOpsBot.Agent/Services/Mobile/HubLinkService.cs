@@ -263,8 +263,12 @@ public sealed class HubLinkService : BackgroundService
     /// <summary>Pairs with the PC behind <paramref name="offer"/> as a PC device and starts the link.</summary>
     public async Task<HubLinkResult> LinkWithOfferAsync(PairingOffer offer, CancellationToken ct)
     {
+        var offerEndpoints = HubPaths.Usable(offer.Endpoints, _allowLoopback);
+        if (offerEndpoints.Count == 0)
+            return new HubLinkResult(false, offer.PcName, "invalid_endpoints", "사용할 수 있는 연결 경로가 없습니다.");
+
         var client = new HubClient(_allowLoopback);
-        var reply = await client.PostAsync(offer.Endpoints, "/api/v1/pair",
+        var reply = await client.PostAsync(offerEndpoints, "/api/v1/pair",
             new PairRequest(offer.Code, Environment.MachineName, "Windows", DeviceKind.Pc, _devices.PcId), null, CallTimeout, ct);
         if (reply.Status == 0)
         {
@@ -291,14 +295,16 @@ public sealed class HubLinkService : BackgroundService
         if (!string.Equals(paired.PcId, offer.PcId, StringComparison.Ordinal) || paired.PcId == _devices.PcId)
         {
             _logger.LogWarning("Pairing answered by {Answered} but the offer named {Offered}; not linking.", paired.PcId, offer.PcId);
-            _ = UnpairQuietlyAsync(new LinkedHub(paired.PcId, paired.PcName, paired.DeviceId, paired.Token, offer.Endpoints.ToList(), _time.GetUtcNow()));
+            _ = UnpairQuietlyAsync(new LinkedHub(paired.PcId, paired.PcName, paired.DeviceId, paired.Token, offerEndpoints.ToList(), _time.GetUtcNow()));
             client.Dispose();
             return new HubLinkResult(false, offer.PcName, "mismatch", "응답한 PC가 링크한 PC와 다릅니다. 연결하지 않았습니다.");
         }
 
-        var endpoints = offer.Endpoints;
+        var endpoints = offerEndpoints;
         var fresh = await client.GetAsync(endpoints, "/api/v1/endpoints", paired.Token, CallTimeout, ct);
-        if (fresh.Ok && fresh.Read<EndpointsResponse>() is { Endpoints.Count: > 0 } e) endpoints = e.Endpoints;
+        if (fresh.Ok && fresh.Read<EndpointsResponse>() is { Endpoints.Count: > 0 } e
+            && HubPaths.Usable(e.Endpoints, _allowLoopback) is { Count: > 0 } usableFresh)
+            endpoints = usableFresh;
         client.Dispose();
 
         if (_links.TryRemove(paired.PcId, out var old))
@@ -407,10 +413,11 @@ public sealed class HubLinkService : BackgroundService
                     if (_time.GetUtcNow() - endpointsAt >= EndpointsInterval)
                     {
                         var e = await link.Client.GetAsync(link.Hub.Endpoints, "/api/v1/endpoints", link.Hub.Token, CallTimeout, ct);
-                        if (e.Ok && e.Read<EndpointsResponse>() is { Endpoints.Count: > 0 } fresh)
+                        if (e.Ok && e.Read<EndpointsResponse>() is { Endpoints.Count: > 0 } fresh
+                            && HubPaths.Usable(fresh.Endpoints, _allowLoopback) is { Count: > 0 } usableFresh)
                         {
                             // Its Tailscale may be down just now: keep those paths for when it is back.
-                            var paths = HubPaths.Refresh(fresh.Endpoints, link.Hub.Endpoints);
+                            var paths = HubPaths.Refresh(usableFresh, link.Hub.Endpoints);
                             _store.UpdateEndpoints(link.Hub.PcId, paths);
                             link.Hub = link.Hub with { Endpoints = paths };
                             endpointsAt = _time.GetUtcNow();

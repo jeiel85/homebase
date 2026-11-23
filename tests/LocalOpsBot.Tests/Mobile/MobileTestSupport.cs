@@ -19,11 +19,31 @@ internal sealed class InMemoryDeviceStore : IMobileDeviceStore
     public string PcId { get; }
     public IReadOnlyList<MobileDeviceInfo> List() => _devices.Select(d => d.Info).ToList();
 
-    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone)
+    public MobileDeviceInfo Add(string name, string? model, string tokenSha256Hex, string kind = DeviceKind.Phone, string? pcId = null)
     {
-        var info = new MobileDeviceInfo($"dev{_devices.Count + 1}", name, model, DateTimeOffset.UnixEpoch, null, kind);
+        var normalizedKind = DeviceKind.Normalize(kind);
+        var cleanPcId = normalizedKind == DeviceKind.Pc && !string.IsNullOrWhiteSpace(pcId) ? pcId.Trim() : null;
+        var info = new MobileDeviceInfo($"dev{_devices.Count + 1}", name, model, DateTimeOffset.UnixEpoch, null, normalizedKind, cleanPcId);
         _devices.Add((info, tokenSha256Hex));
         return info;
+    }
+
+    public bool BindPcId(string deviceId, string pcId)
+    {
+        if (string.IsNullOrWhiteSpace(pcId)) return false;
+        var trimmed = pcId.Trim();
+        lock (_devices)
+        {
+            var idx = _devices.FindIndex(d => d.Info.DeviceId == deviceId);
+            if (idx < 0 || _devices[idx].Info.Kind != DeviceKind.Pc) return false;
+            var current = _devices[idx].Info;
+            if (!string.IsNullOrEmpty(current.PcId))
+                return string.Equals(current.PcId, trimmed, StringComparison.Ordinal);
+            if (_devices.Any(d => d.Info.DeviceId != deviceId && string.Equals(d.Info.PcId, trimmed, StringComparison.Ordinal)))
+                return false;
+            _devices[idx] = (current with { PcId = trimmed }, _devices[idx].Hash);
+            return true;
+        }
     }
 
     /// <summary>A device paired at <paramref name="pairedAt"/> and last heard from at <paramref name="lastSeen"/>.</summary>

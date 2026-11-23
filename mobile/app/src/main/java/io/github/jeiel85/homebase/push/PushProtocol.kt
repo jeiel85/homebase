@@ -136,8 +136,28 @@ data class PushMessage(
     val ts: String,
     /** Set on a Claude Code permission prompt the phone can answer (DECISIONS M-48). */
     val approval: PushApproval? = null,
+    /** Optional per-PC base64url HMAC-SHA256 keyed with SHA-256(token) to prevent cross-PC push spoofing. */
+    val mac: String? = null,
 ) {
     val isToast: Boolean get() = category == "windows-toast"
+
+    /** Verifies [mac] against [token] (this phone's bearer token for [pcId]). */
+    fun verifyMac(token: String): Boolean {
+        val presented = mac ?: return false
+        val actual = try {
+            WebPush.unb64url(presented)
+        } catch (_: Exception) {
+            return false
+        }
+        val expected = computeMacBytes(token)
+        return MessageDigest.isEqual(expected, actual)
+    }
+
+    private fun computeMacBytes(token: String): ByteArray {
+        val key = MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+        val canonical = "homebase-push-v1\n$SCHEMA\n$id\n$pcId\n$category\n$title\n${body ?: ""}\n${approval?.id ?: ""}"
+        return Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key, "HmacSHA256")) }.doFinal(canonical.toByteArray(Charsets.UTF_8))
+    }
 
     companion object {
         /** Throws [ProtocolException] for another schema or a missing field — never a half-filled message. */
@@ -161,6 +181,7 @@ data class PushMessage(
                     count = o.optInt("count", 1).coerceAtLeast(1),
                     ts = o.getString("ts"),
                     approval = PushApproval.parse(o.optJSONObject("approval")),
+                    mac = if (o.isNull("mac")) null else o.optString("mac").ifEmpty { null },
                 )
             } catch (e: Exception) {
                 throw ProtocolException("푸시 필드가 빠졌습니다: ${e.message}")

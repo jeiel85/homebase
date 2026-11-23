@@ -108,7 +108,7 @@ public sealed class HubClient : IDisposable
     {
         MobileEndpoint? preferred;
         lock (_gate) preferred = _preferred;
-        var usable = endpoints.Where(e => _allowLoopback || e.Transport != MobileTransport.Loopback).ToList();
+        var usable = HubPaths.Usable(endpoints, _allowLoopback).ToList();
         if (preferred is not null && usable.Remove(preferred)) usable.Insert(0, preferred);
         return usable;
     }
@@ -131,6 +131,7 @@ public sealed class HubClient : IDisposable
                 ConnectTimeout = TimeSpan.FromSeconds(5),
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5),
                 UseProxy = false,
+                AllowAutoRedirect = false,
             };
             if (ep.Tls && ep.CertSha256 is { Length: > 0 } pin)
             {

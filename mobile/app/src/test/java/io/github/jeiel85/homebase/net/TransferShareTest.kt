@@ -150,6 +150,10 @@ class TransferShareTest {
         assertNull(ChunkRanges.parse("1,,2"))
         assertNull(ChunkRanges.parse(" 1"))
         assertNull(ChunkRanges.parse("-1"))
+        // Oversized ranges must be rejected immediately rather than allocating unbounded lists.
+        assertNull(ChunkRanges.parse("0-9999999999"))
+        assertNull(ChunkRanges.parse("0-5000"))
+        assertNull(ChunkRanges.parse("4097"))
     }
 
     @Test

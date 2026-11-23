@@ -256,19 +256,25 @@ object ChunkRanges {
         return runs.joinToString(",") { (s, e) -> if (e > s) "$s-$e" else "$s" }
     }
 
-    /** The chunk numbers in [text]; null when it isn't in the format. */
+    /** Upper bound on chunk indices/count accepted from a remote range string (a 2 GiB file has 512 chunks). */
+    const val MAX_CHUNK_INDEX = 4096L
+
+    /** The chunk numbers in [text]; null when it isn't in the format or exceeds bounds. */
     fun parse(text: String?): List<Long>? {
         val result = mutableListOf<Long>()
         if (text.isNullOrEmpty()) return result
         for (part in text.split(',')) {
             val dash = part.indexOf('-')
             if (dash < 0) {
-                result += number(part) ?: return null
+                val one = number(part) ?: return null
+                if (one > MAX_CHUNK_INDEX || result.size >= MAX_CHUNK_INDEX) return null
+                result += one
                 continue
             }
             val from = number(part.substring(0, dash)) ?: return null
             val to = number(part.substring(dash + 1)) ?: return null
-            if (to < from) return null
+            if (to < from || to > MAX_CHUNK_INDEX) return null
+            if (result.size + (to - from + 1) > MAX_CHUNK_INDEX) return null
             for (n in from..to) result += n
         }
         return result

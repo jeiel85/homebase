@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.60.2 — Security hardening
+
+### Security
+- **Group introduction codes are now restricted to linked PCs** (`DeviceKind.Pc`), preventing a linked PC from
+  elevating itself to phone privileges (`POST /api/v1/push`, `/api/v1/approval`, `/api/v1/commands`).
+- **Paired PCs are bound to their `pcId`**, stopping one linked PC from spoofing another PC's `pcId` in
+  `POST /api/v1/presence` to hijack its stored endpoints and exfiltrate bearer tokens.
+- **Uninstall cleanup (`uninstall-service.ps1`, `ClaudeHookSetup.RemoveFrom`) rejects symlinks, directory
+  junctions, and hardlinks** inside user profiles and updates `settings.json` in place on the verified handle,
+  preventing elevated arbitrary-file overwrite/delete attacks.
+- **SSRF protection on group links and UnifiedPush**: `HubLinkService` and `HubClient` validate all endpoints
+  through `HubPaths.Usable` and disable HTTP redirects; UnifiedPush registration and outbound connections reject
+  loopback, private, link-local, and CGNAT addresses (including after DNS resolution) and disable redirects.
+- **Bounded `ChunkRanges.Parse`** on both PC and Android so malformed range headers cannot trigger unbounded
+  memory allocation.
+- **`homebase://` protocol handler hardening**: replaced the executable extension denylist in `ReceivedToast`
+  with a strict safe-to-open allowlist (all other files reveal in Explorer instead of running via ShellExecute),
+  and enforced exact argument arity for `--toast` before other CLI flags.
+- **Per-PC HMAC-SHA256 authentication on UnifiedPush messages**: the PC signs outgoing push notifications with
+  each device's token hash, and Android verifies the MAC whenever present and requires it for Claude Code
+  approval prompts so another paired PC cannot spoof approvals.
+- **Android endpoint validation and cleartext guard**: `Endpoint.parse` enforces per-transport host and TLS
+  rules, and `HomebaseApi` disables redirects and blocks cleartext HTTP outside Tailscale (`100.64.0.0/10`,
+  `*.ts.net`) and loopback.
+- **Installer hardening**: `bootstrap.ps1` downloads into a SYSTEM/Administrators-only private folder and
+  verifies `Homebase-Setup.zip.sha256` before extracting; Inno Setup launches `Homebase.Tray.exe` with
+  `runasoriginaluser`.
+- **Defense-in-depth**: bounded unauthenticated pairing concurrency and body timeout on `MobileApiServer`,
+  added a 250 ms regex match timeout to `RegexTextMasker`, and invoked `netsh.exe` by full `System32` path in
+  `MobileFirewall`.
+
 ## v0.60.1 — Phone: leftover ntfy subscriptions are let go
 
 ### Fixed

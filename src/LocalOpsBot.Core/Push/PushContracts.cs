@@ -1,3 +1,5 @@
+using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LocalOpsBot.Core.Mobile;
@@ -163,7 +165,8 @@ public sealed record PushMessage(
     string Source,
     int Count,
     DateTimeOffset Ts,
-    PushApproval? Approval = null);
+    PushApproval? Approval = null,
+    string? Mac = null);
 
 /// <summary>
 /// Set on a Claude Code permission prompt (category <c>agent-approval</c>, DECISIONS M-48): the phone
@@ -185,14 +188,27 @@ public static class PushPayload
 
     private const string Ellipsis = "…";
 
+    private const string MacPlaceholder = "0000000000000000000000000000000000000000000"; // 43 base64url chars (32 bytes)
+
     /// <summary>
     /// Serializes <paramref name="message"/> to at most <see cref="WebPushEncryption.MaxPlaintextBytes"/>
-    /// UTF-8 bytes, shortening the body first and then the title.
+    /// UTF-8 bytes, shortening the body first and then the title. When <paramref name="tokenSha256Hex"/>
+    /// is supplied, attaches a per-PC HMAC-SHA256 (<see cref="PushMessage.Mac"/>) computed over the final
+    /// truncated fields so another paired PC cannot spoof alerts or Claude approval prompts.
     /// </summary>
-    public static byte[] Serialize(PushMessage message)
+    public static byte[] Serialize(PushMessage message, string? tokenSha256Hex = null)
+    {
+        var sign = IsHexSha256(tokenSha256Hex);
+        var template = sign ? message with { Mac = MacPlaceholder } : message;
+        var fitted = Fit(template);
+        if (sign) fitted = fitted with { Mac = ComputeMac(fitted, tokenSha256Hex!) };
+        return JsonSerializer.SerializeToUtf8Bytes(fitted, MobileProtocol.Json);
+    }
+
+    private static PushMessage Fit(PushMessage message)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(message, MobileProtocol.Json);
-        if (bytes.Length <= WebPushEncryption.MaxPlaintextBytes) return bytes;
+        if (bytes.Length <= WebPushEncryption.MaxPlaintextBytes) return message;
 
         var over = bytes.Length - WebPushEncryption.MaxPlaintextBytes;
         var body = message.Body ?? "";
@@ -201,8 +217,9 @@ public static class PushPayload
         {
             var cut = Math.Max(1, over / 3);
             body = Truncate(body, Math.Max(0, body.Length - cut));
-            bytes = JsonSerializer.SerializeToUtf8Bytes(message with { Body = body + Ellipsis }, MobileProtocol.Json);
-            if (bytes.Length <= WebPushEncryption.MaxPlaintextBytes) return bytes;
+            var candidate = message with { Body = body + Ellipsis };
+            bytes = JsonSerializer.SerializeToUtf8Bytes(candidate, MobileProtocol.Json);
+            if (bytes.Length <= WebPushEncryption.MaxPlaintextBytes) return candidate;
             over = bytes.Length - WebPushEncryption.MaxPlaintextBytes;
         }
 
@@ -210,12 +227,24 @@ public static class PushPayload
         while (title.Length > 0)
         {
             title = Truncate(title, Math.Max(0, title.Length - Math.Max(1, over / 3)));
-            bytes = JsonSerializer.SerializeToUtf8Bytes(message with { Body = null, Title = title + Ellipsis }, MobileProtocol.Json);
-            if (bytes.Length <= WebPushEncryption.MaxPlaintextBytes) return bytes;
+            var candidate = message with { Body = null, Title = title + Ellipsis };
+            bytes = JsonSerializer.SerializeToUtf8Bytes(candidate, MobileProtocol.Json);
+            if (bytes.Length <= WebPushEncryption.MaxPlaintextBytes) return candidate;
             over = bytes.Length - WebPushEncryption.MaxPlaintextBytes;
         }
         throw new ArgumentException("Push message does not fit even without title and body.", nameof(message));
     }
+
+    /// <summary>Base64url HMAC-SHA256 authenticating <paramref name="message"/> with the device's token hash.</summary>
+    public static string ComputeMac(PushMessage message, string tokenSha256Hex)
+    {
+        var key = Convert.FromHexString(tokenSha256Hex);
+        var canonical = $"homebase-push-v1\n{message.Schema}\n{message.Id}\n{message.PcId}\n{message.Category}\n{message.Title}\n{message.Body ?? ""}\n{message.Approval?.Id ?? ""}";
+        return Base64Url.Encode(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical)));
+    }
+
+    private static bool IsHexSha256(string? hex) =>
+        hex is { Length: 64 } && hex.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
 
     /// <summary>Validates a subscription from the phone; returns an error message or <c>null</c>.</summary>
     public static string? Validate(PushSubscriptionRequest? request)
@@ -225,8 +254,8 @@ public static class PushPayload
         if (string.IsNullOrWhiteSpace(request.Endpoint) || Encoding.UTF8.GetByteCount(request.Endpoint) > MaxEndpointBytes)
             return "Endpoint is missing or too long.";
         if (!Uri.TryCreate(request.Endpoint, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps
-            || !string.IsNullOrEmpty(uri.UserInfo))
-            return "Endpoint must be an https URL.";
+            || !string.IsNullOrEmpty(uri.UserInfo) || !IsPublicPushHost(uri))
+            return "Endpoint must be a public https URL.";
         try
         {
             WebPushEncryption.ValidateSubscriptionKeys(Base64Url.Decode(request.P256dh), Base64Url.Decode(request.Auth));
@@ -243,6 +272,48 @@ public static class PushPayload
             && (features.Count > PushCategories.MaxMuted || !features.All(PushCategories.IsValid)))
             return "Features are invalid.";
         return null;
+    }
+
+    /// <summary>Rejects loopback, private, link-local, CGNAT and local hostnames to prevent SSRF via push endpoints.</summary>
+    public static bool IsPublicPushHost(Uri uri)
+    {
+        var host = uri.DnsSafeHost?.Trim().TrimEnd('.');
+        if (string.IsNullOrEmpty(host)) return false;
+        if (IPAddress.TryParse(host, out var ip)) return !IsBlockedIp(ip);
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".internal", StringComparison.OrdinalIgnoreCase)
+            || !host.Contains('.'))
+            return false;
+        return true;
+    }
+
+    /// <summary>True when <paramref name="ip"/> is non-public (loopback, private, link-local, CGNAT, multicast or unspecified).</summary>
+    public static bool IsBlockedIp(IPAddress ip)
+    {
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any) || ip.Equals(IPAddress.Broadcast))
+            return true;
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var b = ip.GetAddressBytes();
+            return b[0] == 0
+                || b[0] == 10
+                || b[0] == 127
+                || (b[0] == 100 && (b[1] & 0xC0) == 64)   // 100.64.0.0/10 CGNAT / Tailscale
+                || (b[0] == 169 && b[1] == 254)           // 169.254.0.0/16 link-local / metadata
+                || (b[0] == 172 && b[1] is >= 16 and <= 31)
+                || (b[0] == 192 && b[1] == 168)
+                || b[0] >= 224;                           // multicast / reserved
+        }
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6Multicast || ip.IsIPv6Teredo) return true;
+            var b = ip.GetAddressBytes();
+            if ((b[0] & 0xFE) == 0xFC) return true; // fc00::/7 ULA
+        }
+        return false;
     }
 
     private static string Truncate(string s, int length)

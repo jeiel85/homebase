@@ -158,6 +158,27 @@ class ProtocolTest {
     }
 
     @Test
+    fun disallowed_hosts_and_cleartext_non_tailscale_endpoints_are_dropped() {
+        val pin = "a".repeat(64)
+        val text = """{"hb":1,"pcId":"p","pcName":"PC","hosts":[],"port":47820,"code":"c","endpoints":[""" +
+            """{"transport":"cloudflare","host":"evil.example.com","port":80,"tls":false},""" +
+            """{"transport":"cloudflare","host":"1.2.3.4","port":443,"tls":true},""" +
+            """{"transport":"tailscale","host":"192.168.1.5","port":47820,"tls":false},""" +
+            """{"transport":"tailscale","host":"8.8.8.8","port":47820,"tls":false},""" +
+            """{"transport":"tailscale","host":"evil.com/path","port":47820,"tls":false},""" +
+            """{"transport":"tailscale","host":"user@evil.ts.net","port":47820,"tls":false},""" +
+            """{"transport":"lan","host":"8.8.8.8","port":47820,"tls":true,"certSha256":"$pin"},""" +
+            """{"transport":"tailscale","host":"100.100.1.2","port":47820,"tls":false}]}"""
+        val offer = PairingOffer.parse(text)!!
+        assertEquals(listOf("100.100.1.2"), offer.endpoints.map { it.host })
+        assertTrue(Endpoint.allowsCleartextHost("100.100.1.2"))
+        assertTrue(Endpoint.allowsCleartextHost("pc.tail123.ts.net"))
+        assertTrue(Endpoint.allowsCleartextHost("127.0.0.1"))
+        assertFalse(Endpoint.allowsCleartextHost("192.168.1.1"))
+        assertFalse(Endpoint.allowsCleartextHost("example.com"))
+    }
+
+    @Test
     fun endpoints_fixture_matches_the_offer_paths() {
         val list = parseEndpointsResponse(fixture("endpoints.v1.json"))
         assertEquals(4, list.size)
