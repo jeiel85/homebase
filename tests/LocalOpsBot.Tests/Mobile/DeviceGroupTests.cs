@@ -94,6 +94,55 @@ public class DeviceGroupEndToEndTests : IAsyncLifetime
         Assert.Equal("removed", (await a.Group.JoinAsync(c.Api.CreateOffer(introduction: true)!, _cts.Token)).Error);
     }
 
+    // v0.60.2 made group introduction codes pair PCs only, so a linked PC cannot help itself to a phone
+    // token. A phone joining the group's other PCs goes through the same introductions and still has to
+    // get a phone code: the member that introduces it asks for one on its behalf.
+    [Fact]
+    public async Task A_phone_is_introduced_to_the_groups_other_pcs_while_pc_offers_pair_only_pcs()
+    {
+        var a = await Node.StartAsync("pc-a", _cts.Token);
+        var b = await Node.StartAsync("pc-b", _cts.Token);
+        _nodes.AddRange(new[] { a, b });
+        Assert.True((await b.Links.LinkAsync(PairingLink.Build(a.Api.CreateOffer()!), _cts.Token)).Linked);
+        await Until(() => a.Links.Hub("pc-b"), _cts.Token);
+
+        var pairingA = new PairingService(a.Store, TimeProvider.System);
+        var phone = pairingA.TryPair(pairingA.Begin().Code, "Galaxy S24", "SM-S921N");
+        Assert.Equal(PairOutcome.Paired, phone.Outcome);
+
+        // The phone asks A for an introduction to B (GroupSync on the phone): the code pairs it as a phone.
+        var introduce = JsonSerializer.SerializeToUtf8Bytes(new GroupIntroduceRequest(MobileProtocol.Schema, "pc-b"), MobileProtocol.Json);
+        var (status, json) = await a.Api.HandleRestAsync(Post(GroupPaths.Introduce, phone.Token), introduce, _cts.Token);
+        Assert.Equal(200, status);
+        var offer = JsonSerializer.Deserialize<PairingOffer>(json, MobileProtocol.Json)!;
+        Assert.Equal("pc-b", offer.PcId);
+        var (pairStatus, _) = await b.Api.HandleRestAsync(Post("/api/v1/pair", null),
+            JsonSerializer.SerializeToUtf8Bytes(new PairRequest(offer.Code, "Galaxy S24", "SM-S921N", DeviceKind.Phone), MobileProtocol.Json), _cts.Token);
+        Assert.Equal(200, pairStatus);
+        Assert.Contains(b.Store.List(), d => d is { Kind: DeviceKind.Phone, Name: "Galaxy S24" });
+
+        // An offer a phone fetches straight from B (to link two of its PCs) pairs a PC only, even if asked
+        // for a phone code — and so does one a linked PC fetches without asking for a phone.
+        var askPhone = JsonSerializer.SerializeToUtf8Bytes(new GroupOfferRequest(MobileProtocol.Schema, DeviceKind.Phone), MobileProtocol.Json);
+        var phoneAtB = b.Store.List().Single(d => d.Kind == DeviceKind.Phone);
+        var pairingB = new PairingService(b.Store, TimeProvider.System);
+        var otherPhone = pairingB.TryPair(pairingB.Begin().Code, "Pixel", "Pixel 9");
+        var (offerStatus, offerJson) = await b.Api.HandleRestAsync(Post(GroupPaths.Offer, otherPhone.Token), askPhone, _cts.Token);
+        Assert.Equal(200, offerStatus);
+        var pcOnly = JsonSerializer.Deserialize<PairingOffer>(offerJson, MobileProtocol.Json)!;
+        var (refused, _) = await b.Api.HandleRestAsync(Post("/api/v1/pair", null),
+            JsonSerializer.SerializeToUtf8Bytes(new PairRequest(pcOnly.Code, "Evil", "x", DeviceKind.Phone), MobileProtocol.Json), _cts.Token);
+        Assert.Equal(403, refused);
+
+        var pcOffer = await a.Group.IntroduceAsync("pc-b", _cts.Token);
+        Assert.NotNull(pcOffer);
+        var (refusedToo, _) = await b.Api.HandleRestAsync(Post("/api/v1/pair", null),
+            JsonSerializer.SerializeToUtf8Bytes(new PairRequest(pcOffer!.Code, "Evil", "x", DeviceKind.Phone), MobileProtocol.Json), _cts.Token);
+        Assert.Equal(403, refusedToo);
+        Assert.Equal(new[] { phoneAtB.DeviceId, otherPhone.DeviceId }.OrderBy(x => x),
+            b.Store.List().Where(d => d.Kind == DeviceKind.Phone).Select(d => d.DeviceId).OrderBy(x => x));
+    }
+
     // An endpoint whose PC answers with another pcId (say, of a PC already linked) must not take that
     // PC's place: the real link would be dropped and our pairing there deleted.
     [Fact]

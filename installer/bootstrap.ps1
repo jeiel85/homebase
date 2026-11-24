@@ -28,7 +28,14 @@ function New-PrivateDirectory($Path) {
         $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
             (New-Object System.Security.Principal.SecurityIdentifier($sid)), 'FullControl', $inherit, 'None', 'Allow')))
     }
-    [System.IO.Directory]::CreateDirectory($Path, $acl) | Out-Null
+    # The ACL is applied as the folder is created (no window with inherited permissions). The API differs:
+    # Windows PowerShell 5.1 (.NET Framework) has Directory.CreateDirectory(path, acl); PowerShell 7 (.NET)
+    # has only FileSystemAclExtensions.CreateDirectory(acl, path).
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        [System.IO.FileSystemAclExtensions]::CreateDirectory($acl, $Path) | Out-Null
+    } else {
+        [System.IO.Directory]::CreateDirectory($Path, $acl) | Out-Null
+    }
 }
 
 Write-Host "==============================================" -ForegroundColor Cyan
