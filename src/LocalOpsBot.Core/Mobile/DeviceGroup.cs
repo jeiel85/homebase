@@ -11,7 +11,11 @@ public static class GroupPaths
     /// <summary><c>GET</c>: this PC and the PCs it is linked with.</summary>
     public const string Group = "/api/v1/group";
 
-    /// <summary><c>POST</c>: a fresh one-time pairing offer of this PC, for a member to hand to another.</summary>
+    /// <summary>
+    /// <c>POST {kind?}</c>: a fresh one-time pairing offer of this PC, for a member to hand to another. Its
+    /// code pairs a PC only, unless a linked PC asks for <c>kind: phone</c> to introduce a phone (v0.60.2,
+    /// see <see cref="GroupOfferRequest"/>).
+    /// </summary>
     public const string Offer = "/api/v1/group/offer";
 
     /// <summary><c>POST {offer}</c>: link this PC to the PC behind the offer.</summary>
@@ -49,6 +53,19 @@ public sealed record GroupJoinRequest(int Schema, PairingOffer Offer);
 public sealed record GroupJoinResponse(int Schema, bool Linked, bool Already, string? PcName, string? Error);
 
 public sealed record GroupIntroduceRequest(int Schema, string PcId);
+
+/// <summary>
+/// <c>POST /api/v1/group/offer</c> body. <c>Kind</c>: the kind of device the offer's code may pair —
+/// <see cref="DeviceKind.Pc"/> when absent (older members send none). A member asks for
+/// <see cref="DeviceKind.Phone"/> only when a phone paired with it asked to be introduced; only a linked
+/// PC may ask for that (the group already trusts its PCs to introduce, M-47; DECISIONS M-77).
+/// </summary>
+public sealed record GroupOfferRequest(int Schema, string? Kind = null)
+{
+    /// <summary>The kind the offer's code pairs: a phone only when asked for in so many words.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string AllowedKind => string.Equals(Kind, DeviceKind.Phone, StringComparison.Ordinal) ? DeviceKind.Phone : DeviceKind.Pc;
+}
 
 public sealed record GroupRemoveRequest(int Schema, string Key);
 

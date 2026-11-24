@@ -130,11 +130,15 @@ public sealed class DeviceGroupService : BackgroundService
         return new(MobileProtocol.Schema, r.Linked, false, r.PcName ?? offer.PcName, r.Error);
     }
 
-    /// <summary><c>POST /api/v1/group/introduce</c>: a fresh offer of <paramref name="pcId"/>, which this PC holds a token for.</summary>
-    public async Task<PairingOffer?> IntroduceAsync(string pcId, CancellationToken ct)
+    /// <summary>
+    /// <c>POST /api/v1/group/introduce</c>: a fresh offer of <paramref name="pcId"/>, which this PC holds a
+    /// token for, whose code pairs a device of <paramref name="forKind"/> (the kind that asked).
+    /// </summary>
+    public async Task<PairingOffer?> IntroduceAsync(string pcId, CancellationToken ct, string forKind = DeviceKind.Pc)
     {
         if (_removed.IsRemoved(GroupKeys.Pc(pcId)) || _links.Hub(pcId) is null) return null;
-        var reply = await _links.CallAsync(pcId, HttpMethod.Post, GroupPaths.Offer, new { schema = MobileProtocol.Schema }, CallTimeout, ct);
+        var request = new GroupOfferRequest(MobileProtocol.Schema, DeviceKind.Normalize(forKind));
+        var reply = await _links.CallAsync(pcId, HttpMethod.Post, GroupPaths.Offer, request, CallTimeout, ct);
         return reply is { Ok: true } ? reply.Read<PairingOffer>() : null;
     }
 

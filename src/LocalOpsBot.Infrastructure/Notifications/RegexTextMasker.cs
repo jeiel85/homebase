@@ -6,6 +6,12 @@ namespace LocalOpsBot.Infrastructure.Notifications;
 public sealed class RegexTextMasker : ITextMasker
 {
     private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// What a text becomes when a masking expression runs out of time on it: the expression could not say
+    /// where its secrets are, so none of the text is passed on (fail closed, v0.60.2).
+    /// </summary>
+    public const string TimedOut = "[masked]";
     private readonly IReadOnlyList<Regex> _patterns;
 
     public RegexTextMasker(IReadOnlyList<string> patterns)
@@ -19,8 +25,10 @@ public sealed class RegexTextMasker : ITextMasker
         var result = input;
         foreach (var regex in _patterns)
         {
+            // Bounded so a pathological expression cannot hang the pipeline; on timeout the text may still
+            // hold what that expression should have hidden, so it is withheld whole rather than forwarded.
             try { result = regex.Replace(result, MatchEvaluator); }
-            catch (RegexMatchTimeoutException) { /* skip pathological match rather than hang the pipeline */ }
+            catch (RegexMatchTimeoutException) { return TimedOut; }
         }
         return result;
     }

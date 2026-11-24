@@ -137,9 +137,9 @@ public sealed class MobileApiServer : BackgroundService
     /// <summary>A fresh one-time pairing offer for the QR code, or <c>null</c> while no path is up.</summary>
     /// <summary>
     /// A pairing offer with a fresh one-time code. <paramref name="introduction"/>: a group introduction
-    /// (M-47), whose code does not replace the QR code on screen.
+    /// (M-47), whose code does not replace the QR code on screen and pairs only <paramref name="introducedKind"/>.
     /// </summary>
-    public PairingOffer? CreateOffer(bool introduction = false)
+    public PairingOffer? CreateOffer(bool introduction = false, string introducedKind = DeviceKind.Pc)
     {
         IReadOnlyList<string> hosts;
         IReadOnlyList<MobileEndpoint> endpoints;
@@ -150,7 +150,7 @@ public sealed class MobileApiServer : BackgroundService
             endpoints = EndpointsLocked();
         }
         if (endpoints.Count == 0) return null;
-        var (code, expires) = introduction ? _pairing.BeginIntroduction() : _pairing.Begin();
+        var (code, expires) = introduction ? _pairing.BeginIntroduction(introducedKind) : _pairing.Begin();
         return new PairingOffer(1, _devices.PcId, Environment.MachineName, hosts, _options.Port, code, expires, endpoints);
     }
 
@@ -941,9 +941,14 @@ public sealed class MobileApiServer : BackgroundService
             case ("GET", GroupPaths.Group):
                 return (200, Json(_group.Describe()));
             case ("POST", GroupPaths.Offer):
-                return CreateOffer(introduction: true) is { } own
+            {
+                // A phone fetches a PC offer to link two of its PCs; a linked PC may ask for a phone offer to
+                // introduce a phone paired with it (POST /group/introduce). Nobody else gets a phone code.
+                var kind = device.Kind == DeviceKind.Pc ? Read<GroupOfferRequest>(body)?.AllowedKind ?? DeviceKind.Pc : DeviceKind.Pc;
+                return CreateOffer(introduction: true, kind) is { } own
                     ? (200, Json(own))
                     : (503, Error("not_listening", "This PC has no path to offer right now."));
+            }
             case ("POST", GroupPaths.Join):
             {
                 var req = Read<GroupJoinRequest>(body);
@@ -954,7 +959,9 @@ public sealed class MobileApiServer : BackgroundService
             {
                 var req = Read<GroupIntroduceRequest>(body);
                 if (req is not { PcId.Length: > 0 }) return (400, Error("bad_request", "Missing pcId."));
-                return await _group.IntroduceAsync(req.PcId, ct) is { } introduced
+                // The offer's code pairs the kind of device that asked: a phone joining the group's PCs gets
+                // a phone code, a PC a PC code (v0.60.2).
+                return await _group.IntroduceAsync(req.PcId, ct, device.Kind) is { } introduced
                     ? (200, Json(introduced))
                     : (404, Error("not_linked", "This PC cannot introduce that PC."));
             }

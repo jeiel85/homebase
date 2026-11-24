@@ -188,11 +188,19 @@ public class SecurityHardeningTests
     }
 
     [Fact]
-    public void Regex_text_masker_does_not_hang_on_pathological_pattern()
+    public void Regex_text_masker_does_not_hang_on_pathological_pattern_and_fails_closed()
     {
-        var masker = new RegexTextMasker(new[] { "(a+)+$" });
-        var input = new string('a', 40) + "!";
+        // Codex review on #126: returning the input unchanged on timeout forwarded whatever the pattern was
+        // there to hide. A timed-out pattern now withholds the whole text.
+        var masker = new RegexTextMasker(new[] { "(a+)+$", "token=\\S+" });
+        var input = new string('a', 40) + "! token=secret123";
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         var output = masker.Mask(input);
-        Assert.Equal(input, output);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
+        Assert.Equal(RegexTextMasker.TimedOut, output);
+        Assert.DoesNotContain("secret123", output);
+
+        // Patterns that finish in time mask as before.
+        Assert.Equal("token=*********", new RegexTextMasker(new[] { "token=\\S+" }).Mask("token=secret123"));
     }
 }

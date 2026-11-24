@@ -3,8 +3,12 @@
 ## v0.60.2 — Security hardening
 
 ### Security
-- **Group introduction codes are now restricted to linked PCs** (`DeviceKind.Pc`), preventing a linked PC from
-  elevating itself to phone privileges (`POST /api/v1/push`, `/api/v1/approval`, `/api/v1/commands`).
+- **Group introduction codes pair only the kind of device they were made for**: a PC code by default, so a
+  linked PC can no longer pair itself as a phone with the code it fetches (`POST /api/v1/group/offer`) and gain
+  phone privileges (`POST /api/v1/push`, `/api/v1/approval`, `/api/v1/commands`). A phone joining the group's
+  other PCs still gets a phone code: the member it asks (`/api/v1/group/introduce`) requests one on its behalf
+  (`{"kind":"phone"}`, honored only from a linked PC — DECISIONS M-77). Until the introducing PC runs this
+  version too, a phone's automatic joining through it waits.
 - **Paired PCs are bound to their `pcId`**, stopping one linked PC from spoofing another PC's `pcId` in
   `POST /api/v1/presence` to hijack its stored endpoints and exfiltrate bearer tokens.
 - **Uninstall cleanup (`uninstall-service.ps1`, `ClaudeHookSetup.RemoveFrom`) rejects symlinks, directory
@@ -25,11 +29,12 @@
   rules, and `HomebaseApi` disables redirects and blocks cleartext HTTP outside Tailscale (`100.64.0.0/10`,
   `*.ts.net`) and loopback.
 - **Installer hardening**: `bootstrap.ps1` downloads into a SYSTEM/Administrators-only private folder and
-  verifies `Homebase-Setup.zip.sha256` before extracting; Inno Setup launches `Homebase.Tray.exe` with
-  `runasoriginaluser`.
+  verifies `Homebase-Setup.zip.sha256` before extracting (in Windows PowerShell 5.1 and PowerShell 7 alike);
+  Inno Setup launches `Homebase.Tray.exe` with `runasoriginaluser`.
 - **Defense-in-depth**: bounded unauthenticated pairing concurrency and body timeout on `MobileApiServer`,
-  added a 250 ms regex match timeout to `RegexTextMasker`, and invoked `netsh.exe` by full `System32` path in
-  `MobileFirewall`.
+  added a 250 ms regex match timeout to `RegexTextMasker` — a text a masking pattern runs out of time on is
+  withheld whole (`[masked]`) rather than forwarded unmasked — and invoked `netsh.exe` by full `System32` path
+  in `MobileFirewall`.
 
 ## v0.60.1 — Phone: leftover ntfy subscriptions are let go
 
