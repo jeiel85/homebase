@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Security;
 using System.Text;
+using LocalOpsBot.Core.Mobile;
 using Microsoft.Win32;
 using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
@@ -113,6 +114,79 @@ internal static class ReceivedToast
     }
 
     /// <summary>
+    /// Quick text from a phone kept off the clipboard (M-78): the toast says so, and its click or [Copy to the clipboard]
+    /// puts it there — <c>homebase://clip/copy?id=…</c>, by id only (the text waits in <see cref="HeldClips"/>). Without an
+    /// id (nothing held: sensitive text) it has no button. False when Windows wouldn't show it.
+    /// </summary>
+    public static bool ShowHeld(string title, string body, string? id)
+    {
+        try
+        {
+            Register();
+            if (Notifier("Clipboard") is not { } notifier) return false;
+            var xml = new XmlDocument();
+            xml.LoadXml(HeldXml(title, body, id));
+            notifier.Show(new ToastNotification(xml) { Group = "clip" });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            TrayLog.Warn("Clipboard", $"The held-text toast didn't show ({ex.GetType().Name}: {ex.Message}); a balloon instead.");
+            return false;
+        }
+    }
+
+    internal static string HeldXml(string title, string body, string? id)
+    {
+        var xml = new StringBuilder();
+        xml.Append(id is null ? "<toast>" : $"<toast launch=\"{Attr(ClipLink(id))}\" activationType=\"protocol\">");
+        xml.Append($"<visual><binding template=\"ToastGeneric\"><text>{SecurityElement.Escape(title)}</text>");
+        xml.Append($"<text>{SecurityElement.Escape(body)}</text></binding></visual>");
+        if (id is not null)
+            xml.Append($"<actions><action content=\"{Attr(L.CenterCopy)}\" activationType=\"protocol\" arguments=\"{Attr(ClipLink(id))}\"/></actions>");
+        xml.Append("</toast>");
+        return xml.ToString();
+    }
+
+    /// <summary>A plain notice (no buttons, no link) as a Homebase toast; false when Windows wouldn't show it.</summary>
+    public static bool ShowNotice(string title, string body, string group)
+    {
+        try
+        {
+            Register();
+            if (Notifier("Clipboard") is not { } notifier) return false;
+            var xml = new XmlDocument();
+            xml.LoadXml($"<toast><visual><binding template=\"ToastGeneric\"><text>{SecurityElement.Escape(title)}</text>" +
+                $"<text>{SecurityElement.Escape(body)}</text></binding></visual></toast>");
+            notifier.Show(new ToastNotification(xml) { Group = group });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            TrayLog.Warn("Clipboard", $"A toast didn't show ({ex.GetType().Name}: {ex.Message}); a balloon instead.");
+            return false;
+        }
+    }
+
+    internal static string ClipLink(string id) => $"{Scheme}://clip/copy?id={Uri.EscapeDataString(id)}";
+
+    /// <summary>The held text's id in a <c>homebase://clip/copy?id=…</c> link; null for anything else or a malformed id.</summary>
+    internal static string? ParseClip(string link)
+    {
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Scheme != Scheme || uri.Host != "clip"
+            || uri.AbsolutePath.Trim('/') != "copy")
+            return null;
+        string? id = null;
+        foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!part.StartsWith("id=", StringComparison.Ordinal)) continue;
+            if (id is not null) return null; // one id only
+            id = Uri.UnescapeDataString(part[3..]);
+        }
+        return ClipProtocol.IsValidId(id) ? id : null;
+    }
+
+    /// <summary>
     /// Our notifier, or null when Windows won't show its toasts — Homebase turned off in Settings › System › Notifications,
     /// notifications off altogether, a policy. Show() would then drop the toast without a word, so the caller shows a
     /// balloon instead (another sender to Windows, as before M-68). Do not disturb doesn't count: the toast still goes to
@@ -200,6 +274,22 @@ internal static class ReceivedToast
             }
             return;
         }
+        // [Copy to the clipboard] on held quick text (M-78): by id from this user's held store, then gone from it.
+        if (ParseClip(link) is { } clipId)
+        {
+            if (HeldClips.Take(clipId, DateTimeOffset.UtcNow) is { } held)
+            {
+                var ok = ClipboardShare.PutNow(held.Text);
+                TrayLog.Info("Clipboard", ok ? $"Held text ({held.Text.Length} chars) put on the clipboard from its toast"
+                    : "Held text couldn't be put on the clipboard (busy)");
+                // Busy: put the same entry back (its sender and time unchanged) for another click.
+                if (!ok && !HeldClips.Put(held, DateTimeOffset.UtcNow))
+                    TrayLog.Warn("Clipboard", "Held text couldn't be put back after a busy clipboard");
+            }
+            else TrayLog.Info("Clipboard", "A held-text toast was clicked after its text expired, was copied, or the store was unavailable");
+            return;
+        }
+        if (Uri.TryCreate(link, UriKind.Absolute, out var other) && other.Scheme == Scheme && other.Host == "clip") return;
         var folder = FileReceiver.Folder();
         if (Parse(link) is not { } parsed) return;
         var (action, name) = parsed;

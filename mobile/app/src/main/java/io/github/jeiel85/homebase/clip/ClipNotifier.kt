@@ -90,6 +90,60 @@ object ClipNotifier {
         post(context, id, notification)
     }
 
+    /**
+     * A quick send to [pcName] did not reach it (docs/QUICK_SEND.md §4.2): [line] says why. [다시 보내기] sends the same
+     * text to the same PC again without asking; [다른 기기로] opens the share center with it. One notification per PC and
+     * text, so two failed links each keep their buttons; a later success of the same text takes it away.
+     */
+    fun quickFailed(context: Context, pcId: String, pcName: String, text: String, line: String) {
+        if (!ensureChannel(context)) return
+        val key = quickKey(pcId, text)
+        val retry = PendingIntent.getActivity(
+            context,
+            "quick-retry:$key".hashCode(),
+            Intent(context, ClipActionActivity::class.java)
+                .setAction(ClipActionActivity.ACTION_QUICK_RESEND)
+                .putExtra(ClipActionActivity.EXTRA_PC_ID, pcId)
+                .putExtra(Intent.EXTRA_TEXT, text)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val elsewhere = PendingIntent.getActivity(
+            context,
+            "quick-other:$key".hashCode(),
+            Intent(context, ClipShareActivity::class.java)
+                .setAction(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, text)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val title = "${pcName}에 보내지 못함"
+        val body = "$line\n${preview(text)}"
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(line)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(context, title))
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(elsewhere)
+            .addAction(0, "다시 보내기", retry)
+            .addAction(0, "다른 기기로", elsewhere)
+            .setAutoCancel(true)
+            .build()
+        post(context, key, notification)
+    }
+
+    /** Takes away the failure notification of [text] to [pcId] (it was sent again, or went another way). */
+    fun cancelQuickFailed(context: Context, pcId: String, text: String) {
+        NotificationManagerCompat.from(context).cancel(TAG, quickKey(pcId, text).hashCode())
+    }
+
+    private fun quickKey(pcId: String, text: String) = "quick:$pcId:${text.hashCode()}"
+
     /** The "copied" notification's tap: the received texts in the notification center, [id]'s open. */
     private fun openReceived(context: Context, id: String): PendingIntent = PendingIntent.getActivity(
         context,
@@ -119,6 +173,12 @@ object ClipNotifier {
         .build()
 
     /** False when notifications are off for the app or this channel; the clipboard is set either way. */
+    /**
+     * Whether a quick send's failure can be reported (docs/QUICK_SEND.md §4.2): the app may notify and this channel isn't
+     * turned off. Otherwise a failed send after the share screen closed would only flash a toast, with no [다시 보내기].
+     */
+    fun canReportQuick(context: Context): Boolean = ensureChannel(context)
+
     private fun ensureChannel(context: Context): Boolean {
         if (!PushNotifier.canNotify(context)) return false
         val nm = context.getSystemService(NotificationManager::class.java) ?: return false

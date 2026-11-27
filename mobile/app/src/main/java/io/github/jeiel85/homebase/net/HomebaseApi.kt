@@ -288,10 +288,17 @@ class HomebaseApi(
      * Cloudflare edge never reads it. With [to] (device ids from [sharePhones]) the PC passes it on to those
      * phones instead (docs/SHARE_CONVENIENCE.md §4.8) and answers [ClipSendResult.Relayed]. Throws
      * [UnauthorizedException] on 401 and [IOException] when no path answered; everything the PC said is a
-     * [ClipSendResult].
+     * [ClipSendResult]. [quick]: sent from a share sheet PC shortcut without the share center (docs/QUICK_SEND.md §5).
      */
-    suspend fun sendClip(pc: PcEntry, key: ByteArray, text: String, sensitive: Boolean, to: List<String> = emptyList()): ClipSendResult {
-        val envelope = ClipEnvelope.seal(key, ClipProtocol.newId(), ClipContent.of(text, sensitive, to = to))
+    suspend fun sendClip(
+        pc: PcEntry,
+        key: ByteArray,
+        text: String,
+        sensitive: Boolean,
+        to: List<String> = emptyList(),
+        quick: Boolean = false,
+    ): ClipSendResult {
+        val envelope = ClipEnvelope.seal(key, ClipProtocol.newId(), ClipContent.of(text, sensitive, to = to, quick = quick))
         val body = envelope.toJson().toString().toRequestBody(JSON)
         return authedCall(pc, ClipProtocol.PATH, Request.Builder().post(body), base = clipClient) { code, answer ->
             ClipSendResult.of(code, answer)

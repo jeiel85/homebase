@@ -131,7 +131,7 @@ public partial class PhoneConnectPanel : UserControl
             StatusText.Text = "휴대폰 연결이 꺼져 있습니다. 쓸 경로를 고른 뒤 ENABLE을 누르세요.";
             IntroCard.Visibility = Visibility.Visible;
             PairPanel.Visibility = PathsPanel.Visibility = DevicesPanel.Visibility = LinkPanel.Visibility = ApprovalPanel.Visibility
-                = SendToPanel.Visibility = CommandsPanel.Visibility = Visibility.Collapsed;
+                = SendToPanel.Visibility = QuickPanel.Visibility = CommandsPanel.Visibility = Visibility.Collapsed;
             ApplyButtonText.Text = "ENABLE";
             return;
         }
@@ -483,9 +483,11 @@ public partial class PhoneConnectPanel : UserControl
         _approvalLoading = true;
         ApprovalCheck.IsChecked = ClaudeHookSetup.IsInstalled();
         SendToCheck.IsChecked = SendPrefs.SendToMenu;
+        ShowQuickPrefs(QuickClipSettings.Load());
         _approvalLoading = false;
         ApprovalPanel.Visibility = Visibility.Visible;
         SendToPanel.Visibility = Visibility.Visible;
+        QuickPanel.Visibility = Visibility.Visible;
         CommandsPanel.Visibility = Visibility.Visible;
         RenderCustomCommands();
     }
@@ -554,6 +556,52 @@ public partial class PhoneConnectPanel : UserControl
         var on = SendToCheck.IsChecked == true;
         SendPrefs.SendToMenu = on;
         if (Environment.ProcessPath is { } exe) SendToShortcut.Sync(on, exe);
+    }
+
+    /// <summary>The quick-receive range (M-78) as stored for this Windows user.</summary>
+    private void ShowQuickPrefs(QuickClipPrefs prefs)
+    {
+        QuickAllRadio.IsChecked = prefs.Scope == QuickScope.All;
+        QuickLinksRadio.IsChecked = prefs.Scope == QuickScope.Links;
+        QuickSitesRadio.IsChecked = prefs.Scope == QuickScope.Sites;
+        QuickSitesBox.Text = string.Join(Environment.NewLine, prefs.Sites);
+        QuickSitesFields.IsEnabled = prefs.Scope == QuickScope.Sites;
+        QuickResultText.Text = "";
+    }
+
+    private QuickScope ChosenQuickScope() =>
+        QuickAllRadio.IsChecked == true ? QuickScope.All : QuickLinksRadio.IsChecked == true ? QuickScope.Links : QuickScope.Sites;
+
+    /// <summary>A range picked is saved at once, keeping the site list stored; the list itself is saved with [Save].</summary>
+    private void QuickScope_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_approvalLoading) return;
+        var scope = ChosenQuickScope();
+        QuickSitesFields.IsEnabled = scope == QuickScope.Sites;
+        // The stored list is never empty (Load falls back to Threads), so the range picked always applies as shown.
+        var stored = QuickClipSettings.Load();
+        QuickClipSettings.Save(stored with { Scope = scope });
+        QuickResultText.Text = L.QuickSaved;
+    }
+
+    private void QuickSave_Click(object sender, RoutedEventArgs e)
+    {
+        var sites = QuickClipRange.NormalizeSites(QuickSitesBox.Text);
+        if (sites.Count == 0)
+        {
+            // Refused: show what is stored again, so the screen never claims a range that isn't the one in use.
+            _approvalLoading = true;
+            ShowQuickPrefs(QuickClipSettings.Load());
+            _approvalLoading = false;
+            QuickResultText.Text = L.QuickSitesEmpty;
+            return;
+        }
+        var prefs = new QuickClipPrefs(ChosenQuickScope(), sites);
+        QuickClipSettings.Save(prefs);
+        _approvalLoading = true;
+        ShowQuickPrefs(prefs);
+        _approvalLoading = false;
+        QuickResultText.Text = L.QuickSaved;
     }
 
     private void ApprovalCheck_Changed(object sender, RoutedEventArgs e)

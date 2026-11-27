@@ -70,7 +70,7 @@ internal sealed class MobileBridgeClient : IDisposable
     /// Puts text another device sent on this PC's clipboard (M-62) and says whether it did; the Agent passes the
     /// answer on to the sender. Called on a background thread; unset means "could not".
     /// </summary>
-    public Func<TrayClip, Task<bool>>? ClipHandler { get; set; }
+    public Func<TrayClip, Task<TrayClipOutcome>>? ClipHandler { get; set; }
 
     /// <summary>
     /// Saves files another device sent (M-64) and says whether every one was saved; the Agent then deletes its copy.
@@ -296,11 +296,15 @@ internal sealed class MobileBridgeClient : IDisposable
     /// <summary>Runs <see cref="ClipHandler"/> off the read loop and tells the Agent how it went (<c>clip.done</c>).</summary>
     private async Task PutClipAsync(NamedPipeClientStream pipe, string? id, TrayClip clip)
     {
-        var ok = false;
-        try { ok = ClipHandler is { } handler && await handler(clip); }
+        var outcome = TrayClipOutcome.NotPasted;
+        try { if (ClipHandler is { } handler) outcome = await handler(clip); }
         catch (Exception ex) { TrayLog.Warn("Clipboard", $"Received text was not put on the clipboard: {ex.GetType().Name}"); }
         if (id is null) return;
-        try { await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipDone, new TrayClipDone(id, ok)), _cts.Token); }
+        try
+        {
+            await SendAsync(pipe, MobileBridge.Message(MobileBridge.OpClipDone,
+                new TrayClipDone(id, outcome.Ok, outcome.Held, outcome.Archiver)), _cts.Token);
+        }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
     }
 

@@ -82,9 +82,33 @@ object ClipShare {
     suspend fun sendRelayed(context: Context, api: HomebaseApi, pc: PcEntry, text: String, phones: List<RelayPhone>): String =
         send(context, api, pc, text, sensitive = false, phones = phones)
 
-    private suspend fun send(context: Context, api: HomebaseApi, pc: PcEntry, text: String, sensitive: Boolean, phones: List<RelayPhone>): String {
-        problem(text)?.let { return it }
-        val (line, outcome) = attempt(context, api, pc, text, sensitive, phones)
+    private suspend fun send(context: Context, api: HomebaseApi, pc: PcEntry, text: String, sensitive: Boolean, phones: List<RelayPhone>): String =
+        sendAndRecord(context, api, pc, text, sensitive, phones, quick = false).line
+
+    /**
+     * A send from a share sheet PC shortcut without the share center (docs/QUICK_SEND.md §4.2): the text as it is, with
+     * `quick`, so the PC puts it on its clipboard only when it falls in that PC's range. Says how it went in a line, and
+     * whether it failed (then the caller offers [다시 보내기]).
+     */
+    suspend fun sendQuick(context: Context, api: HomebaseApi, pc: PcEntry, text: String): QuickSent {
+        val attempt = sendAndRecord(context, api, pc, text, sensitive = false, phones = emptyList(), quick = true)
+        return QuickSent(attempt.line, failed = !attempt.ok)
+    }
+
+    /** What [sendQuick] came to: a line for a toast or a notification, and whether it did not reach the PC. */
+    data class QuickSent(val line: String, val failed: Boolean)
+
+    private suspend fun sendAndRecord(
+        context: Context,
+        api: HomebaseApi,
+        pc: PcEntry,
+        text: String,
+        sensitive: Boolean,
+        phones: List<RelayPhone>,
+        quick: Boolean,
+    ): Attempt {
+        problem(text)?.let { return Attempt(it, it, ok = false) }
+        val attempt = attempt(context, api, pc, text, sensitive, phones, quick)
         // "보낸 클립보드" in the notification center (M-70): to whom, how it went, and the text unless it is sensitive.
         withContext(Dispatchers.IO) {
             try {
@@ -92,7 +116,7 @@ object ClipShare {
                 PushHistory.record(
                     context,
                     ClipHistory.sent(
-                        ClipProtocol.newId(), current.pcId, current.name, phones.map { it.name }, text, sensitive, outcome,
+                        ClipProtocol.newId(), current.pcId, current.name, phones.map { it.name }, text, sensitive, attempt.outcome,
                         current.color, System.currentTimeMillis(),
                     ),
                 )
@@ -102,10 +126,13 @@ object ClipShare {
                 Log.w(TAG, "sent text not recorded: ${e.javaClass.simpleName}")
             }
         }
-        return line
+        return attempt
     }
 
-    /** One send and what came of it: a line for a toast, and a short one for the notification center. */
+    /** One send: a line for a toast, a short one for the notification center, and whether it reached the PC. */
+    private data class Attempt(val line: String, val outcome: String, val ok: Boolean)
+
+    /** One send and what came of it. */
     private suspend fun attempt(
         context: Context,
         api: HomebaseApi,
@@ -113,50 +140,79 @@ object ClipShare {
         text: String,
         sensitive: Boolean,
         phones: List<RelayPhone>,
-    ): Pair<String, String> {
+        quick: Boolean,
+    ): Attempt {
         // The entry the caller holds may predate a key agreed meanwhile (the registrar's, another send).
         val current = withContext(Dispatchers.IO) { PcStore(context).get(pc.pcId) } ?: pc
         val name = current.displayName
-        val tooOld = "${name}의 Homebase를 업데이트하세요" to "실패: PC의 Homebase가 오래됨"
+        val tooOld = failure("${name}의 Homebase를 업데이트하세요", "실패: PC의 Homebase가 오래됨", quick)
         val to = phones.map { it.deviceId }
         return try {
             val stored = ClipCrypto.decodeKey(current.clipKey)
             val key = stored ?: keyFor(context, api, current, stale = null) ?: return tooOld
-            var result = api.sendClip(current, key, text, sensitive, to)
+            var result = api.sendClip(current, key, text, sensitive, to, quick)
             if (stored != null && (result == ClipSendResult.KeyNeeded || result == ClipSendResult.Rejected)) {
                 Log.i(TAG, "clipboard key with ${current.name} no longer matches; agreeing a new one")
-                result = api.sendClip(current, keyFor(context, api, current, stale = key) ?: return tooOld, text, sensitive, to)
+                result = api.sendClip(current, keyFor(context, api, current, stale = key) ?: return tooOld, text, sensitive, to, quick)
+            }
+            if (quick) {
+                quickLines(result, name)?.let { (line, outcome) ->
+                    remember(context, current.pcId)
+                    return Attempt(line, outcome, ok = true)
+                }
             }
             when (val r = result) {
-                ClipSendResult.Sent -> {
+                ClipSendResult.Sent, is ClipSendResult.QuickTaken -> {
                     if (phones.isEmpty()) {
                         remember(context, current.pcId)
-                        "${name}에 보냈습니다" to SENT
+                        Attempt("${name}에 보냈습니다", SENT, ok = true)
                     } else {
                         // A PC that took `to` always answers with `forwarded`; without it, it pasted the text itself.
-                        "${name}이(가) 다른 휴대폰에 넘기지 못해 PC 클립보드에 넣었습니다" to "PC 클립보드에 들어감(넘기지 못함)"
+                        Attempt("${name}이(가) 다른 휴대폰에 넘기지 못해 PC 클립보드에 넣었습니다", "PC 클립보드에 들어감(넘기지 못함)", ok = true)
                     }
                 }
                 is ClipSendResult.Relayed -> if (phones.isEmpty()) {
                     remember(context, current.pcId)
-                    "${name}에 보냈습니다" to SENT
+                    Attempt("${name}에 보냈습니다", SENT, ok = true)
                 } else {
-                    relayedLine(r.forwarded, phones, name) to relayedOutcome(r.forwarded, phones)
+                    val outcome = relayedOutcome(r.forwarded, phones)
+                    Attempt(relayedLine(r.forwarded, phones, name), outcome, ok = !outcome.startsWith("실패"))
                 }
-                ClipSendResult.NoUserSession -> "${name}에 로그인한 사용자가 없습니다" to "실패: PC에 로그인한 사용자가 없음"
-                ClipSendResult.ClipboardBusy -> "${name}의 클립보드가 사용 중이었습니다. 다시 보내세요" to "실패: PC의 클립보드가 사용 중"
-                ClipSendResult.KeyNeeded -> "${name}와(과) 암호 키를 맞추지 못했습니다. 다시 보내세요" to "실패: 암호 키를 맞추지 못함"
+                ClipSendResult.NoUserSession -> failure("${name}에 로그인한 사용자가 없습니다", "실패: PC에 로그인한 사용자가 없음", quick)
+                ClipSendResult.ClipboardBusy -> failure("${name}의 클립보드가 사용 중이었습니다. 다시 보내세요", "실패: PC의 클립보드가 사용 중", quick)
+                ClipSendResult.KeyNeeded -> failure("${name}와(과) 암호 키를 맞추지 못했습니다. 다시 보내세요", "실패: 암호 키를 맞추지 못함", quick)
                 ClipSendResult.Unsupported -> tooOld
-                ClipSendResult.Rejected -> "${name}이(가) 텍스트를 받지 않았습니다" to "실패: PC가 받지 않음"
-                is ClipSendResult.Failed -> "${name}에 보내지 못했습니다: ${r.reason}" to "실패: ${r.reason}"
+                ClipSendResult.Rejected -> failure("${name}이(가) 텍스트를 받지 않았습니다", "실패: PC가 받지 않음", quick)
+                is ClipSendResult.Failed -> failure("${name}에 보내지 못했습니다: ${r.reason}", "실패: ${r.reason}", quick)
             }
         } catch (_: UnauthorizedException) {
-            "${name}에서 이 휴대폰의 연결이 해제되었습니다. 다시 페어링하세요." to "실패: 연결이 해제됨"
+            failure("${name}에서 이 휴대폰의 연결이 해제되었습니다. 다시 페어링하세요.", "실패: 연결이 해제됨", quick)
         } catch (e: Exception) {
             Log.i(TAG, "clipboard to ${current.name} failed: ${e.message}")
-            "${name}에 닿지 않습니다" to "실패: PC에 닿지 않음"
+            failure("${name}에 닿지 않습니다", "실패: PC에 닿지 않음", quick)
         }
     }
+
+    private fun failure(line: String, outcome: String, quick: Boolean) =
+        Attempt(line, if (quick) "$QUICK · $outcome" else outcome, ok = false)
+
+    /**
+     * A quick send that reached [name]'s PC, in the words of docs/QUICK_SEND.md §4.2: a line for a toast and the
+     * notification center's outcome. Null when it didn't reach it (the caller says why the usual way). An older PC
+     * answers without `quick` ([ClipSendResult.Sent]): it put the text on its clipboard as before. Pure, so tests pin it.
+     */
+    internal fun quickLines(result: ClipSendResult, name: String): Pair<String, String>? = when (result) {
+        is ClipSendResult.QuickTaken -> when {
+            result.held -> "${name}에 보냈습니다 · 받기 범위 밖이라 PC 알림으로" to "$QUICK · PC에서 알림으로 받음"
+            result.archiverStopped -> "${name}에 보냈습니다 · Threads Archiver가 꺼져 있음" to QUICK
+            else -> "${name}에 바로 보냈습니다" to QUICK
+        }
+        ClipSendResult.Sent, is ClipSendResult.Relayed ->
+            "${name}에 보냈습니다 · PC 업데이트 필요" to QUICK
+        else -> null
+    }
+
+    private const val QUICK = "바로 보냄"
 
     private const val SENT = "보냄"
 

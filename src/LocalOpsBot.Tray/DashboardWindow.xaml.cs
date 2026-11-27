@@ -226,6 +226,15 @@ public partial class DashboardWindow : ThemedWindow
                 _connections = new Connections(new ReadinessSnapshot(AgentServiceState.Running, true, true, 1), true, true, false);
             }
             await RenderDetailAsync();
+            if (_selected == DeviceList.SelfKey && _ticks % 4 == 0 && _connections is { Phone: true })
+            {
+                // The range is read, and Threads Archiver looked for, only while the line is in view — the Archiver only when
+                // Threads links are in range (M-13, M-78). Both off the UI thread.
+                var prefs = await Task.Run(QuickClipSettings.Load);
+                _quickPrefs = prefs;
+                _archiverRunning = QuickClipRange.CoversThreads(prefs) ? await Task.Run(ArchiverProbe.IsRunning) : null;
+            }
+            if (_items.FirstOrDefault(i => i.Key == _selected) is { } shown) RenderQuickLine(shown);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -610,6 +619,7 @@ public partial class DashboardWindow : ThemedWindow
 
         HeaderChips.Children.Clear();
         WarningBox.Visibility = Visibility.Collapsed;
+        RenderQuickLine(d);
         if (d.Role == DeviceRole.Self && _connections is { } c)
         {
             Chip(L.DashForwarding, c.Forwarding ? (c.AutostartOff ? ChipTone.Warn : ChipTone.On) : ChipTone.Off, SettingsTab.Forwarding);
@@ -626,6 +636,40 @@ public partial class DashboardWindow : ThemedWindow
             Chip(L.DevHubPhones(d.Phones), ChipTone.Off, SettingsTab.Phone);
         }
     }
+
+    private bool? _archiverRunning;
+    /// <summary>The quick-receive range as last read (every few seconds while the line is in view); null until then.</summary>
+    private QuickClipPrefs? _quickPrefs;
+
+    /// <summary>
+    /// This PC's quick receive from phones (M-78), under its chips: the range, whether Threads Archiver runs (when Threads
+    /// links are in range), and today's count and last time. Shown once the phone connection is on.
+    /// </summary>
+    private void RenderQuickLine(DeviceItem d)
+    {
+        if (d.Role != DeviceRole.Self || _connections is not { Phone: true } || _quickPrefs is not { } prefs)
+        {
+            QuickBox.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var now = DateTimeOffset.UtcNow;
+        var parts = new List<string> { L.QuickLineHead, L.QuickLineScope(prefs.Scope, prefs.Sites.FirstOrDefault(), prefs.Sites.Count) };
+        var warn = false;
+        if (QuickClipRange.CoversThreads(prefs) && _archiverRunning is { } running)
+        {
+            parts.Add(L.QuickLineArchiver(running));
+            warn = !running;
+        }
+        parts.Add(L.QuickLineToday(QuickClipStats.Today(now)));
+        if (QuickClipStats.Last is { } last) parts.Add(L.QuickLineLast(last));
+        QuickText.Text = string.Join("  ·  ", parts);
+        QuickBox.Background = warn ? Brush(0xFF, 0xF4, 0xDD) : Brush(0xEE, 0xF1, 0xF8);
+        QuickBox.BorderBrush = warn ? Brush(0xEC, 0xAB, 0x37) : Brush(0xB9, 0xC2, 0xDE);
+        QuickBox.ToolTip = L.ChipOpensSettings;
+        QuickBox.Visibility = Visibility.Visible;
+    }
+
+    private void QuickBox_Click(object sender, MouseButtonEventArgs e) => ShowTab(DashTab.Settings, SettingsTab.Phone);
 
     private enum ChipTone { On, Off, Warn }
 

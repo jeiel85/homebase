@@ -40,9 +40,13 @@ public sealed record SharePhone(string DeviceId, string Name, bool Clip, bool Fi
 
 /// <summary>
 /// Answer to <c>POST /api/v1/clip</c>. <see cref="Forwarded"/> is there when the text was for other phones
-/// (<see cref="ClipContent.To"/>): one outcome each, in the order asked.
+/// (<see cref="ClipContent.To"/>): one outcome each, in the order asked. For quick text (<see cref="ClipContent.Quick"/>,
+/// M-78) <see cref="Quick"/> is true — an older PC leaves it out — <see cref="Held"/> says whether it was kept off the
+/// clipboard (outside this PC's quick-receive range), and <see cref="Archiver"/> (<see cref="ClipArchiver"/>) whether
+/// Threads Archiver runs, when the text has a Threads link.
 /// </summary>
-public sealed record ClipAccepted(int Schema, bool Accepted, IReadOnlyList<ClipForwardOutcome>? Forwarded = null);
+public sealed record ClipAccepted(int Schema, bool Accepted, IReadOnlyList<ClipForwardOutcome>? Forwarded = null,
+    bool? Quick = null, bool? Held = null, string? Archiver = null);
 
 /// <summary><see cref="Error"/>: <see cref="ClipErrors"/> (<c>unknown_target</c>, <c>push_failed</c>, …).</summary>
 public sealed record ClipForwardOutcome(string DeviceId, bool Ok, string? Error = null);

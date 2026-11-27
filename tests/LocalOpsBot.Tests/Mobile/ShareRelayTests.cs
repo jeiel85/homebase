@@ -38,7 +38,7 @@ public class ShareRelayTests : IDisposable
         };
         _clips = new ClipShareService(_store, _keys, push, null, _time, NullLogger.Instance)
         {
-            Tray = (clip, _) => { lock (_trayClips) _trayClips.Add(clip); return Task.FromResult<bool?>(true); },
+            Tray = (clip, _) => { lock (_trayClips) _trayClips.Add(clip); return Task.FromResult<TrayClipOutcome?>(TrayClipOutcome.Pasted); },
         };
         _files = new FileShareService(Path.Combine(_dir, "in"), _store, _keys, _time, NullLogger.Instance, freeSpace: _ => long.MaxValue / 2)
         {

@@ -172,6 +172,37 @@
       </Border>
     </StackPanel>
 
+    <!-- Quick send from a phone's PC shortcut (DECISIONS M-78): what goes straight onto the clipboard, for this Windows user. -->
+    <StackPanel x:Name="QuickPanel" Visibility="Collapsed">
+      <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">
+        <TextBlock Style="{StaticResource Type.SectionLabel}" Text="{x:Static local:L.QuickSection}"/>
+      </Border>
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,0,0,8" Text="{x:Static local:L.QuickWhat}"/>
+          <RadioButton x:Name="QuickAllRadio" GroupName="QuickScope" Margin="0,0,0,4" Checked="QuickScope_Changed">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.QuickScopeAll}"/>
+          </RadioButton>
+          <RadioButton x:Name="QuickLinksRadio" GroupName="QuickScope" Margin="0,0,0,4" Checked="QuickScope_Changed">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.QuickScopeLinks}"/>
+          </RadioButton>
+          <RadioButton x:Name="QuickSitesRadio" GroupName="QuickScope" Margin="0,0,0,4" Checked="QuickScope_Changed">
+            <TextBlock Style="{StaticResource Type.Body}" Text="{x:Static local:L.QuickScopeSites}"/>
+          </RadioButton>
+          <StackPanel x:Name="QuickSitesFields" Margin="20,2,0,0">
+            <TextBox x:Name="QuickSitesBox" AcceptsReturn="True" TextWrapping="NoWrap" Height="52"
+                     VerticalScrollBarVisibility="Auto" FontFamily="Consolas"/>
+            <TextBlock Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,2,0,0" Text="{x:Static local:L.QuickSitesHint}"/>
+            <DockPanel Margin="0,6,0,0">
+              <Button x:Name="QuickSaveButton" DockPanel.Dock="Right" Style="{StaticResource Button.Carbon}"
+                      Content="{x:Static local:L.QuickSave}" Click="QuickSave_Click"/>
+              <TextBlock x:Name="QuickResultText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+            </DockPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
     <!-- Remote commands phones may ask for (DECISIONS M-69): switches applied with APPLY; custom ones per user, at once. -->
     <StackPanel x:Name="CommandsPanel" Visibility="Collapsed">
       <Border Style="{StaticResource SectionHeaderBar}" Margin="0,14,0,8">

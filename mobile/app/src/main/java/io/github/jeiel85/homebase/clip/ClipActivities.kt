@@ -44,6 +44,9 @@ import io.github.jeiel85.homebase.share.DownloadSpec
 import io.github.jeiel85.homebase.share.FileReceive
 import io.github.jeiel85.homebase.share.FileSendFlow
 import io.github.jeiel85.homebase.share.ShareCenterFlow
+import io.github.jeiel85.homebase.share.QuickSend
+import io.github.jeiel85.homebase.share.QuickSendGate
+import io.github.jeiel85.homebase.share.SharePrefs
 import io.github.jeiel85.homebase.share.ShareShortcuts
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
@@ -58,9 +61,22 @@ import kotlinx.coroutines.withContext
  * "Homebase" in the share sheet: the share center (docs/SHARE_CONVENIENCE.md §9) — text onto PCs' clipboards
  * (DECISIONS M-62), files and pictures to PCs (M-64), either also to other phones through a PC (§4.8). A share sheet
  * PC shortcut (Direct Share, Android 10+, §4.6) only checks that PC beforehand. Always the user's [공유 시작], even with
- * one PC: any app can open this with any text, file or shortcut id, and only the user should decide where it lands.
+ * one PC: any app can open this with any text, file or shortcut id, and only the user should decide where it lands —
+ * except text through a PC shortcut when the user turned on "PC 바로가기로 공유하면 바로 보내기" (docs/QUICK_SEND.md §4,
+ * off by default, at most 10 a minute): that goes at once, and the PC only puts it on its clipboard within its own range.
  */
 class ClipShareActivity : ComponentActivity() {
+    private var quickChosen = false
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_QUICK, quickChosen)
+    }
+
+    private companion object {
+        const val STATE_QUICK = "quick"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeSetting.load(this)
         // A whole screen now, drawn under the bars like the app's own: its console bar and buttons keep clear of them.
@@ -82,11 +98,52 @@ class ClipShareActivity : ComponentActivity() {
             finish()
             return
         }
+        // A PC shortcut may send at once when the user turned that on (docs/QUICK_SEND.md §4.2); anything else — and a
+        // shortcut past the per-minute limit — is the share center as always. With the app's notifications (or the
+        // clipboard channel) off, Android drops the result toast or the failure notification of a send that runs after
+        // this screen is gone, so a failed send would vanish without a way to retry: then the share center too.
+        // Recreated (rotation while the PC list is read): the choice made the first time stands, counted once — the
+        // first composition was dropped before it handed the text on, so this one sends it.
+        val quick = savedInstanceState?.takeIf { it.containsKey(STATE_QUICK) }?.getBoolean(STATE_QUICK) ?: (presetPcId != null && ClipShare.problem(text) == null &&
+            QuickSend.allows(SharePrefs(this).quickMode(), text) &&
+            ClipNotifier.canReportQuick(this) && QuickSendGate.admit(this))
+        quickChosen = quick
         setContent {
             HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
-                ShareCenterFlow(emptyList(), text = text, presetPcId = presetPcId, onDone = { finish() })
+                if (quick && presetPcId != null) {
+                    QuickSendFlow(text, presetPcId, onDone = { finish() })
+                } else {
+                    ShareCenterFlow(emptyList(), text = text, presetPcId = presetPcId, onDone = { finish() })
+                }
             }
         }
+    }
+}
+
+/**
+ * The quick path of a PC shortcut (docs/QUICK_SEND.md §4.2): draws nothing (the window is translucent), hands the text
+ * to [QuickSender] and closes. When the shortcut's PC is no longer paired, the share center opens instead.
+ */
+@Composable
+private fun QuickSendFlow(text: String, pcId: String, onDone: () -> Unit) {
+    val context = LocalContext.current
+    var fallback by remember { mutableStateOf(false) }
+    if (fallback) {
+        ShareCenterFlow(emptyList(), text = text, presetPcId = pcId, onDone = onDone)
+        return
+    }
+    LaunchedEffect(Unit) {
+        val app = context.applicationContext
+        // The PC list is decrypted with a Keystore key: off the main thread.
+        val pcs = withContext(Dispatchers.IO) { PcStore(app).all() }
+        val pc = pcs.firstOrNull { it.pcId == pcId }
+        if (pc == null) {
+            fallback = true
+            return@LaunchedEffect
+        }
+        ShareShortcuts.used(app, pcs, listOf(pc.pcId))
+        QuickSender.start(app, pc, text)
+        onDone()
     }
 }
 
@@ -113,7 +170,9 @@ class ClipActionActivity : ComponentActivity() {
         val clipId = intent?.getStringExtra(EXTRA_CLIP_ID)
         val picked = if (action == ACTION_SEND_FILES) clipUris(intent?.clipData) else emptyList()
         val receive = if (action == ACTION_RECEIVE_FILES) DownloadSpec.from(intent) else null
+        val resend = if (action == ACTION_QUICK_RESEND) intent?.getStringExtra(Intent.EXTRA_TEXT) else null
         val valid = when (action) {
+            ACTION_QUICK_RESEND -> pcId != null && !resend.isNullOrEmpty()
             ACTION_SEND_CLIPBOARD -> true
             ACTION_FETCH -> pcId != null && clipId != null
             ACTION_SEND_FILES -> pcId != null && picked.isNotEmpty()
@@ -128,6 +187,7 @@ class ClipActionActivity : ComponentActivity() {
             HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
                 when {
                     receive != null -> ReceiveStartFlow(receive, onDone = { finish() })
+                    resend != null && pcId != null -> QuickResendFlow(pcId, resend, onDone = { finish() })
                     action == ACTION_FETCH && pcId != null && clipId != null -> ClipFetchFlow(pcId, clipId, onDone = { finish() })
                     action == ACTION_SEND_FILES -> FileSendFlow(picked, presetPcId = pcId, pickAlways = false, onDone = { finish() })
                     else -> {
@@ -168,6 +228,9 @@ class ClipActionActivity : ComponentActivity() {
         const val ACTION_FETCH = "io.github.jeiel85.homebase.action.FETCH_CLIP"
         const val ACTION_SEND_FILES = "io.github.jeiel85.homebase.action.SEND_FILES"
         const val ACTION_RECEIVE_FILES = "io.github.jeiel85.homebase.action.RECEIVE_FILES"
+
+        /** [다시 보내기] on a failed quick send (docs/QUICK_SEND.md §4.2): [Intent.EXTRA_TEXT] to [EXTRA_PC_ID] again. */
+        const val ACTION_QUICK_RESEND = "io.github.jeiel85.homebase.action.QUICK_RESEND"
         const val EXTRA_PC_ID = "io.github.jeiel85.homebase.CLIP_PC_ID"
         const val EXTRA_CLIP_ID = "io.github.jeiel85.homebase.CLIP_ID"
     }
@@ -287,6 +350,24 @@ private fun ReceiveStartFlow(spec: DownloadSpec, onDone: () -> Unit) {
     LaunchedEffect(Unit) {
         val started = FileReceive.schedule(context, spec, userInitiated = true)
         toast(context, if (started) "${spec.pcName}에서 받는 중 — 진행 상황은 알림에서 볼 수 있습니다" else "받기를 시작하지 못했습니다. 다시 시도하세요.")
+        onDone()
+    }
+}
+
+/** [다시 보내기] on a failed quick send: the same text to the same PC, without asking — the user tapped it. */
+@Composable
+private fun QuickResendFlow(pcId: String, text: String, onDone: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        val app = context.applicationContext
+        val pc = withContext(Dispatchers.IO) { PcStore(app).get(pcId) }
+        if (pc == null) {
+            ClipNotifier.cancelQuickFailed(app, pcId, text)
+            toast(context, "이 PC는 더 이상 연결되어 있지 않습니다")
+        } else {
+            toast(context, "${pc.displayName}에 다시 보내는 중…")
+            QuickSender.start(app, pc, text)
+        }
         onDone()
     }
 }

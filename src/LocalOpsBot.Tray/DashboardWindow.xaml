@@ -196,6 +196,12 @@
                   BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,8" Margin="0,0,0,12">
             <TextBlock x:Name="WarningText" TextWrapping="Wrap" FontSize="12" Foreground="#21242E"/>
           </Border>
+          <!-- Quick receive from phones (M-78): the range, Threads Archiver, today's count; a click opens the setting. -->
+          <Border x:Name="QuickBox" Visibility="Collapsed" Background="#EEF1F8" BorderBrush="#B9C2DE"
+                  BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,8" Margin="0,0,0,12" Cursor="Hand"
+                  MouseLeftButtonUp="QuickBox_Click">
+            <TextBlock x:Name="QuickText" TextWrapping="Wrap" FontSize="12" Foreground="#21242E"/>
+          </Border>
           <ContentControl x:Name="DetailHost"/>
         </StackPanel>
       </ScrollViewer>

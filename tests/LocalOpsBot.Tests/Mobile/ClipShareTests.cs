@@ -162,10 +162,10 @@ public class ClipShareApiTests
         };
     }
 
-    private Task<bool?> Taken(TrayClip c, CancellationToken _)
+    private Task<TrayClipOutcome?> Taken(TrayClip c, CancellationToken _)
     {
         lock (_tray) _tray.Add(c);
-        return Task.FromResult<bool?>(true);
+        return Task.FromResult<TrayClipOutcome?>(TrayClipOutcome.Pasted);
     }
 
     private MobileApiServer Api()
@@ -203,9 +203,9 @@ public class ClipShareApiTests
         }
     }
 
-    private ClipEnvelope Sealed(byte[] key, string text, bool sensitive = false) =>
+    private ClipEnvelope Sealed(byte[] key, string text, bool sensitive = false, bool quick = false, IReadOnlyList<string>? to = null) =>
         ClipMessages.Seal(key, ClipProtocol.NewId(),
-            new ClipContent(MobileProtocol.Schema, text, text.Length, _time.GetUtcNow(), sensitive ? true : null));
+            new ClipContent(MobileProtocol.Schema, text, text.Length, _time.GetUtcNow(), sensitive ? true : null, to, Quick: quick ? true : null));
 
     private static byte[] Body<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value, MobileProtocol.Json);
 
@@ -230,7 +230,107 @@ public class ClipShareApiTests
 
         Assert.Equal(200, status);
         Assert.Contains("\"accepted\":true", json);
+        // Text sent from the share screen: answered as before quick send (M-78) existed.
+        Assert.DoesNotContain("quick", json);
+        Assert.DoesNotContain("held", json);
         Assert.Equal(new TrayClip("택배 6081-2345", "Galaxy S24", DeviceKind.Phone, true), Assert.Single(_tray));
+    }
+
+    [Fact]
+    public async Task Quick_text_reaches_the_tray_marked_quick_and_the_answer_says_it_was_held()
+    {
+        var token = Pair("Galaxy S24");
+        var api = Api();
+        var key = await Agree(api, token);
+        _clips.Tray = (c, _) =>
+        {
+            lock (_tray) _tray.Add(c);
+            return Task.FromResult<TrayClipOutcome?>(new TrayClipOutcome(true, Held: true));
+        };
+
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(Sealed(key, "메모 한 줄", quick: true)), default);
+
+        Assert.Equal(200, status);
+        var answer = JsonSerializer.Deserialize<ClipAccepted>(json, MobileProtocol.Json)!;
+        Assert.Equal((true, (bool?)true, (bool?)true, (string?)null), (answer.Accepted, answer.Quick, answer.Held, answer.Archiver));
+        Assert.DoesNotContain("archiver", json);
+        Assert.Equal(new TrayClip("메모 한 줄", "Galaxy S24", DeviceKind.Phone, false, true), Assert.Single(_tray));
+    }
+
+    [Fact]
+    public async Task Quick_text_on_the_clipboard_says_whether_threads_archiver_runs_and_the_same_message_gets_the_same_answer()
+    {
+        var token = Pair("Galaxy S24");
+        var api = Api();
+        var key = await Agree(api, token);
+        _clips.Tray = (c, _) =>
+        {
+            lock (_tray) _tray.Add(c);
+            return Task.FromResult<TrayClipOutcome?>(new TrayClipOutcome(true, false, ClipArchiver.Stopped));
+        };
+        var envelope = Sealed(key, "https://www.threads.com/@zuck/post/DeZtp-TkQHh", quick: true);
+
+        var first = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
+        var again = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
+
+        Assert.Equal(200, first.Status);
+        var answer = JsonSerializer.Deserialize<ClipAccepted>(first.Json, MobileProtocol.Json)!;
+        Assert.Equal(((bool?)true, (bool?)false, ClipArchiver.Stopped), (answer.Quick, answer.Held, answer.Archiver));
+        Assert.Equal((200, first.Json), (again.Status, again.Json));
+        Assert.Single(_tray); // pasted once
+    }
+
+    [Fact]
+    public async Task Held_quick_text_is_answered_as_held_again_when_sent_again()
+    {
+        var token = Pair("Galaxy S24");
+        var api = Api();
+        var key = await Agree(api, token);
+        _clips.Tray = (_, _) => Task.FromResult<TrayClipOutcome?>(new TrayClipOutcome(true, Held: true));
+        var envelope = Sealed(key, "not a link", quick: true);
+
+        await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
+        _clips.Tray = (_, _) => throw new InvalidOperationException("the same message must not reach the tray twice");
+        var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
+
+        Assert.Equal(200, status);
+        Assert.Equal((bool?)true, JsonSerializer.Deserialize<ClipAccepted>(json, MobileProtocol.Json)!.Held);
+    }
+
+    [Fact]
+    public async Task Quick_text_from_a_linked_pc_or_for_other_phones_is_refused()
+    {
+        var pcToken = Pair("WORK-PC", DeviceKind.Pc);
+        var phoneToken = Pair("Galaxy S24");
+        var api = Api();
+        var pcKey = await Agree(api, pcToken);
+        var phoneKey = await Agree(api, phoneToken);
+        var other = _store.List().First(d => d.Name == "WORK-PC").DeviceId;
+
+        var fromPc = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, pcToken), Body(Sealed(pcKey, "x", quick: true)), default);
+        var passedOn = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, phoneToken),
+            Body(Sealed(phoneKey, "x", quick: true, to: [other])), default);
+
+        Assert.Equal(400, fromPc.Status);
+        Assert.Contains(ClipErrors.Invalid, fromPc.Json);
+        Assert.Equal(400, passedOn.Status);
+        Assert.Empty(_tray);
+        // Without quick the same PC's text is still taken.
+        Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, pcToken), Body(Sealed(pcKey, "x")), default)).Status);
+    }
+
+    [Fact]
+    public async Task A_quick_answer_that_is_not_ok_is_a_busy_clipboard_and_not_remembered()
+    {
+        var token = Pair("Galaxy S24");
+        var api = Api();
+        var envelope = Sealed(await Agree(api, token), "https://threads.com/@a/post/b", quick: true);
+        _clips.Tray = (_, _) => Task.FromResult<TrayClipOutcome?>(TrayClipOutcome.NotPasted);
+
+        Assert.Equal(503, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
+        _clips.Tray = Taken;
+        Assert.Equal(200, (await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default)).Status);
+        Assert.Single(_tray);
     }
 
     [Fact]
@@ -334,7 +434,7 @@ public class ClipShareApiTests
         var token = Pair("Galaxy");
         var api = Api();
         var envelope = Sealed(await Agree(api, token), "busy first");
-        _clips.Tray = (_, _) => Task.FromResult<bool?>(false);
+        _clips.Tray = (_, _) => Task.FromResult<TrayClipOutcome?>(TrayClipOutcome.NotPasted);
 
         var (status, json) = await api.HandleRestAsync(Req("POST", ClipProtocol.Path, token), Body(envelope), default);
         Assert.Equal(503, status);
@@ -442,8 +542,28 @@ public class ClipShareApiTests
     private ClipShareService WithHistory(HistoryLog history, ClipShareService.PushSender? push = null, bool? tray = true) =>
         new(_store, _keys, push ?? ((_, _, _) => Task.FromResult((true, (string?)null))), hubs: null, _time, NullLogger.Instance, history)
         {
-            Tray = (_, _) => Task.FromResult(tray),
+            Tray = (_, _) => Task.FromResult<TrayClipOutcome?>(tray is null ? null : tray.Value ? TrayClipOutcome.Pasted : TrayClipOutcome.NotPasted),
         };
+
+    [Fact]
+    public async Task Quick_text_held_off_the_clipboard_is_kept_as_received_with_that_said()
+    {
+        var history = new HistoryLog();
+        var clips = new ClipShareService(_store, _keys, (_, _, _) => Task.FromResult((true, (string?)null)), hubs: null, _time,
+            NullLogger.Instance, history)
+        {
+            Tray = (_, _) => Task.FromResult<TrayClipOutcome?>(new TrayClipOutcome(true, Held: true)),
+        };
+        var device = _store.Add("Galaxy S24", "SM-S921N", PairingService.HashToken("t"));
+        var key = RandomNumberGenerator.GetBytes(32);
+        _keys.Set(ClipTargetKeys.Device(device.DeviceId), key);
+
+        var receipt = await clips.ReceiveAsync(device, Sealed(key, "회의실 B, 3시", quick: true), default);
+
+        Assert.Equal((ClipAcceptOutcome.Accepted, (bool?)true), (receipt.Outcome, receipt.Quick?.Held));
+        var entry = Assert.Single(history.Records);
+        Assert.Equal((ClipHistory.Received, "텍스트 9자 · 클립보드에 넣지 않음", "회의실 B, 3시"), (entry.App, entry.Title, entry.Body));
+    }
 
     [Fact]
     public async Task Text_put_on_this_clipboard_is_kept_as_received_once_and_sensitive_text_without_its_words()
@@ -597,7 +717,7 @@ public class ClipShareEndToEndTests : IDisposable
             Assert.NotNull(keyAtB);
             Assert.Equal(keyAtB, keysA.Get(ClipTargetKeys.Device(Assert.Single(storeA.List()).DeviceId)));
 
-            clipsA.Tray = (c, _) => { lock (trayA) trayA.Add(c); return Task.FromResult<bool?>(true); };
+            clipsA.Tray = (c, _) => { lock (trayA) trayA.Add(c); return Task.FromResult<TrayClipOutcome?>(TrayClipOutcome.Pasted); };
             var text = string.Concat(Enumerable.Repeat("가나다라마바사 0123456789\n", 2000)); // ~50 KB of UTF-8
             var sent = await clipsB.SendAsync(new ClipSendRequest([target.Key], text, Sensitive: true), cts.Token);
 

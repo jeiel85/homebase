@@ -58,6 +58,46 @@ public static class L
     public static string ClipReceiveFailedBody(string from) => T(
         $"{from} sent text, but another app was holding the clipboard. {from} was told to send it again.",
         $"{from}에서 텍스트를 보냈지만 다른 앱이 클립보드를 쓰고 있었습니다. 보낸 쪽에 다시 보내라고 알렸습니다.");
+    // ── Quick send from a phone's PC shortcut (DECISIONS M-78) ───────────────
+    public static string QuickHeldTitle(string from) => T($"Text from {from} — not on the clipboard", $"{from}에서 받은 텍스트 — 클립보드에 넣지 않음");
+    public static string QuickHeldBody(int chars) => T(
+        $"{chars:N0} characters, outside this PC's quick-receive range, so the clipboard was left alone. Click to copy it.",
+        $"{chars:N0}자, 받기 범위 밖이라 클립보드를 건드리지 않았습니다. 누르면 클립보드에 넣습니다.");
+    public static string QuickHeldNotKeptBody(int chars) => T(
+        $"{chars:N0} characters, outside this PC's quick-receive range, and it couldn't be kept here. The phone was told to send it again.",
+        $"{chars:N0}자, 받기 범위 밖인데 이 PC에 보관하지 못했습니다. 휴대폰에 다시 보내라고 알렸습니다.");
+    public static string QuickHeldSensitiveBody => T(
+        "It is outside this PC's quick-receive range and marked private, so it was neither put on the clipboard nor kept. Send it from the share screen instead.",
+        "받기 범위 밖이고 민감한 내용이라 클립보드에 넣지도, 보관하지도 않았습니다. 공유 화면에서 다시 보내세요.");
+    public static string QuickArchiverStoppedTitle => T("Threads Archiver isn't running", "Threads Archiver가 꺼져 있습니다");
+    public static string QuickArchiverStoppedBody(string from) => T(
+        $"A Threads link from {from} is on the clipboard, but Threads Archiver isn't running to download it.",
+        $"{from}에서 받은 Threads 링크를 클립보드에 넣었지만, Threads Archiver가 꺼져 있어 다운로드되지 않습니다.");
+    public static string QuickSection => T("QUICK SEND FROM A PHONE", "휴대폰에서 바로 보낸 것");
+    public static string QuickWhat => T(
+        "When the phone app sends from a PC shortcut in the share menu without its share screen, only text in this range goes straight onto the clipboard here — with the two link ranges, the link alone, not the text around it. The rest shows a notification and is copied when you click it. Text sent from the share screen is always copied.",
+        "휴대폰 앱이 공유 메뉴의 PC 바로가기로 공유 화면 없이 보낸 것 가운데, 이 범위에 드는 것만 바로 클립보드에 넣습니다. 링크 범위 두 가지는 주변 글 없이 링크 하나만 넣습니다. 나머지는 알림만 띄우고, 누르면 넣습니다. 공유 화면에서 보낸 것은 지금처럼 늘 바로 넣습니다.");
+    public static string QuickScopeAll => T("All text", "모든 텍스트");
+    public static string QuickScopeLinks => T("Only text with a link", "링크가 있는 것만");
+    public static string QuickScopeSites => T("Only links to these sites", "지정한 사이트의 링크만");
+    public static string QuickSitesHint => T("One site per line; subdomains count too (threads.com covers www.threads.com).",
+        "한 줄에 하나, 하위 도메인도 포함합니다(threads.com이면 www.threads.com도).");
+    public static string QuickSave => T("Save", "저장");
+    public static string QuickSaved => T("Saved.", "저장했습니다.");
+    public static string QuickSitesEmpty => T("Add at least one site, or pick another range.", "사이트를 하나 이상 적거나 다른 범위를 고르세요.");
+    public static string QuickLineHead => T("Quick receive from phones", "휴대폰 바로 받기");
+    public static string QuickLineScope(Services.Mobile.QuickScope scope, string? firstSite, int sites) => scope switch
+    {
+        Services.Mobile.QuickScope.All => T("all text", "모든 텍스트"),
+        Services.Mobile.QuickScope.Links => T("text with a link", "링크가 있는 것만"),
+        _ => sites <= 1 ? T($"only {firstSite}", $"지정한 사이트만 ({firstSite})")
+            : T($"only listed sites ({firstSite} and {sites - 1} more)", $"지정한 사이트만 ({firstSite} 외 {sites - 1})"),
+    };
+    public static string QuickLineArchiver(bool running) => running
+        ? T("Archiver running", "Archiver 실행 중")
+        : T("Archiver isn't running — Threads links received won't be downloaded", "Archiver가 꺼져 있어 받은 Threads 링크가 다운로드되지 않습니다");
+    public static string QuickLineToday(int n) => T($"today {n}", $"오늘 {n}건");
+    public static string QuickLineLast(DateTimeOffset at) => T($"last {at.ToLocalTime():HH:mm}", $"마지막 {at.ToLocalTime():HH:mm}");
     // ── Received files (DECISIONS M-64) ──────────────────────────────────────
     public static string FilesReceivedTitle(string from, int count, long bytes) => T(
         $"{count} file{(count == 1 ? "" : "s")} from {from} ({Size(bytes)})",
