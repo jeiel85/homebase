@@ -100,6 +100,14 @@ irm https://github.com/jeiel85/homebase/releases/latest/download/bootstrap.ps1 |
 
 > **chat ID를 모르나요?** 봇에게 아무 메시지나 보낸 뒤 `https://api.telegram.org/bot<봇토큰>/getUpdates`를 열어 `chat.id` 값을 확인하세요.
 
+### 로컬 AI 조언 (선택)
+
+Ollama를 설치한 뒤 Homebase **설정 → AI 조언**에서 준비합니다.
+
+1. 이미 받아 둔 모델이 있으면 **설치된 모델 선택**에서 고르고 **저장**합니다(Windows 관리자 승인 필요).
+2. 설치된 모델이 없으면 위에서 모델 이름(예: `qwen3.5:4b`, `exaone3.5:2.4b`)을 입력하고 **모델 받기**를 누릅니다. 앱 안에서 진행률을 확인하거나 취소할 수 있으며, 완료되면 목록이 자동 갱신됩니다.
+3. 모델을 저장하면 **조언 받기**로 현재 PC 상태에 대한 조언을 받을 수 있습니다. Qwen은 요청할 때 자동으로 불러오므로 따로 실행해 둘 필요가 없습니다.
+
 ### 직접 빌드
 
 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)가 필요합니다.

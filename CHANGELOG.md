@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.60.4 — Installed-model selection and in-app downloads
+
+### Changed
+- **Choose an installed model before asking for AI advice.** The picker only lists models Ollama has
+  downloaded. An unavailable configured model is explained above the picker, instead of appearing as the
+  selected installed model. Saving the choice applies it; advice is enabled when that model is ready.
+- **Download a first model inside Homebase.** When no model is installed, enter its name and download with
+  progress, cancellation, and errors shown in the app. A successful download refreshes the installed-model
+  list automatically. The setup checklist also downloads its configured model without opening a command prompt.
+
 ## v0.60.3 — Qwen 3.5 PC advice
 
 ### Fixed

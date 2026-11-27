@@ -35,8 +35,8 @@ internal static class LlmAdvisorConfigurator
 
     /// <summary>
     /// The picker's entries: the models the server has pulled, by name. The configured model is the pulled
-    /// one Ollama would load for it, so picking that entry is no change; when none is pulled it is listed
-    /// first, so the picker always shows what is in use.
+    /// one Ollama would load for it, so picking that entry is no change. Missing configured models
+    /// are described by the setup row, never offered as installed choices.
     /// </summary>
     public static ModelChoices ChoicesFor(string configured, IReadOnlyList<string> pulled)
     {
@@ -52,7 +52,6 @@ internal static class LlmAdvisorConfigurator
             string.Equals(m, loaded, StringComparison.OrdinalIgnoreCase)
             || string.Equals(m, configured, StringComparison.OrdinalIgnoreCase));
         if (match is not null) return new ModelChoices(models, match, CurrentPulled: true);
-        models.Insert(0, configured);
         return new ModelChoices(models, configured, CurrentPulled: false);
     }
 

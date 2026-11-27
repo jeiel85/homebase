@@ -385,14 +385,14 @@ public static class L
     public static string AiAutoApply => T("APPLY", "적용");
     public static string AiAutoSaved => T("Saved. The monitoring service is restarting to apply.", "저장했습니다. 감시 서비스가 다시 시작되며 적용됩니다.");
 
-    public static string AiModelHeader => T("CHANGE MODEL", "모델 바꾸기");
+    public static string AiModelHeader => T("CHOOSE AN INSTALLED MODEL", "설치된 모델 선택");
     public static string AiModelLabel => T("Model", "모델");
     public static string AiModelHint => T(
-        "Pick one of the models Ollama has on this PC. Smaller models answer faster. To add one, run ollama pull <name> in a command prompt (names at ollama.com/library, e.g. qwen2.5:3b), then press RE-CHECK above.",
-        "이 PC의 Ollama에 받아 둔 모델 중에서 고릅니다. 작은 모델일수록 빨리 답합니다. 목록에 없는 모델은 명령 프롬프트에서 ollama pull <이름>으로 받은 뒤(이름은 ollama.com/library, 예: qwen2.5:3b) 위의 '다시 확인'을 누르세요.");
+        "Choose a downloaded model and save to use it for advice. Smaller models use less memory. Only installed models appear here.",
+        "이미 받아 둔 모델을 고르고 저장하면 조언에 사용합니다. 작은 모델일수록 메모리를 적게 씁니다. 이 목록에는 설치된 모델만 표시됩니다.");
     public static string AiModelNone => T(
-        "Nothing to pick yet — start Ollama and pull a model above, then press RE-CHECK.",
-        "아직 고를 모델이 없습니다 — 위에서 Ollama를 시작하고 모델을 받은 뒤 '다시 확인'을 누르세요.");
+        "No installed models yet. Start Ollama if needed, then download a model above. This list refreshes when the download finishes.",
+        "아직 설치된 모델이 없습니다. 위에서 Ollama를 실행한 뒤 모델을 받으세요. 다운로드가 끝나면 이 목록에 자동으로 표시됩니다.");
     // Notes after a model name in the picker, for the entry that is the configured model.
     public static string AiModelInUse => T("· in use", "· 지금 사용 중");
     public static string AiModelSetNotPulled => T("· set, not pulled yet", "· 지금 설정 · 아직 받지 않음");
@@ -490,6 +490,22 @@ public static class L
     public static string SetupGetStarted => T("GET STARTED", "시작하기");
     public static string OllamaReady(string model) => T($"Ready — model '{model}' is installed.", $"준비됨 — '{model}' 모델이 설치되어 있습니다.");
     public static string OllamaModelMissing => T("Server is running, but the model isn't pulled yet:", "서버는 실행 중이지만 모델을 아직 받지 않았습니다:");
+    public static string OllamaChooseInstalled => T(
+        "The configured model isn't installed. Choose one of the installed models below and save.",
+        "현재 설정된 모델은 설치되지 않았습니다. 아래 설치된 모델 중에서 고른 뒤 저장하세요.");
+    public static string OllamaDownloadModel => T("Model to download", "받을 모델 이름");
+    public static string OllamaDownloadConfiguredHint => T(
+        "Download the configured model here. To choose another model, open Settings > AI advice.",
+        "설정된 모델을 여기서 받습니다. 다른 모델은 설정 > AI 조언에서 선택할 수 있습니다.");
+    public static string OllamaDownloadHint => T(
+        "Enter an Ollama model name, then download it here (for example qwen3.5:4b or exaone3.5:2.4b). Downloads can be several GB.",
+        "받을 모델 이름을 입력하세요(예: qwen3.5:4b, exaone3.5:2.4b). Homebase 안에서 다운로드하며, 모델에 따라 수 GB를 받을 수 있습니다.");
+    public static string OllamaDownloading => T("Downloading and checking model files…", "모델 파일을 다운로드·확인하는 중…");
+    public static string OllamaDownloadProgress(double percent, double completedMb, double totalMb) => T(
+        $"Downloading file: {percent:0}% · {completedMb:0} / {totalMb:0} MB",
+        $"파일 다운로드 중: {percent:0}% · {completedMb:0} / {totalMb:0} MB");
+    public static string OllamaDownloadDone => T("Downloaded. Select the installed model below and save.", "다운로드했습니다. 아래 설치된 모델을 선택한 뒤 저장하세요.");
+    public static string OllamaDownloadCancelled => T("Download cancelled. You can try again.", "다운로드를 취소했습니다. 다시 받을 수 있습니다.");
     public static string OllamaNotRunning => T("Installed but not running. Start it to enable AI advice.", "설치됐지만 실행 중이 아닙니다. 시작하면 AI 조언을 쓸 수 있습니다.");
     public static string OllamaNotInstalled => T("Not detected. Install Ollama to enable /advise and automatic health advice.", "찾지 못했습니다. Ollama를 설치하면 /advise와 자동 점검 조언을 쓸 수 있습니다.");
     public static string OllamaGet => T("Get Ollama", "Ollama 받기");

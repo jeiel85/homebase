@@ -33,11 +33,17 @@
               Click="Start_Click"/>
 
       <StackPanel x:Name="PullHint" Visibility="Collapsed" Margin="0,6,0,0">
-        <TextBlock x:Name="PullCommand" FontFamily="Consolas" FontSize="12"
-                   Foreground="{StaticResource Brush.Ink}" TextWrapping="Wrap" Text="ollama pull …"/>
-        <Button x:Name="PullButton" Style="{StaticResource Button.Amber}"
-                Content="{x:Static local:L.OllamaPull}" Margin="0,6,0,0" HorizontalAlignment="Left"
-                Click="Pull_Click"/>
+        <TextBlock x:Name="DownloadHintText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Text="{x:Static local:L.OllamaDownloadHint}"/>
+        <TextBox x:Name="PullModelText" FontFamily="Consolas" FontSize="12" Margin="0,6,0,0"
+                 AutomationProperties.Name="{x:Static local:L.OllamaDownloadModel}" TextChanged="PullModel_TextChanged"/>
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+          <Button x:Name="PullButton" Style="{StaticResource Button.Amber}"
+                  Content="{x:Static local:L.OllamaPull}" Click="Pull_Click"/>
+          <Button x:Name="CancelPullButton" Style="{StaticResource Button.Carbon}" Margin="8,0,0,0"
+                  Content="{x:Static local:L.Cancel}" Visibility="Collapsed" Click="CancelPull_Click"/>
+        </StackPanel>
+        <ProgressBar x:Name="PullProgressBar" Height="5" Margin="0,8,0,0" Minimum="0" Maximum="100" Visibility="Collapsed"/>
+        <TextBlock x:Name="PullStatusText" Style="{StaticResource Type.Micro}" TextWrapping="Wrap" Margin="0,5,0,0"/>
       </StackPanel>
     </StackPanel>
   </Grid>

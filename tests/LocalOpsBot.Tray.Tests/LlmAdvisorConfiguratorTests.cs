@@ -129,7 +129,7 @@ public sealed class LlmAdvisorConfiguratorTests
     {
         var c = LlmAdvisorConfigurator.ChoicesFor("llama3.2", ["llama3.2:1b"]);
 
-        Assert.Equal(new[] { "llama3.2", "llama3.2:1b" }, c.Models);
+        Assert.Equal(new[] { "llama3.2:1b" }, c.Models);
         Assert.Equal("llama3.2", c.Current);
         Assert.False(c.CurrentPulled);
     }
@@ -149,21 +149,21 @@ public sealed class LlmAdvisorConfiguratorTests
     });
 
     [Fact]
-    public void Lists_a_configured_model_that_is_not_pulled_first()
+    public void Missing_configured_models_are_not_offered_as_installed()
     {
         var c = LlmAdvisorConfigurator.ChoicesFor("llama3.2:1b", ["qwen2.5:3b"]);
 
-        Assert.Equal(new[] { "llama3.2:1b", "qwen2.5:3b" }, c.Models);
+        Assert.Equal(new[] { "qwen2.5:3b" }, c.Models);
         Assert.Equal("llama3.2:1b", c.Current);
         Assert.False(c.CurrentPulled);
     }
 
     [Fact]
-    public void Offers_only_the_configured_model_when_nothing_is_reported()
+    public void Offers_no_models_when_nothing_is_installed()
     {
         var c = LlmAdvisorConfigurator.ChoicesFor("llama3.2:1b", []);
 
-        Assert.Equal(new[] { "llama3.2:1b" }, c.Models);
+        Assert.Empty(c.Models);
         Assert.False(c.CurrentPulled);
     }
 
@@ -191,12 +191,15 @@ public sealed class LlmAdvisorConfiguratorTests
         Assert.Equal("", Picks(settings)[1].Note);
         Assert.Equal(Visibility.Collapsed, settings.AiModelNoneText.Visibility);
         Assert.False(settings.SaveModelButton.IsEnabled); // the model in use is no change
+        Assert.True(settings.AdviseButton.IsEnabled);
 
         // Picking another pulled model offers SAVE; picking the one in use again takes it back.
         settings.ModelPicker.SelectedIndex = 1;
         Assert.True(settings.SaveModelButton.IsEnabled);
+        Assert.False(settings.AdviseButton.IsEnabled); // save a changed choice before asking for advice
         settings.ModelPicker.SelectedIndex = 0;
         Assert.False(settings.SaveModelButton.IsEnabled);
+        Assert.True(settings.AdviseButton.IsEnabled);
         return Task.CompletedTask;
     });
 
@@ -211,6 +214,7 @@ public sealed class LlmAdvisorConfiguratorTests
 
         Assert.Equal("qwen2.5:3b", Picked(settings));
         Assert.True(settings.SaveModelButton.IsEnabled);
+        Assert.False(settings.AdviseButton.IsEnabled); // configured model is still missing until saved
         return Task.CompletedTask;
     });
 
@@ -250,8 +254,8 @@ public sealed class LlmAdvisorConfiguratorTests
         settings.OllamaPanel.Apply(Probe("llama3.2:1b"));
 
         Assert.False(settings.ModelPicker.IsEnabled);
-        Assert.Equal("llama3.2:1b", Picked(settings)); // still shows what is configured
-        Assert.Contains(L.AiModelSet, Picks(settings)[0].Note);
+        Assert.Null(Picked(settings));
+        Assert.Empty(Picks(settings));
         Assert.Equal(Visibility.Visible, settings.AiModelNoneText.Visibility);
         Assert.False(settings.SaveModelButton.IsEnabled);
         return Task.CompletedTask;
@@ -266,9 +270,9 @@ public sealed class LlmAdvisorConfiguratorTests
             OllamaReadiness.ModelMissing, "llama3.2:1b", "http://127.0.0.1:11434", null, ["qwen2.5:3b"]));
 
         Assert.True(settings.ModelPicker.IsEnabled);
-        Assert.Equal(new[] { "llama3.2:1b", "qwen2.5:3b" }, Picks(settings).Select(p => p.Name));
-        Assert.Contains(L.AiModelSetNotPulled, Picks(settings)[0].Note);
-        Assert.Equal("llama3.2:1b", Picked(settings));
+        Assert.Equal(new[] { "qwen2.5:3b" }, Picks(settings).Select(p => p.Name));
+        Assert.Equal("qwen2.5:3b", Picked(settings));
+        Assert.True(settings.SaveModelButton.IsEnabled);
         return Task.CompletedTask;
     });
 

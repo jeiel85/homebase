@@ -45,12 +45,36 @@ public sealed class OllamaSetupPanelTests
         panel.Apply(new OllamaProbe(OllamaReadiness.ModelMissing, "llama3.2:1b", Endpoint, null));
 
         Assert.Equal(Visibility.Visible, panel.PullHint.Visibility);
-        Assert.Equal("ollama pull llama3.2:1b", panel.PullCommand.Text);
+        Assert.Equal("llama3.2:1b", panel.PullModelText.Text);
+        Assert.False(panel.PullModelText.IsReadOnly);
         Assert.True(panel.PullButton.IsEnabled);
         Assert.Equal(Visibility.Collapsed, panel.StartButton.Visibility);
         Assert.Equal(Visibility.Collapsed, panel.InstallHint.Visibility);
         Assert.Equal(Visibility.Visible, panel.ConfigText.Visibility);
         Assert.Equal(L.OllamaConfig("llama3.2:1b", Endpoint), panel.ConfigText.Text);
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task Installed_models_offer_selection_instead_of_an_unneeded_download() => Wpf.Run(() =>
+    {
+        var panel = new OllamaSetupPanel { ShowConfig = true };
+        panel.Apply(new OllamaProbe(OllamaReadiness.ModelMissing, "llama3.2:1b", Endpoint, null, ["qwen3.5:4b"]));
+
+        Assert.Equal(L.OllamaChooseInstalled, panel.StatusText.Text);
+        Assert.Equal(Visibility.Collapsed, panel.PullHint.Visibility);
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task Download_accepts_a_valid_model_name_and_rejects_an_invalid_one() => Wpf.Run(() =>
+    {
+        var panel = new OllamaSetupPanel { ShowConfig = true };
+        panel.Apply(new OllamaProbe(OllamaReadiness.ModelMissing, "llama3.2:1b", Endpoint, null, []));
+        panel.PullModelText.Text = "qwen3.5:4b";
+        Assert.True(panel.PullButton.IsEnabled);
+        panel.PullModelText.Text = "x & calc";
+        Assert.False(panel.PullButton.IsEnabled);
         return Task.CompletedTask;
     });
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -21,10 +22,12 @@ public partial class OllamaSetupPanel : UserControl
     private Task? _probe;
     private string _model = "llama3.2:1b";
     private string _endpoint = "";
+    private CancellationTokenSource? _pullCancellation;
 
     public OllamaSetupPanel()
     {
         InitializeComponent();
+        Unloaded += (_, _) => _pullCancellation?.Cancel();
     }
 
     /// <summary>The row's heading (the checklist's "AI advice (Ollama)" by default).</summary>
@@ -80,6 +83,8 @@ public partial class OllamaSetupPanel : UserControl
 
     internal void Apply(OllamaProbe p)
     {
+        if (string.IsNullOrWhiteSpace(PullModelText.Text) || PullModelText.Text == _model)
+            PullModelText.Text = p.Model;
         _model = p.Model;
         _endpoint = p.Endpoint;
         InstallHint.Visibility = Visibility.Collapsed;
@@ -97,10 +102,13 @@ public partial class OllamaSetupPanel : UserControl
                 break;
             case OllamaReadiness.ModelMissing:
                 SetChip("Brush.StatusWarn", L.ChipSetup);
-                StatusText.Text = L.OllamaModelMissing;
-                PullCommand.Text = $"ollama pull {p.Model}";
-                PullHint.Visibility = Visibility.Visible;
-                PullButton.IsEnabled = OllamaSetup.IsValidModelName(p.Model);
+                StatusText.Text = ShowConfig && p.Installed.Count > 0
+                    ? L.OllamaChooseInstalled : L.OllamaModelMissing;
+                PullHint.Visibility = !ShowConfig || p.Installed.Count == 0 || _pullCancellation is not null
+                    ? Visibility.Visible : Visibility.Collapsed;
+                PullModelText.IsReadOnly = !ShowConfig;
+                DownloadHintText.Text = ShowConfig ? L.OllamaDownloadHint : L.OllamaDownloadConfiguredHint;
+                UpdatePullButton();
                 break;
             default: // Unreachable
                 SetChip("Brush.Hairline", L.ChipOptional);
@@ -117,6 +125,7 @@ public partial class OllamaSetupPanel : UserControl
                 }
                 break;
         }
+        if (_pullCancellation is not null) PullHint.Visibility = Visibility.Visible;
         Probed?.Invoke(p);
     }
 
@@ -126,25 +135,67 @@ public partial class OllamaSetupPanel : UserControl
         StateChipText.Text = label;
     }
 
-    private void Pull_Click(object sender, RoutedEventArgs e)
+    private void PullModel_TextChanged(object sender, TextChangedEventArgs e) => UpdatePullButton();
+
+    private void UpdatePullButton()
     {
-        if (!OllamaSetup.IsValidModelName(_model))
+        if (PullButton is not null)
+            PullButton.IsEnabled = _pullCancellation is null && OllamaSetup.IsValidModelName(PullModelText.Text.Trim());
+    }
+
+    private void CancelPull_Click(object sender, RoutedEventArgs e) => _pullCancellation?.Cancel();
+
+    private async void Pull_Click(object sender, RoutedEventArgs e) => await DownloadAsync();
+
+    internal async Task DownloadAsync()
+    {
+        if (_pullCancellation is not null) return;
+        var model = PullModelText.Text.Trim();
+        if (!OllamaSetup.IsValidModelName(model))
         {
             StatusText.Text = L.OllamaBadModel;
             return;
         }
+        using var cancellation = new CancellationTokenSource();
+        _pullCancellation = cancellation;
+        UpdatePullButton();
+        PullModelText.IsEnabled = false;
+        CancelPullButton.Visibility = Visibility.Visible;
+        PullProgressBar.Visibility = Visibility.Visible;
+        PullProgressBar.IsIndeterminate = true;
+        PullStatusText.Text = L.OllamaDownloading;
         try
         {
-            // Open a console running the pull so the user can watch download progress; ollama is
-            // a user-level CLI, so this needs no elevation.
-            Process.Start(new ProcessStartInfo("cmd.exe", $"/k ollama pull {_model}")
+            using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+            var progress = new Progress<OllamaPullProgress>(p =>
             {
-                UseShellExecute = true
+                if (_pullCancellation != cancellation) return;
+                PullProgressBar.IsIndeterminate = p.Total <= 0;
+                PullProgressBar.Value = p.Total > 0 ? Math.Clamp(100d * p.Completed / p.Total, 0, 100) : 0;
+                PullStatusText.Text = p.Total > 0
+                    ? L.OllamaDownloadProgress(PullProgressBar.Value, p.Completed / 1_000_000d, p.Total / 1_000_000d)
+                    : L.OllamaDownloading;
             });
+            await new OllamaModelDownloader(http).PullAsync(_endpoint, model, progress, cancellation.Token);
+            _pullCancellation = null; // queued progress must not overwrite the completed state
+            PullStatusText.Text = L.OllamaDownloadDone;
+            await RefreshAfterChangeAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            PullStatusText.Text = L.OllamaDownloadCancelled;
         }
         catch (Exception ex)
         {
-            StatusText.Text = L.OllamaPullFailed(ex.Message);
+            PullStatusText.Text = L.OllamaPullFailed(ex.Message);
+        }
+        finally
+        {
+            _pullCancellation = null;
+            PullModelText.IsEnabled = true;
+            CancelPullButton.Visibility = Visibility.Collapsed;
+            PullProgressBar.Visibility = Visibility.Collapsed;
+            UpdatePullButton();
         }
     }
 

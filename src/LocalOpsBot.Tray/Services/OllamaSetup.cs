@@ -27,8 +27,7 @@ internal static class OllamaSetup
 
     /// <summary>
     /// A model name built only from the characters Ollama uses (<c>llama3.2:1b</c>, <c>user/model:tag</c>).
-    /// The pull command goes through <c>cmd.exe</c> and the name is written to the Agent config, so a
-    /// name like this can't carry shell metacharacters or pass itself off as a command-line option.
+    /// Shared by the model download input and the Agent config writer.
     /// </summary>
     public static bool IsValidModelName(string? model) =>
         !string.IsNullOrEmpty(model)

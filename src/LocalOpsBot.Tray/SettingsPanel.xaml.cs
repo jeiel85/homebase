@@ -34,6 +34,8 @@ public partial class SettingsPanel : UserControl
     private bool _loaded;
     private string? _aiCurrent; // the picker entry that is the model in use; null before the first probe
     private bool _savingModel;
+    private bool _aiReady;
+    private bool _askingAdvice;
 
     public SettingsPanel()
     {
@@ -95,6 +97,7 @@ public partial class SettingsPanel : UserControl
         ChatIdInput.Clear();
         // An unsaved pick is forgotten; the next probe fills the picker in again.
         _aiCurrent = null;
+        _aiReady = false;
         ModelPicker.ItemsSource = null;
         ModelPicker.IsEnabled = false;
         AiModelNoneText.Visibility = Visibility.Collapsed;
@@ -459,7 +462,8 @@ public partial class SettingsPanel : UserControl
             SetResult(AdviceStatusText, L.AiAskNoAgent, false);
             return;
         }
-        AdviseButton.IsEnabled = false;
+        _askingAdvice = true;
+        UpdateAdviceAvailability();
         SetResult(AdviceStatusText, L.AiAskWorking, null);
         try
         {
@@ -490,7 +494,8 @@ public partial class SettingsPanel : UserControl
         }
         finally
         {
-            AdviseButton.IsEnabled = true;
+            _askingAdvice = false;
+            UpdateAdviceAvailability();
         }
     }
 
@@ -518,17 +523,16 @@ public partial class SettingsPanel : UserControl
     {
         var pending = PickedModel() is { } picked && !SameModel(picked, _aiCurrent) ? picked : null;
         var choices = LlmAdvisorConfigurator.ChoicesFor(p.Model, p.Installed);
-        var currentNote = choices.CurrentPulled ? L.AiModelInUse
-            : p.Status == OllamaReadiness.Unreachable ? L.AiModelSet
-            : L.AiModelSetNotPulled;
         var picks = choices.Models
-            .Select(m => new ModelPick(m, SameModel(m, choices.Current) ? "  " + currentNote : ""))
+            .Select(m => new ModelPick(m, SameModel(m, choices.Current) ? "  " + L.AiModelInUse : ""))
             .ToList();
 
         _aiCurrent = choices.Current;
+        _aiReady = p.Status == OllamaReadiness.Ready && choices.CurrentPulled;
         ModelPicker.ItemsSource = picks;
         ModelPicker.SelectedItem = picks.FirstOrDefault(m => SameModel(m.Name, pending))
-            ?? picks.First(m => SameModel(m.Name, choices.Current));
+            ?? picks.FirstOrDefault(m => SameModel(m.Name, choices.Current))
+            ?? picks.FirstOrDefault();
         ModelPicker.IsEnabled = p.Installed.Count > 0;
         AiModelNoneText.Visibility = p.Installed.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
         UpdateModelSave();
@@ -542,8 +546,15 @@ public partial class SettingsPanel : UserControl
     private static bool SameModel(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     // SAVE is offered only for a pick that isn't the model already in use, and not while a save runs.
-    private void UpdateModelSave() =>
+    private void UpdateModelSave()
+    {
         SaveModelButton.IsEnabled = !_savingModel && PickedModel() is { } m && !SameModel(m, _aiCurrent);
+        UpdateAdviceAvailability();
+    }
+
+    private void UpdateAdviceAvailability() =>
+        AdviseButton.IsEnabled = _aiReady && !_askingAdvice && !_savingModel
+            && PickedModel() is { } picked && SameModel(picked, _aiCurrent);
 
     private async void SaveModel_Click(object sender, RoutedEventArgs e)
     {
