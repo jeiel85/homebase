@@ -14,6 +14,18 @@ internal static class Wpf
     public static readonly string DataDir = Path.Combine(Path.GetTempPath(), "homebase-tray-tests-" + Environment.ProcessId);
 
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Before any test: TrayLog fixes its path the first time anything logs, so a test that logs without the UI thread
+    /// (held clips, quick range) would otherwise pin it to the machine's real %ProgramData% — and TrayLog's own tests,
+    /// reading this folder, would fail depending on the order tests ran in.
+    /// </summary>
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void KeepLogsInTheTestFolder()
+    {
+        Directory.CreateDirectory(DataDir);
+        Environment.SetEnvironmentVariable("ProgramData", DataDir);
+    }
     private static readonly Lazy<Dispatcher> Ui = new(Start);
 
     /// <summary>Runs <paramref name="body"/> on the UI thread; fails instead of hanging when it never ends.</summary>

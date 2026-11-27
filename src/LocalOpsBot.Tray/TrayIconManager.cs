@@ -323,9 +323,29 @@ public sealed class TrayIconManager : IDisposable
             HeldNotice.NotKeptSensitive => L.QuickHeldSensitiveBody,
             _ => L.QuickHeldNotKeptBody(clip.Text.Length),
         };
+        // Without toasts the balloon does the button's work: a click puts the whole held text on the clipboard (history
+        // keeps only its first 2,000 characters), or shows history once it has expired.
         if (!ReceivedToast.ShowHeld(title, body, notice == HeldNotice.CopyButton ? id : null))
-            ShowBalloon(Clip(title, 63), Clip(body, 255), notice == HeldNotice.CopyButton ? () => ShowClipboardHistory(received: true) : null);
+            ShowBalloon(Clip(title, 63), Clip(body, 255), notice == HeldNotice.CopyButton ? () => _ = CopyHeldAsync(id) : null);
         return heldOutcome;
+    }
+
+    /// <summary>A click on the held-text balloon: the text from the held store onto the clipboard, as the toast's button does.</summary>
+    private async Task CopyHeldAsync(string id)
+    {
+        var held = await Task.Run(() => HeldClips.Take(id, DateTimeOffset.UtcNow));
+        if (held is null)
+        {
+            ShowClipboardHistory(received: true);
+            return;
+        }
+        var ok = await ClipboardShare.PutAsync(held.Text, sensitive: false);
+        TrayLog.Info("Clipboard", ok ? $"Held text ({held.Text.Length} chars) put on the clipboard from its balloon"
+            : "Held text couldn't be put on the clipboard (busy)");
+        if (ok) return;
+        if (!await Task.Run(() => HeldClips.Put(held, DateTimeOffset.UtcNow)))
+            TrayLog.Warn("Clipboard", "Held text couldn't be put back after a busy clipboard");
+        ShowBalloon(L.ClipReceiveFailedTitle, L.ClipBusy, () => _ = CopyHeldAsync(id));
     }
 
     /// <summary>
