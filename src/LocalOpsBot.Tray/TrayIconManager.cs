@@ -235,31 +235,97 @@ public sealed class TrayIconManager : IDisposable
     /// The result goes back to the sender, which says "busy, send again" when it is false. The balloon never shows
     /// the text — Windows keeps balloons in its notification list, where anyone at the PC could read it.
     /// </summary>
-    private Task<bool> OnClipReceivedAsync(LocalOpsBot.Core.Mobile.TrayClip clip)
+    private Task<LocalOpsBot.Core.Mobile.TrayClipOutcome> OnClipReceivedAsync(LocalOpsBot.Core.Mobile.TrayClip clip)
     {
+        // When the tray got it: quick text that waits too long here is not pasted after the Agent gave up on the answer.
+        var received = DateTimeOffset.UtcNow;
         var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || _disposed) return Task.FromResult(false);
+        if (dispatcher is null || _disposed) return Task.FromResult(LocalOpsBot.Core.Mobile.TrayClipOutcome.NotPasted);
         return dispatcher.InvokeAsync(async () =>
         {
-            if (_disposed) return false;
+            if (_disposed) return LocalOpsBot.Core.Mobile.TrayClipOutcome.NotPasted;
             var from = DeviceNames.Show(clip.SourceKind, clip.Source);
-            bool ok;
-            try { ok = await ClipboardShare.PutAsync(clip.Text, clip.Sensitive); }
-            catch (Exception ex)
-            {
-                // A clipboard failure must not reach the bridge loop: it is reported as "not pasted".
-                TrayLog.Warn("Clipboard", $"Putting text from {from} on the clipboard failed: {ex.GetType().Name}");
-                ok = false;
-            }
-            TrayLog.Info("Clipboard", ok
-                ? $"Text from {from} ({clip.Text.Length} chars{(clip.Sensitive ? ", sensitive" : "")}) put on the clipboard"
-                : $"Text from {from} could not be put on the clipboard (busy)");
+            if (clip.Quick == true) return await OnQuickClipAsync(clip, from, received);
+            var ok = await PutReceivedAsync(clip.Text, clip, from);
             // Clicked, it opens what was received in the notification center (text not taken is not kept there).
             ShowBalloon(ok ? L.ClipReceivedTitle : L.ClipReceiveFailedTitle,
                 ok ? L.ClipReceivedBody(from, clip.Text.Length) : L.ClipReceiveFailedBody(from),
                 ok ? () => ShowClipboardHistory(received: true) : null);
-            return ok;
+            return ok ? LocalOpsBot.Core.Mobile.TrayClipOutcome.Pasted : LocalOpsBot.Core.Mobile.TrayClipOutcome.NotPasted;
         }).Task.Unwrap();
+    }
+
+    private static async Task<bool> PutReceivedAsync(string text, LocalOpsBot.Core.Mobile.TrayClip clip, string from)
+    {
+        bool ok;
+        try { ok = await ClipboardShare.PutAsync(text, clip.Sensitive); }
+        catch (Exception ex)
+        {
+            // A clipboard failure must not reach the bridge loop: it is reported as "not pasted".
+            TrayLog.Warn("Clipboard", $"Putting text from {from} on the clipboard failed: {ex.GetType().Name}");
+            ok = false;
+        }
+        TrayLog.Info("Clipboard", ok
+            ? $"Text from {from} ({text.Length} chars{(clip.Sensitive ? ", sensitive" : "")}{(clip.Quick == true ? ", quick" : "")}) put on the clipboard"
+            : $"Text from {from} could not be put on the clipboard (busy)");
+        return ok;
+    }
+
+    private readonly QuickPacer _quickPacer = new();
+
+    /// <summary>
+    /// Quick text (M-78) — a phone sent it from a PC shortcut without its share screen. Within this user's quick-receive range
+    /// it goes onto the clipboard — for the link ranges only the link itself, never the text around it — one at a time a
+    /// second apart (Threads Archiver looks every 0.5 s), and not at all once it has waited past the Agent's deadline.
+    /// Otherwise it is held behind a toast whose click copies it; text the store can't keep is refused so the phone sends it
+    /// again. A Threads link also says whether Threads Archiver runs; on the clipboard with the Archiver running, Homebase
+    /// stays quiet (the Archiver shows its own notice). The settings, the Archiver check and the store run off the UI thread;
+    /// the toasts and balloons never show the text, only the sender and its length.
+    /// </summary>
+    private async Task<LocalOpsBot.Core.Mobile.TrayClipOutcome> OnQuickClipAsync(LocalOpsBot.Core.Mobile.TrayClip clip, string from,
+        DateTimeOffset received)
+    {
+        var (prefs, archiver) = await Task.Run(() =>
+        {
+            var prefs = QuickClipSettings.Load();
+            return (prefs, QuickClipRange.HasThreadsLink(clip.Text) ? ArchiverProbe.State() : null);
+        });
+
+        if (QuickClipRange.Pick(clip.Text, prefs) is { } paste)
+        {
+            var (ok, late) = await _quickPacer.RunBeforeAsync(received, () => PutReceivedAsync(paste, clip, from));
+            if (late) TrayLog.Warn("Clipboard", $"Quick text from {from} waited too long here; not pasted (the phone was told to send again)");
+            var (outcome, warn) = QuickClipDecision.Pasted(ok, archiver);
+            if (!ok) return outcome;
+            QuickClipStats.Record(DateTimeOffset.UtcNow);
+            if (warn)
+            {
+                if (!ReceivedToast.ShowNotice(L.QuickArchiverStoppedTitle, L.QuickArchiverStoppedBody(from), "clip"))
+                    ShowBalloon(L.QuickArchiverStoppedTitle, L.QuickArchiverStoppedBody(from), () => ShowClipboardHistory(received: true));
+            }
+            else if (archiver is null)
+            {
+                ShowBalloon(L.ClipReceivedTitle, L.ClipReceivedBody(from, paste.Length), () => ShowClipboardHistory(received: true));
+            }
+            return outcome;
+        }
+
+        // Out of range: the clipboard stays as it is. Private text is not kept anywhere (as M-70 keeps it out of history).
+        var id = LocalOpsBot.Core.Mobile.ClipProtocol.NewId();
+        var stored = !clip.Sensitive && await Task.Run(() => HeldClips.Add(id, clip.Text, from, DateTimeOffset.UtcNow));
+        var (heldOutcome, notice) = QuickClipDecision.Held(clip.Sensitive, stored, archiver);
+        if (heldOutcome.Ok) QuickClipStats.Record(DateTimeOffset.UtcNow);
+        TrayLog.Info("Clipboard", $"Quick text from {from} ({clip.Text.Length} chars) outside the {prefs.Scope} range: {notice}");
+        var title = L.QuickHeldTitle(from);
+        var body = notice switch
+        {
+            HeldNotice.CopyButton => L.QuickHeldBody(clip.Text.Length),
+            HeldNotice.NotKeptSensitive => L.QuickHeldSensitiveBody,
+            _ => L.QuickHeldNotKeptBody(clip.Text.Length),
+        };
+        if (!ReceivedToast.ShowHeld(title, body, notice == HeldNotice.CopyButton ? id : null))
+            ShowBalloon(Clip(title, 63), Clip(body, 255), notice == HeldNotice.CopyButton ? () => ShowClipboardHistory(received: true) : null);
+        return heldOutcome;
     }
 
     /// <summary>

@@ -28,7 +28,7 @@ internal static class MobileHost
     /// Puts text another device sent on the clipboard and says whether it did (DECISIONS M-62). Static so the tray
     /// icon can set it at startup, before the client exists. Called on a background thread.
     /// </summary>
-    public static Func<LocalOpsBot.Core.Mobile.TrayClip, Task<bool>>? ClipHandler { get; set; }
+    public static Func<LocalOpsBot.Core.Mobile.TrayClip, Task<LocalOpsBot.Core.Mobile.TrayClipOutcome>>? ClipHandler { get; set; }
 
     /// <summary>Saves files another device sent (DECISIONS M-64). Static for the same reason. Background thread.</summary>
     public static Func<LocalOpsBot.Core.Mobile.TrayTransfer, Task<LocalOpsBot.Core.Mobile.TrayTransferSaved>>? FilesHandler { get; set; }
@@ -59,7 +59,7 @@ internal static class MobileHost
         _client = new MobileBridgeClient(claude);
         _client.WatchingChanged += on => WatchingChanged?.Invoke(on);
         _client.ToastRequested += t => ToastRequested?.Invoke(t);
-        _client.ClipHandler = c => ClipHandler is { } handler ? handler(c) : Task.FromResult(false);
+        _client.ClipHandler = c => ClipHandler is { } handler ? handler(c) : Task.FromResult(LocalOpsBot.Core.Mobile.TrayClipOutcome.NotPasted);
         _client.FilesProgressReceived += p => FilesProgress?.Invoke(p);
         _client.CommandHandler = c => CommandHandler is { } run ? run(c) : Task.FromResult(false);
         _client.RestartNotice += (at, by) => RestartNotice?.Invoke(at, by);

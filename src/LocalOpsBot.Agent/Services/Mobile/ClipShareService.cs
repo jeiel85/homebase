@@ -22,6 +22,20 @@ public enum ClipAcceptOutcome
 }
 
 /// <summary>
+/// What <see cref="ClipShareService.ReceiveAsync"/> did: the outcome, the phones it was passed on to (M-67), and for quick
+/// text (M-78) what the Tray did with it — on the clipboard or held behind a toast, and whether Threads Archiver runs.
+/// </summary>
+public sealed record ClipReceipt(ClipAcceptOutcome Outcome, IReadOnlyList<ClipForwardOutcome>? Forwarded = null,
+    TrayClipOutcome? Quick = null)
+{
+    public void Deconstruct(out ClipAcceptOutcome outcome, out IReadOnlyList<ClipForwardOutcome>? forwarded)
+    {
+        outcome = Outcome;
+        forwarded = Forwarded;
+    }
+}
+
+/// <summary>
 /// Clipboard text sent by hand between paired devices (DECISIONS M-62, <c>docs/CLIPBOARD_SHARE.md</c> phase 1).
 /// <list type="bullet">
 /// <item><b>Keys</b>: each device agrees one with this PC by ECDH (<c>POST /api/v1/clip/key</c>); this PC agrees
@@ -43,9 +57,10 @@ public sealed class ClipShareService
 
     /// <summary>
     /// Hands text to the connected Trays and waits for their answer: null — no Tray takes clipboard text (nobody
-    /// signed in); true — one put it on the clipboard; false — none could, or none answered in time.
+    /// signed in); <c>Ok</c> — one took it (put it on the clipboard, or for quick text held it, M-78); not <c>Ok</c> —
+    /// none could, or none answered in time.
     /// </summary>
-    public delegate Task<bool?> TrayDelivery(TrayClip clip, CancellationToken ct);
+    public delegate Task<TrayClipOutcome?> TrayDelivery(TrayClip clip, CancellationToken ct);
 
     /// <summary>How long a message id is remembered, so a retry over another path is not pasted twice.</summary>
     internal static readonly TimeSpan SeenFor = TimeSpan.FromMinutes(30);
@@ -63,6 +78,8 @@ public sealed class ClipShareService
     private readonly INotificationHistoryStore? _history;
     private readonly object _gate = new();
     private readonly Dictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
+    /// <summary>What the Tray did with quick text already taken (M-78), so the same message again gets the same answer.</summary>
+    private readonly Dictionary<string, TrayClipOutcome> _quickSeen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Offer> _offers = new(StringComparer.Ordinal);
 
     // From: the phone that sent it through this PC (M-67), handed back with the text like the push carries it.
@@ -105,18 +122,22 @@ public sealed class ClipShareService
     /// (M-67) — on to those phones instead, sealed with each one's key and carrying the sender's name. Then
     /// <c>Forwarded</c> has one outcome per phone asked.
     /// </summary>
-    public async Task<(ClipAcceptOutcome Outcome, IReadOnlyList<ClipForwardOutcome>? Forwarded)> ReceiveAsync(MobileDeviceInfo device,
-        ClipEnvelope? envelope, CancellationToken ct)
+    public async Task<ClipReceipt> ReceiveAsync(MobileDeviceInfo device, ClipEnvelope? envelope, CancellationToken ct)
     {
-        if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return (ClipAcceptOutcome.KeyNeeded, null);
+        if (_keys.Get(ClipTargetKeys.Device(device.DeviceId)) is not { } key) return new(ClipAcceptOutcome.KeyNeeded);
         var content = ClipMessages.Open(key, envelope);
-        if (content?.Text is not { } text) return (ClipAcceptOutcome.Invalid, null);
+        if (content?.Text is not { } text) return new(ClipAcceptOutcome.Invalid);
+        var quick = content.Quick == true;
+        // Quick text (M-78) is a phone's, for this PC's own clipboard: never from a linked PC, never passed on.
+        if (quick && (DeviceKind.Normalize(device.Kind) != DeviceKind.Phone || content.To is not null)) return new(ClipAcceptOutcome.Invalid);
 
         var seenKey = device.DeviceId + ":" + envelope!.Id;
         lock (_gate)
         {
             Prune(_time.GetUtcNow());
-            if (_seen.ContainsKey(seenKey)) return (ClipAcceptOutcome.Accepted, content.To is null ? null : Array.Empty<ClipForwardOutcome>());
+            if (_seen.ContainsKey(seenKey))
+                return new(ClipAcceptOutcome.Accepted, content.To is null ? null : Array.Empty<ClipForwardOutcome>(),
+                    quick ? _quickSeen.GetValueOrDefault(seenKey, new TrayClipOutcome(true, false)) : null);
         }
 
         if (content.To is { Count: > 0 } to)
@@ -124,37 +145,47 @@ public sealed class ClipShareService
             var forwarded = await ForwardAsync(device, content, to, ct);
             // Remembered only when it reached someone: a sender trying again after a total failure tries again here too.
             if (forwarded.Any(f => f.Ok)) Seen(seenKey);
-            return (ClipAcceptOutcome.Accepted, forwarded);
+            return new(ClipAcceptOutcome.Accepted, forwarded);
         }
 
         var sensitive = content.Sensitive == true;
-        var written = Tray is { } tray ? await tray(new TrayClip(text, device.Name, device.Kind, sensitive), ct) : null;
-        if (written is null)
+        var taken = Tray is { } tray ? await tray(new TrayClip(text, device.Name, device.Kind, sensitive, quick ? true : null), ct) : null;
+        if (taken is null)
         {
             _logger.LogInformation("Clipboard text from {Name} not taken: no Tray is connected (nobody signed in).", device.Name);
-            return (ClipAcceptOutcome.NoUserSession, null);
+            return new(ClipAcceptOutcome.NoUserSession);
         }
-        if (written == false)
+        if (!taken.Ok)
         {
             // Not remembered: the sender may try the same message again.
             _logger.LogWarning("Clipboard text from {Name} could not be put on the clipboard (busy or no answer).", device.Name);
-            return (ClipAcceptOutcome.ClipboardBusy, null);
+            return new(ClipAcceptOutcome.ClipboardBusy);
         }
-        Seen(seenKey);
-        _logger.LogInformation("Clipboard text from {Name} ({Chars} chars{Sensitive}) put on the clipboard.",
-            device.Name, text.Length, sensitive ? ", sensitive" : "");
+        // Held (M-78): quick text outside this PC's quick-receive range, taken but kept off the clipboard behind a toast.
+        var held = quick && taken.Held == true;
+        var answer = quick ? new TrayClipOutcome(true, held, taken.Archiver) : null;
+        Seen(seenKey, answer);
+        _logger.LogInformation("Clipboard text from {Name} ({Chars} chars{Sensitive}{Quick}) {Where}.",
+            device.Name, text.Length, sensitive ? ", sensitive" : "", quick ? ", quick" : "",
+            held ? "held off the clipboard (outside the quick-receive range)" : "put on the clipboard");
         await RecordAsync(new DeviceNotificationRecord($"clip-in-{envelope.Id}", device.DeviceId, device.Name, device.Kind,
-            ClipHistory.Received, ClipHistory.Title(text.Length, sensitive), ClipHistory.Body(text, sensitive), content.Ts, _time.GetUtcNow()));
-        return (ClipAcceptOutcome.Accepted, null);
+            ClipHistory.Received, ClipHistory.Title(text.Length, sensitive, held ? ClipHistory.HeldOutcome : null),
+            ClipHistory.Body(text, sensitive), content.Ts, _time.GetUtcNow()));
+        return new(ClipAcceptOutcome.Accepted, null, answer);
     }
 
-    private void Seen(string seenKey)
+    private void Seen(string seenKey, TrayClipOutcome? quick = null)
     {
         lock (_gate)
         {
             _seen[seenKey] = _time.GetUtcNow();
+            if (quick is not null) _quickSeen[seenKey] = quick;
             if (_seen.Count > MaxSeen)
-                foreach (var old in _seen.OrderBy(p => p.Value).Take(_seen.Count - MaxSeen).Select(p => p.Key).ToList()) _seen.Remove(old);
+                foreach (var old in _seen.OrderBy(p => p.Value).Take(_seen.Count - MaxSeen).Select(p => p.Key).ToList())
+                {
+                    _seen.Remove(old);
+                    _quickSeen.Remove(old);
+                }
         }
     }
 
@@ -426,6 +457,10 @@ public sealed class ClipShareService
     private void Prune(DateTimeOffset now)
     {
         foreach (var gone in _offers.Where(p => p.Value.Expires <= now).Select(p => p.Key).ToList()) _offers.Remove(gone);
-        foreach (var old in _seen.Where(p => now - p.Value > SeenFor).Select(p => p.Key).ToList()) _seen.Remove(old);
+        foreach (var old in _seen.Where(p => now - p.Value > SeenFor).Select(p => p.Key).ToList())
+        {
+            _seen.Remove(old);
+            _quickSeen.Remove(old);
+        }
     }
 }

@@ -207,9 +207,12 @@ public sealed record ClipPushEnvelope(int Schema, string Kind, string PcId, stri
 /// clipboard, so the receiver keeps it out of clipboard history and previews.
 /// <see cref="To"/> (phone → PC only, M-67): other phones of that PC to pass it on to, instead of this PC's clipboard.
 /// <see cref="From"/> (PC → phone only): the phone it came from, when this PC passed it on.
+/// <see cref="Quick"/> (phone → PC only, M-78): sent from a PC shortcut without the share screen, so the receiving PC
+/// puts it on the clipboard only when it is within that PC's quick-receive range (<c>docs/QUICK_SEND.md</c>). Left out
+/// when false; an older PC ignores it and pastes as before.
 /// </summary>
 public sealed record ClipContent(int Schema, string? Text, int Chars, DateTimeOffset Ts, bool? Sensitive = null,
-    IReadOnlyList<string>? To = null, string? From = null);
+    IReadOnlyList<string>? To = null, string? From = null, bool? Quick = null);
 
 public static class ClipMessages
 {
@@ -255,11 +258,34 @@ public static class ClipMessages
 /// <summary>
 /// Bridge op payload <c>clip.set</c>: text another device sent, for the Tray to put on the clipboard. The Tray answers
 /// <c>clip.done {id, ok}</c> with the frame's <c>id</c> once it has (or could not), so the sender hears the truth.
+/// <see cref="Quick"/> (M-78): a phone sent it from a PC shortcut without the share screen — the Tray pastes it only
+/// when it is within this user's quick-receive range, and otherwise holds it behind a toast.
 /// </summary>
-public sealed record TrayClip(string Text, string Source, string SourceKind, bool Sensitive);
+public sealed record TrayClip(string Text, string Source, string SourceKind, bool Sensitive, bool? Quick = null);
 
-/// <summary>Bridge op payload <c>clip.done</c>: whether the Tray put <c>clip.set</c> <see cref="Id"/> on the clipboard.</summary>
-public sealed record TrayClipDone(string Id, bool Ok);
+/// <summary>
+/// Bridge op payload <c>clip.done</c>: whether the Tray put <c>clip.set</c> <see cref="Id"/> on the clipboard. For a quick
+/// one (M-78), <see cref="Held"/> says it was taken but kept off the clipboard (out of range), and <see cref="Archiver"/>
+/// (<see cref="ClipArchiver"/>) whether Threads Archiver runs, when the text has a Threads link.
+/// </summary>
+public sealed record TrayClipDone(string Id, bool Ok, bool? Held = null, string? Archiver = null);
+
+/// <summary>What the Tray did with one <see cref="TrayClip"/>: <see cref="TrayClipDone"/> without the frame id.</summary>
+public sealed record TrayClipOutcome(bool Ok, bool? Held = null, string? Archiver = null)
+{
+    public static readonly TrayClipOutcome Pasted = new(true);
+    public static readonly TrayClipOutcome NotPasted = new(false);
+}
+
+/// <summary>
+/// Whether Threads Archiver runs on the PC that took quick text with a Threads link (M-78): the answer's <c>archiver</c>,
+/// so the phone can say a link will not be downloaded.
+/// </summary>
+public static class ClipArchiver
+{
+    public const string Running = "running";
+    public const string Stopped = "stopped";
+}
 
 /// <summary>
 /// A device the Tray can send clipboard text to: <see cref="Key"/> is <c>device:&lt;deviceId&gt;</c> for a phone
@@ -335,6 +361,9 @@ public static class ClipHistory
     public const int KeptChars = 2000;
 
     public static bool IsClip(string? app) => app is Received or Sent;
+
+    /// <summary>The outcome on a received entry whose quick text was kept off the clipboard (M-78).</summary>
+    public const string HeldOutcome = "클립보드에 넣지 않음";
 
     /// <summary>
     /// "텍스트 1,234자", then what was not kept (" · 민감한 내용이라 보관 안 함", " · 앞 2,000자만 보관"), then

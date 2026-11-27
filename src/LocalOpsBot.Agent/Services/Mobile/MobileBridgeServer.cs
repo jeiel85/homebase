@@ -67,7 +67,7 @@ public sealed class MobileBridgeServer : BackgroundService
     internal static readonly TimeSpan ClipDeliverWait = TimeSpan.FromSeconds(10);
 
     /// <summary><c>clip.set</c> ids waiting for their Tray's <c>clip.done</c>.</summary>
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _clipAcks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<TrayClipOutcome>> _clipAcks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _commandAcks = new(StringComparer.Ordinal);
     private readonly RemoteCommandService? _commands;
 
@@ -315,7 +315,8 @@ public sealed class MobileBridgeServer : BackgroundService
             TrayClipDone? done;
             try { done = payload?.Deserialize<TrayClipDone>(MobileProtocol.Json); }
             catch (JsonException) { done = null; }
-            if (done is { Id.Length: > 0 } && _clipAcks.TryGetValue(done.Id, out var ack)) ack.TrySetResult(done.Ok);
+            if (done is { Id.Length: > 0 } && _clipAcks.TryGetValue(done.Id, out var ack))
+                ack.TrySetResult(new TrayClipOutcome(done.Ok, done.Held, done.Archiver is ClipArchiver.Running or ClipArchiver.Stopped ? done.Archiver : null));
             return;
         }
         if (op == MobileBridge.OpApprovalAsk && id is not null)
@@ -632,26 +633,27 @@ public sealed class MobileBridgeServer : BackgroundService
     /// <summary>
     /// Text another device sent (M-62) goes to every connected Tray that takes it — normally the one signed-in
     /// user's — and each says whether it reached the clipboard (<c>clip.done</c>). Null when no Tray takes it
-    /// (nobody signed in); true once one put it there; false when none could or none answered in time.
+    /// (nobody signed in); the first that took it (put it there, or held quick text, M-78); not ok when none could or none
+    /// answered in time.
     /// </summary>
-    private async Task<bool?> DeliverClipAsync(TrayClip clip, CancellationToken ct)
+    private async Task<TrayClipOutcome?> DeliverClipAsync(TrayClip clip, CancellationToken ct)
     {
         List<Connection> conns;
         lock (_gate) conns = _connections.Where(c => c.ClipReady && !c.Closed).ToList();
         if (conns.Count == 0) return null;
 
-        var acks = new List<(string Id, TaskCompletionSource<bool> Ack)>();
+        var acks = new List<(string Id, TaskCompletionSource<TrayClipOutcome> Ack)>();
         foreach (var c in conns)
         {
             var id = Guid.NewGuid().ToString("N");
-            var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ack = new TaskCompletionSource<TrayClipOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
             _clipAcks[id] = ack;
             acks.Add((id, ack));
             try { await SendAsync(c, MobileBridge.Message(MobileBridge.OpClipSet, clip, id), ct); }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidDataException)
             {
                 _logger.LogDebug("Clipboard text to Tray failed: {Message}", ex.Message);
-                ack.TrySetResult(false);
+                ack.TrySetResult(TrayClipOutcome.NotPasted);
             }
         }
         try
@@ -662,14 +664,14 @@ public sealed class MobileBridgeServer : BackgroundService
             while (pending.Count > 0)
             {
                 var finished = await Task.WhenAny(pending).WaitAsync(limit.Token);
-                if (await finished) return true;
+                if (await finished is { Ok: true } taken) return taken;
                 pending.Remove(finished);
             }
-            return false;
+            return TrayClipOutcome.NotPasted;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return false; // no Tray answered in time
+            return TrayClipOutcome.NotPasted; // no Tray answered in time
         }
         finally
         {

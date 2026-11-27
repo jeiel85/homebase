@@ -76,8 +76,9 @@
         <!-- "Homebase" in the share sheet: the share center (docs/SHARE_CONVENIENCE.md §9), where text and files go to
              the PCs and phones the user checks (DECISIONS M-62, M-64). Exported for the share sheet and its PC shortcuts;
              nothing is sent until the user taps [공유 시작], so another app can't push text or files to a PC by itself —
-             not even with a shortcut id, which only checks that PC. Its own task, so sharing doesn't bring the app's
-             screens up. -->
+             a shortcut id only checks that PC, unless the user turned on quick sending for PC shortcuts (text only,
+             off by default, 10 a minute; the PC still decides what reaches its clipboard — docs/QUICK_SEND.md).
+             Its own task, so sharing doesn't bring the app's screens up. -->
         <activity
             android:name=".clip.ClipShareActivity"
             android:exported="true"

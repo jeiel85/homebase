@@ -138,7 +138,9 @@ object ClipCrypto {
  * either way. [sensitive]: a password manager put it on the clipboard, so keep it out of previews.
  * [to]: phone → PC only — the device ids (the PC's) of other phones the PC passes it on to instead of taking
  * it (docs/SHARE_CONVENIENCE.md §4.8, [ShareRelay]). [from]: PC → phone only — the name of the phone that
- * sent it through the PC. Both are left out when empty; an older PC sends neither.
+ * sent it through the PC. Both are left out when empty; an older PC sends neither. [quick]: phone → PC only — sent
+ * from a share sheet PC shortcut without the share center (docs/QUICK_SEND.md §5), so the PC puts it on its clipboard
+ * only when it falls in that PC's range; left out when false, ignored by an older PC.
  */
 data class ClipContent(
     val text: String?,
@@ -147,6 +149,7 @@ data class ClipContent(
     val sensitive: Boolean = false,
     val to: List<String> = emptyList(),
     val from: String? = null,
+    val quick: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
@@ -156,10 +159,16 @@ data class ClipContent(
         .apply { if (sensitive) put("sensitive", true) }
         .apply { if (to.isNotEmpty()) put("to", JSONArray(to)) }
         .apply { from?.let { put("from", it) } }
+        .apply { if (quick) put("quick", true) }
 
     companion object {
-        fun of(text: String, sensitive: Boolean, nowMillis: Long = System.currentTimeMillis(), to: List<String> = emptyList()) =
-            ClipContent(text, text.length, Instant.ofEpochMilli(nowMillis).toString(), sensitive, to)
+        fun of(
+            text: String,
+            sensitive: Boolean,
+            nowMillis: Long = System.currentTimeMillis(),
+            to: List<String> = emptyList(),
+            quick: Boolean = false,
+        ) = ClipContent(text, text.length, Instant.ofEpochMilli(nowMillis).toString(), sensitive, to, quick = quick)
 
         /** Null for another schema or a malformed payload — never a half-filled one. */
         fun parse(plain: ByteArray): ClipContent? = parse(plain.toString(Charsets.UTF_8))
@@ -178,6 +187,7 @@ data class ClipContent(
                     sensitive = o.optBoolean("sensitive", false),
                     to = o.optJSONArray("to")?.strings()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
                     from = if (o.isNull("from")) null else o.optString("from").trim().ifEmpty { null },
+                    quick = o.optBoolean("quick", false),
                 )
             }
         } catch (_: Exception) {
@@ -226,6 +236,13 @@ sealed interface ClipSendResult {
     /** It is on that PC's clipboard. */
     data object Sent : ClipSendResult
 
+    /**
+     * Sent with `quick` to a PC that knows it (docs/QUICK_SEND.md §5): [held] — outside that PC's range, so it is not on
+     * the clipboard but in a notification there; [archiverStopped] — the text has a Threads link and Threads Archiver
+     * isn't running on that PC. An older PC answers [Sent] instead (it put the text on its clipboard).
+     */
+    data class QuickTaken(val held: Boolean, val archiverStopped: Boolean) : ClipSendResult
+
     /** Sent with `to` (docs/SHARE_CONVENIENCE.md §4.8): the PC pushed it on to each phone in [forwarded], or not. */
     data class Relayed(val forwarded: List<Forwarded>) : ClipSendResult
 
@@ -251,7 +268,7 @@ sealed interface ClipSendResult {
         fun of(code: Int, body: String?): ClipSendResult {
             val error = errorCode(body)
             return when {
-                code in 200..299 -> Forwarded.parseList(body)?.let { Relayed(it) } ?: Sent
+                code in 200..299 -> quickTaken(body) ?: Forwarded.parseList(body)?.let { Relayed(it) } ?: Sent
                 code == 409 && error == "clip_key_needed" -> KeyNeeded
                 code == 409 -> NoUserSession
                 code == 503 && error == "clipboard_busy" -> ClipboardBusy
@@ -259,6 +276,14 @@ sealed interface ClipSendResult {
                 code == 400 -> Rejected
                 else -> Failed(errorMessage(body) ?: "HTTP $code")
             }
+        }
+
+        /** [QuickTaken] from a 2xx answer `{schema, accepted, quick: true, held, archiver?}`; null without `quick`. */
+        internal fun quickTaken(body: String?): QuickTaken? = try {
+            val o = JSONObject(body ?: "")
+            if (!o.optBoolean("quick", false)) null else QuickTaken(o.optBoolean("held", false), o.optString("archiver") == "stopped")
+        } catch (_: Exception) {
+            null
         }
     }
 }

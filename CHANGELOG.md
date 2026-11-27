@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.61.0 — Quick send from the share sheet
+
+### Added
+- **Send to a PC straight from its share-sheet shortcut.** Settings › Sharing › "PC 바로가기로 공유하면 바로 보내기"
+  (off by default; `링크만` or `링크와 텍스트`) makes the PC shortcuts at the top of Android's share sheet send text
+  without opening the share center. A toast confirms; a failure leaves a notification with [다시 보내기] and
+  [다른 기기로]. At most 10 quick sends a minute; anything else still opens the share center. Sharing a Threads
+  post this way puts its link on the PC clipboard, where a clipboard-watching downloader such as Threads Archiver
+  picks it up (DECISIONS M-78, `docs/QUICK_SEND.md`).
+- **The PC chooses what a quick send may put on its clipboard**: all text, only text with a link, or only links to
+  listed sites (default, `threads.com` and `threads.net`); the last two put only the matching link, not the
+  rest of the text. Anything outside that range leaves the clipboard alone
+  and shows a Homebase toast with [클립보드에 복사]. Quick sends are placed at least one second apart so a
+  clipboard watcher polling every half second sees each one. Text sent from the share center or the tray is placed
+  as before.
+- **The dashboard shows quick receiving**: its range, how many arrived today and when the last one did, and — when
+  Threads is in range — whether Threads Archiver is running. A Threads link placed while Archiver is closed raises
+  a toast saying so.
+
 ## v0.60.4 — Installed-model selection and in-app downloads
 
 ### Changed

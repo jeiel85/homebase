@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import io.github.jeiel85.homebase.BuildConfig
 import io.github.jeiel85.homebase.data.PcStore
 import io.github.jeiel85.homebase.net.HomebaseApi
+import io.github.jeiel85.homebase.share.QuickSendMode
 import io.github.jeiel85.homebase.share.SharePrefs
 import io.github.jeiel85.homebase.update.UpdateSurface
 
@@ -90,6 +91,10 @@ fun SettingsScreen(store: PcStore, api: HomebaseApi, onBack: () -> Unit, onOpenP
             item {
                 SectionLabel("다른 기기")
                 SettingsPlate { DeviceSharingSettings() }
+            }
+            item {
+                SectionLabel("공유 메뉴")
+                SettingsPlate { QuickSendChoice() }
             }
             item {
                 SectionLabel("파일 받기")
@@ -169,6 +174,58 @@ private fun FileReceiveSettings() {
         Text(
             "사진·동영상은 Pictures/Homebase(갤러리), 그 밖의 파일은 Download/Homebase에 저장합니다(Android 10 이상). " +
                 "받은 파일과 보낸 파일은 알림 센터에 이름·크기만 남습니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = hb.inkSoft,
+            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+        )
+    }
+}
+
+/**
+ * "PC 바로가기로 공유하면 바로 보내기" (docs/QUICK_SEND.md §4.1): what a share sheet PC shortcut sends without the share
+ * center. One radio row per [QuickSendMode]; the whole row selects.
+ */
+@Composable
+private fun QuickSendChoice() {
+    val hb = Hb.colors
+    val context = LocalContext.current
+    val prefs = remember { SharePrefs(context) }
+    var mode by remember { mutableStateOf(prefs.quickMode()) }
+    Column(Modifier.selectableGroup().padding(vertical = 6.dp)) {
+        Text(
+            "PC 바로가기로 공유하면 바로 보내기",
+            style = MaterialTheme.typography.titleSmall,
+            color = hb.ink,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        QuickSendMode.entries.forEach { option ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .selectable(
+                        selected = mode == option,
+                        role = Role.RadioButton,
+                        onClick = {
+                            mode = option
+                            prefs.setQuickMode(option)
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = mode == option,
+                    onClick = null,
+                    colors = RadioButtonDefaults.colors(selectedColor = hb.accent),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(option.label, style = MaterialTheme.typography.bodyMedium, color = hb.ink)
+            }
+        }
+        Text(
+            "공유 메뉴의 PC 바로가기를 누르면 확인 화면 없이 보냅니다. 다른 앱도 이 바로가기로 보낼 수 있어 " +
+                "PC의 Homebase 설정 › 휴대폰에서 바로 클립보드에 넣을 범위를 함께 정해 두세요. 결과는 토스트와 알림으로 알리므로 " +
+                "Homebase 알림이 꺼져 있으면 공유 센터가 열립니다. Homebase 아이콘으로 공유해도 지금처럼 공유 센터가 열립니다.",
             style = MaterialTheme.typography.bodySmall,
             color = hb.inkSoft,
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),

@@ -105,6 +105,32 @@ internal static class ClipboardShare
     }
 
     /// <summary>
+    /// <see cref="PutAsync"/> without awaiting, for the short-lived <c>--toast</c> process (held quick text, M-78), which has
+    /// no message loop running yet to come back to. The text stays on the clipboard after that process exits.
+    /// </summary>
+    public static bool PutNow(string text)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                var data = new WpfDataObject();
+                data.SetText(text, WpfTextDataFormat.UnicodeText);
+                WpfClipboard.SetDataObject(data, true);
+                return true;
+            }
+            catch (ExternalException) when (attempt < BusyRetries)
+            {
+                Thread.Sleep(BusyPause);
+            }
+            catch (ExternalException)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
     /// Puts a received picture file on the clipboard (M-64): as PNG (keeps transparency, what browsers and chat apps
     /// paste) and as a bitmap (everything else). False when it can't be decoded or the clipboard stayed busy.
     /// </summary>

@@ -42,6 +42,17 @@ class SharePrefs(context: Context) {
         prefs.edit().putString(KEY_USES, o.toString()).apply()
     }
 
+    /** "PC 바로가기로 공유하면 바로 보내기" (docs/QUICK_SEND.md §4.1): off by default. */
+    fun quickMode(): QuickSendMode = QuickSendMode.of(prefs.getString(KEY_QUICK_MODE, null))
+
+    fun setQuickMode(mode: QuickSendMode) = prefs.edit().putString(KEY_QUICK_MODE, mode.key).apply()
+
+    /** When the recent quick sends went, for the per-minute limit ([QuickSend.admit]). */
+    fun quickSendTimes(): List<Long> =
+        prefs.getString(KEY_QUICK_TIMES, null)?.split(',')?.mapNotNull { it.toLongOrNull() } ?: emptyList()
+
+    fun setQuickSendTimes(times: List<Long>) = prefs.edit().putString(KEY_QUICK_TIMES, times.joinToString(",")).commit()
+
     /** What the share sheet's shortcuts were last built from ([ShareShortcuts]); null before the first time. */
     var shortcutsSignature: String?
         get() = prefs.getString(KEY_SHORTCUTS, null)
@@ -55,6 +66,8 @@ class SharePrefs(context: Context) {
         const val KEY_LAST_TARGETS = "last_targets"
         const val KEY_USES = "uses"
         const val KEY_SHORTCUTS = "shortcuts"
+        const val KEY_QUICK_MODE = "quick_mode"
+        const val KEY_QUICK_TIMES = "quick_times"
     }
 }
 
