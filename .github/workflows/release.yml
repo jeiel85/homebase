@@ -33,7 +33,7 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/homebase-release.jks"
 
       # The GitHub channel only (DECISIONS M-33): the sideloaded APK that updates itself. The Play
-      # build is signed with the Play upload key and uploaded from the maintainer's PC (docs/PLAY_RELEASE.md).
+      # build is signed with the Play upload key and uploaded by play-release.yml (M-79, docs/PLAY_RELEASE.md).
       - name: Test and build signed APK
         working-directory: mobile
         env:

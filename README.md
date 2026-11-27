@@ -116,6 +116,18 @@ Ollama를 설치한 뒤 Homebase **설정 → AI 조언**에서 준비합니다.
 dotnet build LocalOpsBot.sln
 ```
 
+### 릴리스
+
+`CHANGELOG.md`에 `## vX.Y.Z` 절을 더한 PR을 머지하고 그 커밋에 태그 `vX.Y.Z`를 올리면 두 워크플로가 돕니다.
+
+- **`release.yml`** — PC 설치 파일과 GitHub판 휴대폰 APK·`update.json`을 GitHub 릴리스로 냅니다(승인 없이 바로).
+- **`play-release.yml`** — Play판 AAB를 빌드해 Google Play **내부 테스트와 비공개 테스트(alpha)**에 올립니다.
+  GitHub 환경 `play`의 승인을 받아야 돌고(Actions → Review deployments), 업로드 키 지문이 다르면 올리기 전에 멈춥니다.
+  production에는 올리지 않습니다. 한국어 출시 노트는 `mobile/play-notes/X.Y.Z.ko.txt`(선택)로 넣습니다.
+
+Play 업로드는 이 워크플로가 기본이며 로컬에서 따로 올리지 않습니다(이중 업로드 방지). 자세한 내용과 CI를 못 쓸 때의
+로컬 절차는 [docs/PLAY_RELEASE.md](docs/PLAY_RELEASE.md)에 있습니다.
+
 ## 🤖 Telegram 명령어 (선택)
 
 Telegram 봇을 연결했을 때 쓸 수 있는 명령어입니다.

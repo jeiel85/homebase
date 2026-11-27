@@ -5,15 +5,39 @@ Homebase 앱은 배포 채널마다 따로 빌드합니다(DECISIONS M-33).
 | 채널 | Gradle flavor | 산출물 | 서명 | 업데이트 |
 |---|---|---|---|---|
 | GitHub Releases | `github` | `Homebase-Mobile.apk` (CI `release.yml`) | 릴리스 키 `homebase-release.jks` (M-12) | 앱 안 업데이터(하루 한 번 확인) |
-| Google Play | `play` | `app-play-release.aab` (관리자 PC) | Play 업로드 키 `homebase-play-upload.jks` → Play가 앱 서명 키로 다시 서명 | Play 스토어가 설치. 앱은 Play In-App Updates API로 새 버전이 있는지만 확인해 알리고 스토어 페이지를 연다(M-57) |
+| Google Play | `play` | `app-play-release.aab` (CI `play-release.yml`, M-79) | Play 업로드 키 `homebase-play-upload.jks` → Play가 앱 서명 키로 다시 서명 | Play 스토어가 설치. 앱은 Play In-App Updates API로 새 버전이 있는지만 확인해 알리고 스토어 페이지를 연다(M-57) |
 
 두 채널은 패키지 이름(`io.github.jeiel85.homebase`)과 versionCode 규칙(M-4)이 같지만 서명이 달라 **서로 덮어 설치할 수 없습니다.**
 채널을 바꾸려면 앱을 지우고 다시 설치한 뒤 PC를 다시 연결해야 합니다.
 
-## 빌드
+## CI로 올리기 (기본, DECISIONS M-79)
 
-Play 빌드는 CI가 아니라 관리자 PC에서 만듭니다. 업로드 키는 `D:\Project\homebase\.keystore\`에 있고(git 제외),
-`G:\내 드라이브\모바일 앱 개발\Homebase\릴리즈 키스토어\`에 백업돼 있습니다.
+릴리스 태그 `vX.Y.Z`를 올리면 `release.yml`(GitHub 릴리스)과 함께 **`play-release.yml`**이 돕니다.
+
+1. 실행이 GitHub 환경 `play`의 승인을 기다립니다. Actions → Play release → 그 실행 → **Review deployments**에서
+   jeiel85가 승인합니다. 승인 전에는 아무것도 올라가지 않습니다(30일 지나면 취소됨).
+2. 승인되면 Play 단위 테스트 → `bundlePlayRelease` → 번들 확인(versionName, 자체 업데이터 없음, 디버그 기호) →
+   업로드 키 인증서 SHA-256 고정 비교 → **내부 테스트**에 업로드 → 같은 versionCode를 **비공개 테스트(alpha)**에
+   붙임(다시 업로드하지 않음) → 트랙 상태 출력. alpha는 매번 Google 검토를 거칩니다. production은 올리지 않습니다.
+3. 출시 노트: en-US는 CHANGELOG의 그 버전 절에서 항목마다 굵은 제목 한 줄씩, ko-KR은
+   `mobile/play-notes/X.Y.Z.ko.txt`가 있으면 그 내용(없으면 영어 줄 그대로). 언어마다 500자까지 자릅니다.
+   한국어 노트를 쓰려면 릴리스 PR에 그 파일을 같이 넣습니다.
+4. 결과는 실행 로그의 "Play tracks (after)"와, 로컬에서 `pwsh ~/.claude/skills/play-publish/play-publish.ps1
+   -PackageName io.github.jeiel85.homebase -ShowTracks`로 확인합니다. AAB와 노트는 실행의 아티팩트로 30일 남습니다.
+
+손으로 돌리기: Actions → Play release → Run workflow. `dry_run`(기본 켬)은 빌드·서명 확인·트랙 조회까지만 합니다.
+실제 업로드는 **Use workflow from**을 그 버전 태그(`vX.Y.Z`)로 골랐을 때만 됩니다 — 태그 실행이 실패했거나
+승인 기한이 지나 다시 올릴 때 씁니다.
+
+**이중 업로드 주의**: CI가 기본 경로이므로 아래 로컬 절차는 CI를 못 쓸 때만 씁니다. 같은 버전을 로컬에서 먼저
+올렸다면 그 태그의 CI 실행은 승인하지 말고 거절합니다(승인해도 Play가 같은 versionCode를 거절해 실패로 끝납니다).
+
+## 로컬로 빌드 (CI를 못 쓸 때)
+
+업로드 키는 `D:\Project\homebase\.keystore\`에 있고(git 제외),
+`G:\내 드라이브\모바일 앱 개발\Homebase\릴리즈 키스토어\`에 백업돼 있습니다. 같은 값이 GitHub 환경 `play`의
+Secrets(`HOMEBASE_PLAY_UPLOAD_KEYSTORE_B64`·`_STORE_PASSWORD`·`_KEY_ALIAS`·`_KEY_PASSWORD`, `PLAY_SERVICE_ACCOUNT_JSON`)에
+들어 있습니다 — 키를 바꾸면 Secrets와 `play-release.yml`의 `UPLOAD_CERT_SHA256`도 함께 바꿉니다.
 
 1. 릴리스 태그(`vX.Y.Z`)가 가리키는 커밋을 체크아웃합니다. GitHub 릴리스와 같은 버전·같은 코드로 냅니다.
 2. 서명 값 파일을 잠깐 `mobile/`에 복사합니다(`mobile/play-upload-signing.properties`는 gitignore됨).
@@ -68,10 +92,12 @@ Play 빌드는 CI가 아니라 관리자 PC에서 만듭니다. 업로드 키는
 
    목록이 비어 있지 않으면 됩니다. 비어 있으면 NDK를 설치하고 2번부터 다시 합니다.
 
-## 업로드
+## 로컬로 업로드 (CI를 못 쓸 때)
 
-Play Console(개발자 계정 EL Studio) → Homebase → 테스트 및 출시 → 테스트 트랙 → 새 버전 만들기 →
-`app-play-release.aab` 업로드 → 출시 노트(ko-KR) → 저장/검토.
+전역 스킬 `play-publish`(API)로 올립니다: `-Track internal -AabPath <aab> -ExpectedUploadCertSha256 <콜론 형식 지문>`
+다음 `-Track alpha -ExpectedVersionCode <code>`, 전후로 `-ShowTracks`. API가 안 될 때만 Play Console(개발자 계정
+EL Studio) → Homebase → 테스트 및 출시 → 테스트 트랙 → 새 버전 만들기 → `app-play-release.aab` 업로드 →
+출시 노트(ko-KR) → 저장/검토.
 
 **지금 쓰는 테스트 트랙 모두를 같은 버전으로 맞춥니다**(내부 테스트와 비공개 테스트(Alpha)). 내부 테스트에만 올리면
 비공개 테스트가 옛 버전에 머뭅니다 — 실제로 비공개 테스트가 0.40.0에 17버전 동안 남아 테스터가 공유 메뉴(0.49.0~)를
