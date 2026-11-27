@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.60.3 — Qwen 3.5 PC advice
+
+### Fixed
+- **AI advice works with Qwen 3.5 and other models that enable thinking by default.** Homebase requests
+  a direct answer (`think: false`) so internal reasoning cannot use up the short advice token budget and
+  leave an empty reply. The existing timeout, reply limit, and model keep-alive still apply.
+
 ## v0.60.2 — Security hardening
 
 ### Security
