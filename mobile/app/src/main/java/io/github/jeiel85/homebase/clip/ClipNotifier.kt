@@ -173,6 +173,12 @@ object ClipNotifier {
         .build()
 
     /** False when notifications are off for the app or this channel; the clipboard is set either way. */
+    /**
+     * Whether a quick send's failure can be reported (docs/QUICK_SEND.md §4.2): the app may notify and this channel isn't
+     * turned off. Otherwise a failed send after the share screen closed would only flash a toast, with no [다시 보내기].
+     */
+    fun canReportQuick(context: Context): Boolean = ensureChannel(context)
+
     private fun ensureChannel(context: Context): Boolean {
         if (!PushNotifier.canNotify(context)) return false
         val nm = context.getSystemService(NotificationManager::class.java) ?: return false

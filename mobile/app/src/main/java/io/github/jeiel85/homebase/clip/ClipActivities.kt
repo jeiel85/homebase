@@ -38,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.IntentCompat
 import io.github.jeiel85.homebase.data.PcEntry
 import io.github.jeiel85.homebase.share.DownloadSpec
@@ -100,14 +99,14 @@ class ClipShareActivity : ComponentActivity() {
             return
         }
         // A PC shortcut may send at once when the user turned that on (docs/QUICK_SEND.md §4.2); anything else — and a
-        // shortcut past the per-minute limit — is the share center as always. With the app's notifications off, Android
-        // drops the result toast and the failure notification of a send that runs after this screen is gone, so a
-        // failed send would vanish without a word: then the share center too, which shows how it went.
+        // shortcut past the per-minute limit — is the share center as always. With the app's notifications (or the
+        // clipboard channel) off, Android drops the result toast or the failure notification of a send that runs after
+        // this screen is gone, so a failed send would vanish without a way to retry: then the share center too.
         // Recreated (rotation while the PC list is read): the choice made the first time stands, counted once — the
         // first composition was dropped before it handed the text on, so this one sends it.
         val quick = savedInstanceState?.takeIf { it.containsKey(STATE_QUICK) }?.getBoolean(STATE_QUICK) ?: (presetPcId != null && ClipShare.problem(text) == null &&
             QuickSend.allows(SharePrefs(this).quickMode(), text) &&
-            NotificationManagerCompat.from(this).areNotificationsEnabled() && QuickSendGate.admit(this))
+            ClipNotifier.canReportQuick(this) && QuickSendGate.admit(this))
         quickChosen = quick
         setContent {
             HomebaseTheme(dark = ThemeSetting.mode.isDark(isSystemInDarkTheme())) {
