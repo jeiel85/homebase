@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using LocalOpsBot.Core.Advisor;
 using LocalOpsBot.Infrastructure.Llm;
 using LocalOpsBot.Tests.Fakes;
@@ -39,6 +40,24 @@ public sealed class OllamaLlmClientTests
         var body = await handler.Requests.Single().Content!.ReadAsStringAsync();
         Assert.Contains("\"keep_alive\":\"5m\"", body);
         Assert.Contains("\"num_predict\":200", body);
+    }
+
+    [Fact]
+    public async Task Generate_disables_thinking_so_the_answer_keeps_its_token_budget()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.QueueResponse(HttpStatusCode.OK,
+            """{"response":"메모리를 많이 쓰는 앱을 확인하세요.","thinking":"","done":true}""");
+        var client = new OllamaLlmClient(new HttpClient(handler),
+            new LlmAdvisorOptions { Model = "qwen3.5:4b", MaxTokens = 350 });
+
+        var result = await client.GenerateAsync("Give brief PC health advice.", CancellationToken.None);
+
+        using var body = JsonDocument.Parse(await handler.Requests.Single().Content!.ReadAsStringAsync());
+        Assert.False(body.RootElement.GetProperty("think").GetBoolean());
+        Assert.Equal(350, body.RootElement.GetProperty("options").GetProperty("num_predict").GetInt32());
+        Assert.True(result.Ok);
+        Assert.Equal("메모리를 많이 쓰는 앱을 확인하세요.", result.Text);
     }
 
     [Fact]

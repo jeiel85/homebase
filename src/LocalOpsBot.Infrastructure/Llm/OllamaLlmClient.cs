@@ -37,6 +37,8 @@ public sealed class OllamaLlmClient : ILlmClient
             model = _options.Model,
             prompt,
             stream = false,
+            // Advice has a small output budget: reasoning can consume it before any answer is emitted.
+            think = false,
             keep_alive = $"{Math.Max(0, _options.KeepAliveMinutes)}m",
             options = new { num_predict = Math.Max(1, _options.MaxTokens) }
         };
