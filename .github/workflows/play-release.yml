@@ -1,0 +1,181 @@
+# Builds the Play flavor AAB in CI and puts it on the Play test tracks in use: internal and closed
+# testing (alpha). Production is not touched (docs/PLAY_RELEASE.md). Tag pushes upload the tag's
+# version; workflow_dispatch can rebuild a version, and dry_run stops after the build, the
+# signature check and a track read. Secrets live only in the GitHub environment 'play', which needs
+# jeiel85's approval and accepts only main and v* tags.
+name: Play release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version x.y.z (must have a CHANGELOG section; run from the tag v<version>)'
+        required: true
+      dry_run:
+        description: 'Build, check the signature and read the tracks only — upload nothing'
+        type: boolean
+        default: true
+
+concurrency:
+  group: play-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    environment: play
+    timeout-minutes: 40
+    env:
+      PACKAGE: io.github.jeiel85.homebase
+      # Play upload key certificate (DECISIONS M-33, docs/PLAY_RELEASE.md). A bundle signed with any
+      # other key stops before anything is uploaded. Colon form: what play-publish.ps1 compares.
+      UPLOAD_CERT_SHA256: 'A6:AE:FC:DD:A1:8A:7F:59:35:E6:30:66:D1:4C:FA:4E:9B:47:DB:40:04:82:42:F7:BB:87:C1:2E:33:B4:4A:5E'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = push ]; then VER="${GITHUB_REF_NAME#v}"; else VER="$INPUT_VERSION"; fi
+          [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version must be x.y.z: $VER"; exit 1; }
+          # A real upload must come from the release tag so Play gets the same code as the GitHub release.
+          if [ "$GITHUB_EVENT_NAME" != push ] && [ "${DRY:-false}" != true ] && [ "$GITHUB_REF" != "refs/tags/v$VER" ]; then
+            echo "::error::run an upload from the tag v$VER (Use workflow from: v$VER), not $GITHUB_REF"; exit 1
+          fi
+          grep -q "^## v$VER\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## v$VER' section"; exit 1; }
+          IFS=. read -r MA MI PA <<<"$VER"
+          {
+            echo "version=$VER"
+            echo "code=$((MA * 10000 + MI * 100 + PA))"   # same rule as mobile/app/build.gradle.kts (M-4)
+            echo "dry=${DRY:-false}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore upload keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.HOMEBASE_PLAY_UPLOAD_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" || { echo "::error::HOMEBASE_PLAY_UPLOAD_KEYSTORE_B64 is missing"; exit 1; }
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/homebase-play-upload.jks"
+          test -s "$RUNNER_TEMP/homebase-play-upload.jks"
+
+      - name: Test and build the Play AAB
+        working-directory: mobile
+        env:
+          HOMEBASE_PLAY_UPLOAD_STORE_FILE: ${{ runner.temp }}/homebase-play-upload.jks
+          HOMEBASE_PLAY_UPLOAD_STORE_PASSWORD: ${{ secrets.HOMEBASE_PLAY_UPLOAD_STORE_PASSWORD }}
+          HOMEBASE_PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.HOMEBASE_PLAY_UPLOAD_KEY_ALIAS }}
+          HOMEBASE_PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.HOMEBASE_PLAY_UPLOAD_KEY_PASSWORD }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testPlayDebugUnitTest bundlePlayRelease \
+            -Phomebase.version="$VER" -Phomebase.requirePlaySigning=true
+
+      # Values come from the bundle itself, not the build script: versionName, the self-updater
+      # staying out (Play forbids self-updates), and native debug symbols being present.
+      - name: Check the AAB
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          AAB=mobile/app/build/outputs/bundle/playRelease/app-play-release.aab
+          mkdir -p dist
+          cp "$AAB" "dist/homebase-play-$VER.aab"
+          echo "AAB=dist/homebase-play-$VER.aab" >> "$GITHUB_ENV"
+          MANIFEST="$(unzip -p "$AAB" base/manifest/AndroidManifest.xml | tr -d '\0')"
+          grep -q "$VER" <<<"$MANIFEST" || { echo "::error::bundle manifest does not carry versionName $VER"; exit 1; }
+          if grep -q -e REQUEST_INSTALL_PACKAGES -e UpdateCheckJobService <<<"$MANIFEST"; then
+            echo "::error::the self-updater leaked into the Play bundle"; exit 1
+          fi
+          # Listed to a variable first: grep -q closing the pipe early would trip pipefail.
+          ENTRIES="$(unzip -l "$AAB")"
+          if grep -q debugsymbols <<<"$ENTRIES"; then echo "native debug symbols: included"
+          else echo "::warning::native debug symbols missing (Play will warn; see docs/PLAY_RELEASE.md step 6)"; fi
+
+      # Play notes are capped at 500 characters per language. en-US: the bold headline of each
+      # bullet in this version's CHANGELOG section. ko-KR: mobile/play-notes/<version>.ko.txt when
+      # the release PR adds one, otherwise the same English lines.
+      - name: Release notes
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          ver = os.environ["VER"]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(rf"(?ms)^## v{re.escape(ver)}\b.*?$(.*?)(?=^## v|\Z)", text)
+          lines = []
+          for b in re.findall(r"(?m)^- (.+)$", m.group(1)):
+              h = re.match(r"\*\*(.+?)\*\*", b)
+              lines.append("• " + (h.group(1) if h else b).strip())
+          def cap(s):
+              s = s.strip()
+              if len(s) <= 500:
+                  return s
+              cut = s[:499]
+              cut = cut.rsplit("\n", 1)[0] if "\n" in cut else cut
+              return cut.rstrip() + "…"
+          en = cap("\n".join(lines))
+          assert en, f"no bullets in the v{ver} CHANGELOG section"
+          ko_file = f"mobile/play-notes/{ver}.ko.txt"
+          ko = cap(open(ko_file, encoding="utf-8").read()) if os.path.exists(ko_file) else en
+          open("dist/notes-en.txt", "w", encoding="utf-8").write(en)
+          open("dist/notes-ko.txt", "w", encoding="utf-8").write(ko)
+          print(f"en-US {len(en)} chars, ko-KR {len(ko)} chars ({'from ' + ko_file if os.path.exists(ko_file) else 'English fallback'})")
+          PY
+          cat dist/notes-ko.txt; echo; echo ---; cat dist/notes-en.txt
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: homebase-play-${{ steps.ver.outputs.version }}
+          path: |
+            ${{ env.AAB }}
+            dist/notes-*.txt
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Play tracks (before)
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: pwsh -NoProfile -File tools/play-publish.ps1 -PackageName "$PACKAGE" -ShowTracks
+
+      # Internal first with the bundle; alpha then takes the bundle Play already has (no second upload).
+      - name: Upload to internal, then alpha
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          CODE: ${{ steps.ver.outputs.code }}
+          DRY: ${{ steps.ver.outputs.dry }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          DRYFLAG=(); [ "$DRY" = true ] && DRYFLAG=(-DryRun)
+          pwsh -NoProfile -File tools/play-publish.ps1 -PackageName "$PACKAGE" -Track internal -AabPath "$AAB" \
+            -ExpectedUploadCertSha256 "$UPLOAD_CERT_SHA256" -VersionName "$VER" \
+            -NotesKoFile dist/notes-ko.txt -NotesEnFile dist/notes-en.txt "${DRYFLAG[@]}"
+          pwsh -NoProfile -File tools/play-publish.ps1 -PackageName "$PACKAGE" -Track alpha -ExpectedVersionCode "$CODE" \
+            -VersionName "$VER" -NotesKoFile dist/notes-ko.txt -NotesEnFile dist/notes-en.txt "${DRYFLAG[@]}"
+
+      - name: Play tracks (after)
+        if: steps.ver.outputs.dry != 'true'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: pwsh -NoProfile -File tools/play-publish.ps1 -PackageName "$PACKAGE" -ShowTracks
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/homebase-play-upload.jks"
