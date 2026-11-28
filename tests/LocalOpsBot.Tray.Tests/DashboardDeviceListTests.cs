@@ -126,4 +126,18 @@ public sealed class DashboardDeviceListTests
         Assert.Equal(L.DevHubRefused("HTTP 400"), DeviceList.Summary(pc));
         Assert.Equal(L.DevHubConnecting, DeviceList.Summary(pc with { Error = LinkErrors.Unreachable, LastSeen = null }));
     }
+
+    [Fact]
+    public void Ctrl_v_sends_to_the_selected_phone_or_linked_pc_and_otherwise_asks_where()
+    {
+        // M-80: the selected device, when it takes sends; this PC or a device seen only through another PC → the picker.
+        var all = DeviceList.Build(Overview(new[] { Hub("pc-a", "A", online: true, Phone("p9", "Tab")) }, Phone("p1", "S24")), "HERE");
+        string Key(Func<DeviceItem, bool> which) => all.Single(which).Key;
+
+        Assert.Equal(Key(i => i.Role == DeviceRole.Phone), DashboardWindow.PasteKey(all, Key(i => i.Role == DeviceRole.Phone)));
+        Assert.Equal(ClipTargetKeys.Pc("pc-a"), DashboardWindow.PasteKey(all, "hub:pc-a"));
+        Assert.Null(DashboardWindow.PasteKey(all, DeviceList.SelfKey));
+        Assert.Null(DashboardWindow.PasteKey(all, Key(i => i.Role == DeviceRole.ViaHub)));
+        Assert.Null(DashboardWindow.PasteKey(all, "device:gone"));
+    }
 }

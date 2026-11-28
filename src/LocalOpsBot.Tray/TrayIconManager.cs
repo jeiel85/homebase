@@ -448,8 +448,7 @@ public sealed class TrayIconManager : IDisposable
         }
         if (snapshot.Text is null && snapshot.Png is { } png)
         {
-            var name = $"clipboard-{DateTime.Now:yyyyMMdd-HHmmss}.png";
-            await SendFilesAsync(new[] { new FileSender.Item(name, png.Length, "image/png", () => new System.IO.MemoryStream(png, writable: false)) }, targets);
+            await SendFilesAsync(new[] { ClipboardPicture(png) }, targets);
             return;
         }
         if (snapshot.Text is not { } text)
@@ -466,6 +465,61 @@ public sealed class TrayIconManager : IDisposable
         if (snapshot.Sensitive && !MessageDialog.Show(L.ClipSensitiveTitle, L.ClipSensitiveBody, L.ClipSendAnyway, L.Cancel))
             return;
         await SendTextToAsync(text, snapshot.Sensitive, targets);
+    }
+
+    /// <summary>A copied picture (a screenshot) as the PNG file it is sent as (M-65).</summary>
+    private static FileSender.Item ClipboardPicture(byte[] png) =>
+        new($"clipboard-{DateTime.Now:yyyyMMdd-HHmmss}.png", png.Length, "image/png", () => new System.IO.MemoryStream(png, writable: false));
+
+    /// <summary>
+    /// The clipboard sent from the Homebase window (M-80): a device's right-click "Send clipboard", or Ctrl+V on the
+    /// Devices page. To <paramref name="targetKey"/>, or to the devices the user picks when it is null. What it holds goes
+    /// the way the tray's "Send clipboard" sends it: files copied in Explorer as if dropped (folders zipped after asking),
+    /// a picture as a PNG file, text as clipboard text (a password manager's only after asking).
+    /// </summary>
+    internal async Task SendClipboardToAsync(string? targetKey)
+    {
+        if (Closing) return;
+        var snapshot = await ClipboardShare.ReadAsync();
+        if (Closing) return;
+        if (snapshot is null)
+        {
+            ShowBalloon(L.ClipNotSentTitle, L.ClipBusy);
+            return;
+        }
+        if (snapshot.Files is { Count: > 0 } copied)
+        {
+            await SendPathsAsync(copied, targetKey);
+            return;
+        }
+        if (snapshot.Text is null && snapshot.Png is { } png)
+        {
+            var targets = await FileSender.TargetsAsync();
+            if (Closing) return;
+            if (targets is null)
+            {
+                ShowBalloon(L.FilesNotSentTitle, L.ClipAgentUnavailable);
+                return;
+            }
+            var item = ClipboardPicture(png);
+            IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget>? picked = targetKey is null
+                ? SendPickerWindow.Pick(L.SendPickSummary(1, png.Length, item.Name), targets, ClipTargetLabel, L.FilesNoTargets)
+                : targets.Where(t => t.Key == targetKey).ToList();
+            if (picked is null) return;
+            if (picked.Count == 0)
+            {
+                ShowBalloon(L.FilesNotSentTitle, L.DropNotHere);
+                return;
+            }
+            await SendFilesAsync(new[] { item }, picked);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(snapshot.Text))
+        {
+            ShowBalloon(L.ClipNotSentTitle, L.ClipEmpty);
+            return;
+        }
+        await SendTextAsync(snapshot.Text, targetKey, snapshot.Sensitive);
     }
 
     /// <summary>Text to <paramref name="targets"/> (M-62), and one balloon on how it went.</summary>
@@ -699,8 +753,11 @@ public sealed class TrayIconManager : IDisposable
         }
     }
 
-    /// <summary>Text dropped on the Homebase window (M-66): sent as clipboard text (M-62), to that device or the ones picked.</summary>
-    internal async Task SendTextAsync(string text, string? targetKey = null)
+    /// <summary>
+    /// Text dropped on the Homebase window (M-66), or pasted there (M-80): sent as clipboard text (M-62), to that device or
+    /// the ones picked. <paramref name="sensitive"/> text (a password manager copied it) goes only when the user says so.
+    /// </summary>
+    internal async Task SendTextAsync(string text, string? targetKey = null, bool sensitive = false)
     {
         if (Closing || string.IsNullOrWhiteSpace(text)) return;
         if (text.Length > LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars)
@@ -708,6 +765,8 @@ public sealed class TrayIconManager : IDisposable
             ShowBalloon(L.ClipNotSentTitle, L.ClipTooLong(LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars));
             return;
         }
+        if (sensitive && !MessageDialog.Show(L.ClipSensitiveTitle, L.ClipSensitiveBody, L.ClipSendAnyway, L.Cancel))
+            return;
         var targets = await ClipboardShare.TargetsAsync();
         if (Closing) return;
         if (targets is null)
@@ -725,7 +784,7 @@ public sealed class TrayIconManager : IDisposable
             ShowBalloon(L.ClipNotSentTitle, L.DropNotHere);
             return;
         }
-        await SendTextToAsync(text, sensitive: false, picked);
+        await SendTextToAsync(text, sensitive, picked);
     }
 
     private static string SendSummary(SendBundle.Selection s)

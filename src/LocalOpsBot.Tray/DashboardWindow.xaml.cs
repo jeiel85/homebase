@@ -105,6 +105,14 @@ public partial class DashboardWindow : ThemedWindow
             // F2 renames the selected device and F5 refreshes the list (M-59), on the Devices page only
             // (Settings has text fields of its own).
             if (_tab != DashTab.Devices) return;
+            // Ctrl+V sends what is copied to the selected device, or asks where (M-80).
+            if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control
+                && e.OriginalSource is not System.Windows.Controls.Primitives.TextBoxBase && _items.Count > 0)
+            {
+                e.Handled = true;
+                SendClipboard(PasteKey(_items, _selected));
+                return;
+            }
             if (e.Key == Key.F5)
             {
                 e.Handled = true;
@@ -285,8 +293,24 @@ public partial class DashboardWindow : ThemedWindow
 
     private ContextMenu? TileMenu(DeviceItem d)
     {
-        if (d.AliasKey is not { } aliasKey) return null; // a PC linked here that hasn't said its id yet
+        var sendKey = DropKey(d); // shown in the design preview too, where sending does nothing
+        if (d.AliasKey is null && sendKey is null) return null; // a PC linked here that hasn't said its id yet
         var menu = new ContextMenu { FontFamily = Ui };
+        if (sendKey is not null)
+        {
+            // What is already copied, straight to this device (M-80); greyed out while nothing is copied.
+            var send = new MenuItem { Header = L.TileSendClipboard };
+            send.Click += (_, _) => SendClipboard(sendKey);
+            menu.Items.Add(send);
+            menu.Opened += (_, _) =>
+            {
+                var any = ClipboardHasContent();
+                send.IsEnabled = any;
+                send.Header = any ? L.TileSendClipboard : L.TileSendClipboardEmpty;
+            };
+            if (d.AliasKey is not null) menu.Items.Add(new Separator());
+        }
+        if (d.AliasKey is not { } aliasKey) return menu;
         var set = new MenuItem { Header = d.Alias is null ? L.AliasSet : L.AliasChange };
         set.Click += (_, _) => Rename(d.Key);
         menu.Items.Add(set);
@@ -354,6 +378,38 @@ public partial class DashboardWindow : ThemedWindow
         d.Role == DeviceRole.Phone ? d.Key
         : d.IsPc && d.Key.StartsWith("hub:", StringComparison.Ordinal) ? LocalOpsBot.Core.Mobile.ClipTargetKeys.Pc(d.Key[4..])
         : null;
+
+    // ── The clipboard (M-80) ──
+
+    /// <summary>
+    /// Where Ctrl+V on the Devices page sends what is copied: the selected device when it takes sends, else null — then the
+    /// user picks the devices (this PC selected, or a device seen only through another PC).
+    /// </summary>
+    internal static string? PasteKey(IReadOnlyList<DeviceItem> items, string selected) =>
+        items.FirstOrDefault(i => i.Key == selected) is { } d ? DropKey(d) : null;
+
+    /// <summary>Sends what is copied to <paramref name="key"/> (or the devices picked) through the tray.</summary>
+    private void SendClipboard(string? key)
+    {
+        if (_preview || TrayIconManager.Current is not { } tray) return;
+        _ = tray.SendClipboardToAsync(key);
+    }
+
+    /// <summary>
+    /// Whether anything sendable is copied: text, files or a picture. Only the formats are looked at, not the content
+    /// (M-62: the content is read when the user sends). A busy clipboard counts as yes; the send then says so.
+    /// </summary>
+    private static bool ClipboardHasContent()
+    {
+        try
+        {
+            return Clipboard.ContainsText() || Clipboard.ContainsFileDropList() || Clipboard.ContainsImage();
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            return true;
+        }
+    }
 
     private static bool Droppable(IDataObject data) =>
         data.GetDataPresent(DataFormats.FileDrop) || data.GetDataPresent(DataFormats.UnicodeText);

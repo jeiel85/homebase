@@ -170,8 +170,13 @@ public static class L
         $"읽을 수 없는 파일·폴더 {count}개는 뺐습니다.");
     public static string DropNotHere => T("This device can't take files from here — update its app, or connect it again",
         "이 기기로는 보낼 수 없습니다 — 앱을 업데이트하거나 다시 연결하세요");
-    public static string DropHint => T("Drop files, folders or text on a phone or PC to send them",
-        "파일·폴더·텍스트를 휴대폰이나 PC에 끌어다 놓으면 보냅니다");
+    public static string DropHint => T("Drop files, folders or text on a phone or PC to send them. Already copied? Pick the device and press Ctrl+V (or right-click it).",
+        "파일·폴더·텍스트를 휴대폰이나 PC에 끌어다 놓으면 보냅니다. 복사해 둔 것은 기기를 고르고 Ctrl+V(또는 오른쪽 클릭)로 보냅니다.");
+    // ── Clipboard from the Homebase window (M-80) ──
+    public static string TileSendClipboard => T("Send clipboard", "클립보드 보내기");
+    public static string TileSendClipboardEmpty => T("Send clipboard (nothing copied)", "클립보드 보내기 (복사한 것 없음)");
+    public static string ClipEmpty => T("Nothing is copied. Copy text, a picture or files first.",
+        "복사한 것이 없습니다. 텍스트·그림·파일을 먼저 복사하세요.");
     public static string SendToSection => T("SEND TO MENU", "보내기 메뉴");
     public static string SendToToggle => T("Put Homebase in Explorer's \"Send to\" menu", "탐색기 \"보내기\" 메뉴에 Homebase 넣기");
     public static string SendToHelp => T(

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.62.0 — Send the clipboard from the device list
+
+### Added
+- **Ctrl+V on the Homebase window's device list sends what is copied to the selected device.** Pick a phone or a
+  linked PC and press Ctrl+V: copied text goes to its clipboard, a picture (a screenshot) and files copied in
+  Explorer go as files, folders after asking to zip them — the same as the tray's "클립보드 보내기". With this PC (or
+  a device seen only through another PC) selected, Ctrl+V asks where to send. Text a password manager copied is
+  sent only after confirming, as before (DECISIONS M-80).
+- **Right-clicking a phone or PC in the list offers "클립보드 보내기"**, greyed out while nothing is copied. The
+  hint under the list says both ways.
+
 ## v0.61.0 — Quick send from the share sheet
 
 ### Added
