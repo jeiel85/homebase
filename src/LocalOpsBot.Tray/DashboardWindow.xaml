@@ -101,8 +101,8 @@
     <!-- ═ Notifications and Settings pages (out of view until picked) ═ -->
     <!-- A send started on the Devices page (Ctrl+V, a tile's menu, a drop — M-80) slides up here and says how it went. -->
     <Border x:Name="SendToast" Grid.Row="1" Panel.ZIndex="10" HorizontalAlignment="Center" VerticalAlignment="Bottom"
-            Margin="24,0,24,36" MinWidth="360" MaxWidth="680" Padding="18,14,24,14" CornerRadius="12" Background="#2E8B4E"
-            BorderBrush="#33FFFFFF" BorderThickness="1" RenderTransformOrigin="0.5,1"
+            Margin="24,0,24,36" MinWidth="360" MaxWidth="680" CornerRadius="14" Background="#2E8B4E"
+            BorderBrush="#40FFFFFF" BorderThickness="1" RenderTransformOrigin="0.5,1"
             Visibility="Collapsed" Opacity="0" Cursor="Hand" MouseLeftButtonUp="SendToast_Click">
       <Border.Effect>
         <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.45" Color="#10121A"/>
@@ -114,16 +114,48 @@
         </TransformGroup>
       </Border.RenderTransform>
       <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-        <Border Width="34" Height="34" CornerRadius="17" Margin="0,0,14,0" VerticalAlignment="Center" Background="White">
-          <TextBlock x:Name="SendToastMark" HorizontalAlignment="Center" VerticalAlignment="Center"
-                     FontSize="18" FontWeight="Bold" Foreground="#2E8B4E"/>
+        <!-- A soft sheen over the top half, over the state's gradient (set in code). -->
+        <Border CornerRadius="13" IsHitTestVisible="False">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+              <GradientStop Color="#2EFFFFFF" Offset="0"/>
+              <GradientStop Color="#0AFFFFFF" Offset="0.5"/>
+              <GradientStop Color="#00FFFFFF" Offset="0.51"/>
+            </LinearGradientBrush>
+          </Border.Background>
         </Border>
-        <TextBlock x:Name="SendToastText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
-                   FontSize="15" FontWeight="SemiBold" Foreground="White"/>
+        <Grid Margin="16,13,22,10">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <!-- The mark sits in a frosted ring. -->
+          <Border Width="36" Height="36" CornerRadius="18" Margin="0,0,14,0" VerticalAlignment="Center"
+                  Background="#33FFFFFF" BorderBrush="#66FFFFFF" BorderThickness="1">
+            <Border Width="26" Height="26" CornerRadius="13" Background="White">
+              <TextBlock x:Name="SendToastMark" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         FontSize="15" FontWeight="Bold" Foreground="#2E8B4E"/>
+            </Border>
+          </Border>
+          <TextBlock x:Name="SendToastText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
+                     FontSize="15" FontWeight="SemiBold" Foreground="White">
+            <TextBlock.Effect>
+              <DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Opacity="0.25" Color="Black"/>
+            </TextBlock.Effect>
+          </TextBlock>
+          <!-- How long until it goes: a thin bar that runs down (hidden while sending). -->
+          <Border x:Name="SendToastTrack" Grid.Row="1" Grid.ColumnSpan="2" Height="3" Margin="0,10,0,0" CornerRadius="1.5" Background="#26FFFFFF">
+            <Border x:Name="SendToastTimer" CornerRadius="1.5" Background="#B3FFFFFF" RenderTransformOrigin="0,0.5">
+              <Border.RenderTransform>
+                <ScaleTransform x:Name="SendToastTimerScale" ScaleX="1"/>
+              </Border.RenderTransform>
+            </Border>
+          </Border>
+        </Grid>
       </Grid>
     </Border>
 

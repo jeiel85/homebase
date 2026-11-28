@@ -263,6 +263,20 @@ public partial class DashboardWindow : ThemedWindow
     /// <summary>Design preview only: open the alias dialog for the selected device (<c>--rename</c>).</summary>
     internal void PreviewRename() => Dispatcher.BeginInvoke(() => Rename(_selected), DispatcherPriority.ApplicationIdle);
 
+    /// <summary>Design preview only: show the send message in one of its states (<c>--send-toast</c>, M-80).</summary>
+    internal void PreviewToast(string kind)
+    {
+        var k = Enum.TryParse<SendNoticeKind>(kind, ignoreCase: true, out var parsed) ? parsed : SendNoticeKind.Sent;
+        ShowToast(k, k switch
+        {
+            SendNoticeKind.Working => L.ToastSending("Galaxy S24"),
+            SendNoticeKind.Started => L.ToastFilesStarted(2, 3_400_000, "LAPTOP-JEIEL"),
+            SendNoticeKind.Failed => "Galaxy Tab S9: " + L.DropNotHere,
+            _ => L.ToastTextSent("Galaxy S24", "https://www.threads.com/@homebase/post/…"),
+        });
+        _toastHide.Stop(); // held for the preview
+    }
+
     private DeviceItem Selected() => _items.FirstOrDefault(i => i.Key == _selected) ?? _items[0];
 
     // ── Aliases (DECISIONS M-50) ──
@@ -424,26 +438,35 @@ public partial class DashboardWindow : ThemedWindow
 
     private void ShowToast(SendNoticeKind kind, string text)
     {
-        // The whole message takes the outcome's colour: blue while sending, green once sent, amber when it wasn't.
-        var (tone, mark) = kind switch
+        // The whole message takes the outcome's colours: blue into violet while sending, green into teal once sent,
+        // amber into coral when it wasn't.
+        var (from, to, mark) = kind switch
         {
-            SendNoticeKind.Working => (Brush(0x3F, 0x63, 0xC9), "↑"),
-            SendNoticeKind.Failed => (Brush(0xC8, 0x6E, 0x0C), "!"),
-            SendNoticeKind.Started => (Brush(0x2E, 0x8B, 0x4E), "↑"),
-            _ => (Brush(0x2E, 0x8B, 0x4E), "✓"),
+            SendNoticeKind.Working => (Color.FromRgb(0x4A, 0x6C, 0xF0), Color.FromRgb(0x7B, 0x4F, 0xD6), "↑"),
+            SendNoticeKind.Failed => (Color.FromRgb(0xF0, 0x9A, 0x2A), Color.FromRgb(0xD9, 0x4F, 0x3D), "!"),
+            _ => (Color.FromRgb(0x2F, 0xB0, 0x63), Color.FromRgb(0x14, 0x8A, 0x8A), kind == SendNoticeKind.Started ? "↑" : "✓"),
         };
-        SendToast.Background = tone;
-        SendToastMark.Foreground = tone;
+        var fill = new LinearGradientBrush(from, to, new Point(0, 0), new Point(1, 1));
+        fill.Freeze();
+        var ink = new SolidColorBrush(Color.FromRgb((byte)((from.R + to.R) / 2), (byte)((from.G + to.G) / 2), (byte)((from.B + to.B) / 2)));
+        ink.Freeze();
+        SendToast.Background = fill;
+        SendToastMark.Foreground = ink;
         SendToastMark.Text = mark;
         SendToastText.Text = text;
         // Already up (sending → sent): a little pop says the outcome arrived.
         if (_toastShown && kind != SendNoticeKind.Working) Pop(1.06, 1, 260);
-        // "Sending…" stays until the outcome replaces it; an outcome goes after a while (a failure stays longer).
+        // "Sending…" stays until the outcome replaces it; an outcome goes after a while (a failure stays longer), and
+        // the bar along the bottom runs down until then.
         _toastHide.Stop();
+        SendToastTimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SendToastTrack.Visibility = kind == SendNoticeKind.Working ? Visibility.Collapsed : Visibility.Visible;
         if (kind != SendNoticeKind.Working)
         {
             _toastHide.Interval = TimeSpan.FromSeconds(kind == SendNoticeKind.Failed ? 6 : 3.5);
             _toastHide.Start();
+            SendToastTimerScale.BeginAnimation(ScaleTransform.ScaleXProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(1, 0, _toastHide.Interval));
         }
         if (!_toastShown) SlideToast(show: true);
     }
