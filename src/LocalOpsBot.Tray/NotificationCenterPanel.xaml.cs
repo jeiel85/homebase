@@ -221,6 +221,13 @@ public partial class NotificationCenterPanel : UserControl
             return;
         }
         _entries.RemoveAll(e => e.Kind == entry.Kind && e.Id == entry.Id);
+        // Every loaded entry deleted while older ones remain: read the first page again, or the list would claim to be
+        // empty (and "Older" cannot page on from nothing).
+        if (_entries.Count == 0 && _more)
+        {
+            await ReloadAsync();
+            return;
+        }
         // The last of a source gone: back to everything rather than an empty pick.
         if (_filter is not null && !_entries.Any(Matches)) _filter = null;
         Render();
