@@ -403,7 +403,8 @@ public partial class DashboardWindow : ThemedWindow
     {
         try
         {
-            return Clipboard.ContainsText() || Clipboard.ContainsFileDropList() || Clipboard.ContainsImage();
+            // "PNG" too: some apps copy a picture only in that format, which ClipboardShare reads (ContainsImage looks for a bitmap).
+            return Clipboard.ContainsText() || Clipboard.ContainsFileDropList() || Clipboard.ContainsImage() || Clipboard.ContainsData("PNG");
         }
         catch (System.Runtime.InteropServices.ExternalException)
         {
