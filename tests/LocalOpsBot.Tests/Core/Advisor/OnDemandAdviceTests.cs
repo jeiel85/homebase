@@ -228,7 +228,8 @@ public sealed class OnDemandAdviceTests
         }
 
         public Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct) => throw new NotSupportedException();
-        public Task<int> ClearDevicesAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<int> ClearDevicesAsync(LocalOpsBot.Core.Notifications.HistoryClearScope? scope, CancellationToken ct) => throw new NotSupportedException();
+        public Task<bool> DeleteDeviceAsync(long id, CancellationToken ct) => throw new NotSupportedException();
         public Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct) => throw new NotSupportedException();
     }
 

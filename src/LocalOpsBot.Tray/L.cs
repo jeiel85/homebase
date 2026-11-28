@@ -919,6 +919,18 @@ public static class L
         "Delete every notification received from your other devices? This PC's alerts stay (they are also kept for diagnostics).",
         "다른 기기에서 받은 알림을 모두 지울까요? 이 PC의 경보는 진단용으로도 쓰여 남겨 둡니다.");
     public static string CenterClearConfirm => T("Clear", "지우기");
+    public static string CenterClearScoped(string source) => T($"CLEAR {source.ToUpperInvariant()}", $"{source} 비우기");
+    public static string CenterClearScopedMessage(string source) => T(
+        $"Delete every notification under \"{source}\"? The rest stays.",
+        $"'{source}'의 알림을 모두 지울까요? 다른 알림은 그대로 둡니다.");
+    public static string CenterAlertsStay => T(
+        "This PC's alerts are not cleared: they are also kept for diagnostics and to hold back repeated alerts. They go after 30 days.",
+        "이 PC의 경보는 진단과 같은 경보 반복 방지에도 쓰여 지우지 않습니다. 30일이 지나면 정리됩니다.");
+    public static string CenterDeleteTip => T("Delete this notification", "이 알림 지우기");
+    public static string CenterDeleteTitle => T("Delete notification", "알림 지우기");
+    public static string CenterDeleteFailed => T(
+        "Couldn't delete the notification. The Homebase service may be restarting; try again in a moment.",
+        "알림을 지우지 못했습니다. Homebase 감시 서비스가 다시 시작하는 중일 수 있습니다. 잠시 뒤 다시 해 보세요.");
 
     // ── Updates (UpdateCoordinator / progress window) ────────────────────────
     public static string UpdChecking => T("Checking…", "확인하는 중…");

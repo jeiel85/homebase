@@ -93,6 +93,15 @@ object PushHistoryRules {
         prune(listOf(entry) + entries, now)
 
     /**
+     * Puts [removed] back where they were (an undone delete, DECISIONS M-81): merged by [HistoryEntry.receivedAt], newest
+     * first, without doubling an entry still there, and the limits applied again.
+     */
+    fun restore(entries: List<HistoryEntry>, removed: List<HistoryEntry>, now: Long): List<HistoryEntry> {
+        val there = entries.mapTo(HashSet()) { it.key }
+        return prune((entries + removed.filter { it.key !in there }).sortedByDescending { it.receivedAt }, now)
+    }
+
+    /**
      * Newest clipboard entries kept, received and sent together (#117). One keeps up to [ClipHistory.KEPT_CHARS]
      * characters — about 6 KB of Korean in the file, more than a push can carry — and the whole file is encrypted and
      * written again on every change: 500 of them would be about 3 MB. 100 keep it near 600 KB at worst.
@@ -121,6 +130,13 @@ object PushHistoryRules {
         val entry = id?.let { wanted -> entries.firstOrNull { it.category == category && it.id == wanted } }
         return Focus(group = if (any) categoryLabel(category) else null, expanded = entry?.key)
     }
+
+    /**
+     * Where a tapped push leads in the center (DECISIONS M-81): no filter, its entry ([pcId], [id]) opened — the newest,
+     * if recorded twice. Nothing opened when it is not (or no longer) there.
+     */
+    fun focusEntry(entries: List<HistoryEntry>, pcId: String, id: String?): Focus =
+        Focus(group = null, expanded = id?.let { wanted -> entries.firstOrNull { it.pcId == pcId && it.id == wanted }?.key })
 
     /**
      * What came in since [lastSeenAt]; files, commands and text this phone sent itself are no news ([FileHistory.SENT],
@@ -356,9 +372,24 @@ object PushHistory {
     }
 
     @Synchronized
-    fun remove(context: Context, entry: HistoryEntry) {
+    fun remove(context: Context, entry: HistoryEntry) = removeAll(context, listOf(entry))
+
+    /** Deletes [entries] (a swiped bundle, a filtered list emptied — M-81). */
+    @Synchronized
+    fun removeAll(context: Context, entries: Collection<HistoryEntry>) {
         ensureLoaded(context)
-        val next = _state.value.entries.filterNot { it.key == entry.key }
+        val keys = entries.mapTo(HashSet()) { it.key }
+        val next = _state.value.entries.filterNot { it.key in keys }
+        if (next.size == _state.value.entries.size) return
+        saveLater(context, next)
+        _state.value = _state.value.copy(entries = next)
+    }
+
+    /** Puts deleted [entries] back (the delete's "되돌리기", M-81). */
+    @Synchronized
+    fun restore(context: Context, entries: List<HistoryEntry>) {
+        ensureLoaded(context)
+        val next = PushHistoryRules.restore(_state.value.entries, entries, System.currentTimeMillis())
         saveLater(context, next)
         _state.value = _state.value.copy(entries = next)
     }

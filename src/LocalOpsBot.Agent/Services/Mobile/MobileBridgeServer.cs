@@ -379,7 +379,7 @@ public sealed class MobileBridgeServer : BackgroundService
             await SendAsync(conn, MobileBridge.Response(id, true, result), ct);
             return;
         }
-        if (op is MobileBridge.OpHistoryList or MobileBridge.OpHistoryClear)
+        if (op is MobileBridge.OpHistoryList or MobileBridge.OpHistoryClear or MobileBridge.OpHistoryDelete)
         {
             await SendAsync(conn, await HistoryAsync(op, id, payload, ct), ct);
             return;
@@ -451,12 +451,23 @@ public sealed class MobileBridgeServer : BackgroundService
         {
             if (op == MobileBridge.OpHistoryClear)
             {
-                var removed = await _history.ClearDevicesAsync(ct);
-                _logger.LogInformation("Notification center cleared from the Tray ({Count} relayed notifications)", removed);
+                // A source picked in the Tray clears only its own (M-81); no payload clears all, as before.
+                var scope = payload?.Deserialize<HistoryClearScope>(MobileProtocol.Json);
+                var removed = await _history.ClearDevicesAsync(scope, ct);
+                _logger.LogInformation("Notification center cleared from the Tray ({Count} relayed notifications, {Scope})",
+                    removed, scope is null || scope.IsAll ? "all" : "one source");
                 return MobileBridge.Response(id, true, removed);
             }
-            var request = payload?.Deserialize<HistoryListRequest>(MobileProtocol.Json);
-            var page = await _history.ListAsync(request?.After, NotificationHistoryRules.ClampLimit(request?.Limit), ct);
+            if (op == MobileBridge.OpHistoryDelete)
+            {
+                var request = payload?.Deserialize<HistoryDeleteRequest>(MobileProtocol.Json);
+                if (request is null) return MobileBridge.Response(id, false, error: "bad_request");
+                // Already gone (deleted from another window, or pruned) counts as done.
+                await _history.DeleteDeviceAsync(request.Id, ct);
+                return MobileBridge.Response(id, true, true);
+            }
+            var list = payload?.Deserialize<HistoryListRequest>(MobileProtocol.Json);
+            var page = await _history.ListAsync(list?.After, NotificationHistoryRules.ClampLimit(list?.Limit), ct);
             return MobileBridge.Response(id, true,
                 NotificationHistoryRules.FitToBytes(page, NotificationHistoryRules.MaxResponseBytes, MobileProtocol.Json));
         }

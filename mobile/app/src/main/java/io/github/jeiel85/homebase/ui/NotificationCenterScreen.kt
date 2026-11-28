@@ -29,6 +29,14 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -43,15 +51,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,11 +153,13 @@ fun NotificationCenterScreen(
     // A transfer's notification tapped while it was still under way: its entry, opened when it is written (#109).
     var awaitedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     var awaitedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var awaitedPc by rememberSaveable { mutableStateOf<String?>(null) }
     // The user took over (picked a filter, opened an entry or a stack, dragged the list): a transfer that finishes
     // later doesn't move the screen away from what they are reading.
     fun stopAwaiting() {
         awaitedCategory = null
         awaitedId = null
+        awaitedPc = null
     }
     LaunchedEffect(listState) {
         listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) stopAwaiting() }
@@ -155,13 +169,14 @@ fun NotificationCenterScreen(
     LaunchedEffect(focus, seenBefore) {
         val wanted = focus ?: return@LaunchedEffect
         if (seenBefore == null) return@LaunchedEffect
-        val view = PushHistoryRules.focus(PushHistory.state.value.entries, wanted.category, wanted.id)
+        val view = viewOf(PushHistory.state.value.entries, wanted.category, wanted.id, wanted.pcId)
         groupFilter = view.group
         pcFilter = null
         openStack = null
         expanded = view.expanded
         awaitedCategory = if (view.expanded == null && wanted.id != null) wanted.category else null
         awaitedId = if (awaitedCategory != null) wanted.id else null
+        awaitedPc = if (awaitedCategory != null) wanted.pcId else null
         if (view.expanded != null) scrollTo = view.expanded else listState.scrollToItem(0)
         // Last: taking the focus restarts this effect, which would cut the scroll short.
         onFocused()
@@ -170,7 +185,7 @@ fun NotificationCenterScreen(
     LaunchedEffect(history.entries, awaitedId) {
         val category = awaitedCategory ?: return@LaunchedEffect
         val id = awaitedId ?: return@LaunchedEffect
-        val view = PushHistoryRules.focus(history.entries, category, id)
+        val view = viewOf(history.entries, category, id, awaitedPc)
         val key = view.expanded ?: return@LaunchedEffect
         groupFilter = view.group
         pcFilter = null
@@ -179,6 +194,7 @@ fun NotificationCenterScreen(
         scrollTo = key
         awaitedCategory = null
         awaitedId = null
+        awaitedPc = null
     }
     val shown = remember(entries, groupFilter, pcFilter) {
         entries.filter { e ->
@@ -203,6 +219,13 @@ fun NotificationCenterScreen(
     val leading = listOf(showRestarted, showEmpty, showChips, showNoMatch).count { it }
     LaunchedEffect(scrollTo, byDay, openStack) {
         val key = scrollTo ?: return@LaunchedEffect
+        // A tapped push may sit in a bundle (M-37): unfold it first, so the entry itself is shown open (M-81).
+        CenterLayout.stackOf(key, byDay.map { (day, _, rows) -> rows.map { it to "stack:$day:${it.first().bundleKey}" } })
+            ?.takeIf { it != openStack }
+            ?.let {
+                openStack = it
+                return@LaunchedEffect // runs again with the bundle open
+            }
         CenterLayout.indexOf(key, leading, byDay.map { (day, _, rows) -> rows.map { it to "stack:$day:${it.first().bundleKey}" } }, openStack)
             ?.let { listState.scrollToItem(it) }
         scrollTo = null
@@ -228,168 +251,255 @@ fun NotificationCenterScreen(
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
-    Column(Modifier.fillMaxSize().background(hb.background)) {
-        ConsoleBar(
-            title = "알림 센터",
-            onBack = onBack,
-            eyebrow = "받은 푸시 알림",
-            actions = {
-                IconButton(onClick = { confirmClear = true }, enabled = entries.isNotEmpty()) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "알림 이력 모두 지우기",
-                        tint = if (entries.isNotEmpty()) hb.onSlab else hb.onSlabSoft.copy(alpha = 0.4f),
-                    )
-                }
-            },
-        )
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 14.dp),
-        ) {
-            if (showRestarted) {
-                item {
-                    Text(
-                        "이전 알림 이력을 읽지 못해 새로 시작했습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = hb.inkSoft,
-                        modifier = Modifier.padding(top = 12.dp),
-                    )
-                }
-            }
-            if (showEmpty) {
-                item { EmptyCenter(pushOn, onSettings) }
-            }
-            if (showChips) {
-                item {
-                    Column(Modifier.padding(top = 12.dp)) {
-                        if (groups.size > 1) {
-                            ChipRow(
-                                options = groups.map { it to it },
-                                selected = groupFilter,
-                                onSelect = {
-                                    groupFilter = it
-                                    stopAwaiting()
-                                },
-                            )
-                        }
-                        if (pcs.size > 1) {
-                            ChipRow(options = pcs, selected = pcFilter, onSelect = {
-                                pcFilter = it
-                                stopAwaiting()
-                            })
-                        }
-                    }
-                }
-            }
-            if (showNoMatch) {
-                item {
-                    Text(
-                        "고른 조건에 맞는 알림이 없습니다.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = hb.inkSoft,
-                        modifier = Modifier.padding(top = 24.dp),
-                    )
-                }
-            }
-            fun isUnread(e: HistoryEntry) = seenBefore.let { it != null && PushHistoryRules.isUnread(e, it) }
-            byDay.forEach { (day, dayEntries, rows) ->
-                item(key = "day:$day") {
-                    SectionLabel(
-                        PushHistoryRules.dayLabel(dayEntries.first().receivedAt, now, zone),
-                        trailing = "${dayEntries.size}건",
-                    )
-                }
-                rows.forEach { row ->
-                    val stackKey = "stack:$day:${row.first().bundleKey}"
-                    val open = row.size == 1 || openStack == stackKey
-                    if (row.size > 1) {
-                        item(key = stackKey) {
-                            StackCard(
-                                entries = row,
-                                unread = row.any(::isUnread),
-                                open = open,
-                                pcName = nameOf(row.first().pcId, row.first().pcName),
-                                mark = markOf(row.first()),
-                                onToggle = {
-                                    openStack = if (open) null else stackKey
-                                    stopAwaiting()
-                                },
-                                zone = zone,
-                            )
-                            Spacer(Modifier.height(if (open) 6.dp else 10.dp))
-                        }
-                    }
-                    if (open) {
-                        items(row, key = { it.key }) { e ->
-                            HistoryCard(
-                                entry = e,
-                                unread = isUnread(e),
-                                expanded = expanded == e.key,
-                                pcName = nameOf(e.pcId, e.pcName),
-                                mark = markOf(e),
-                                canOpenPc = e.pcId in paired,
-                                onToggle = {
-                                    expanded = if (expanded == e.key) null else e.key
-                                    stopAwaiting()
-                                },
-                                onOpenPc = { onOpenPc(e.pcId) },
-                                onOpenFiles = if (e.category == FileHistory.RECEIVED && e.uris.isNotEmpty()) {
-                                    { openFiles(e) }
-                                } else {
-                                    null
-                                },
-                                onCopy = if (ClipHistory.isClip(e.category) && e.body != null) {
-                                    { copyText(e) }
-                                } else {
-                                    null
-                                },
-                                onDelete = {
-                                    PushHistory.remove(context, e)
-                                    if (expanded == e.key) expanded = null
-                                },
-                                zone = zone,
-                                // Entries of an opened bundle sit indented under it.
-                                modifier = if (row.size > 1) Modifier.padding(start = 14.dp) else Modifier,
-                            )
-                            Spacer(Modifier.height(if (row.size > 1 && e !== row.last()) 6.dp else 10.dp))
-                        }
-                    }
-                }
-            }
-            if (entries.isNotEmpty()) {
-                item {
-                    Text(
-                        "최근 30일, 최대 ${PushHistoryRules.MAX_ENTRIES}건을 이 휴대폰에만 암호화해 보관합니다. " +
-                            "끈 범주의 알림은 받지 않으므로 여기에도 남지 않습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = hb.inkSoft,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
-            }
-            item { Spacer(Modifier.navigationBarsPadding().height(24.dp)) }
+    // A delete says what went and offers it back for a few seconds (DECISIONS M-81): a swipe is easy to make by mistake.
+    val snackbar = remember { SnackbarHostState() }
+    fun delete(gone: List<HistoryEntry>) {
+        if (gone.isEmpty()) return
+        PushHistory.removeAll(context, gone)
+        if (gone.any { it.key == expanded }) expanded = null
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val result = snackbar.showSnackbar(
+                if (gone.size == 1) "알림을 지웠습니다" else "알림 ${gone.size}건을 지웠습니다",
+                actionLabel = "되돌리기",
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) PushHistory.restore(context, gone)
         }
+    }
+    // With a kind or a PC picked, the bin empties just what is shown (M-81); otherwise everything.
+    val filterLabel = listOfNotNull(groupFilter, pcFilter?.let { id -> pcs.firstOrNull { it.first == id }?.second }).joinToString(" · ")
+    val clearsShown = filterLabel.isNotEmpty()
+    val canClear = if (clearsShown) shown.isNotEmpty() else entries.isNotEmpty()
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(hb.background)) {
+            ConsoleBar(
+                title = "알림 센터",
+                onBack = onBack,
+                eyebrow = "받은 푸시 알림",
+                actions = {
+                    IconButton(onClick = { confirmClear = true }, enabled = canClear) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = if (clearsShown) "'$filterLabel' 알림 비우기" else "알림 이력 모두 지우기",
+                            tint = if (canClear) hb.onSlab else hb.onSlabSoft.copy(alpha = 0.4f),
+                        )
+                    }
+                },
+            )
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 14.dp),
+            ) {
+                if (showRestarted) {
+                    item {
+                        Text(
+                            "이전 알림 이력을 읽지 못해 새로 시작했습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = hb.inkSoft,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                }
+                if (showEmpty) {
+                    item { EmptyCenter(pushOn, onSettings) }
+                }
+                if (showChips) {
+                    item {
+                        Column(Modifier.padding(top = 12.dp)) {
+                            if (groups.size > 1) {
+                                ChipRow(
+                                    options = groups.map { it to it },
+                                    selected = groupFilter,
+                                    onSelect = {
+                                        groupFilter = it
+                                        stopAwaiting()
+                                    },
+                                )
+                            }
+                            if (pcs.size > 1) {
+                                ChipRow(options = pcs, selected = pcFilter, onSelect = {
+                                    pcFilter = it
+                                    stopAwaiting()
+                                })
+                            }
+                        }
+                    }
+                }
+                if (showNoMatch) {
+                    item {
+                        Text(
+                            "고른 조건에 맞는 알림이 없습니다.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = hb.inkSoft,
+                            modifier = Modifier.padding(top = 24.dp),
+                        )
+                    }
+                }
+                fun isUnread(e: HistoryEntry) = seenBefore.let { it != null && PushHistoryRules.isUnread(e, it) }
+                byDay.forEach { (day, dayEntries, rows) ->
+                    item(key = "day:$day") {
+                        SectionLabel(
+                            PushHistoryRules.dayLabel(dayEntries.first().receivedAt, now, zone),
+                            trailing = "${dayEntries.size}건",
+                        )
+                    }
+                    rows.forEach { row ->
+                        val stackKey = "stack:$day:${row.first().bundleKey}"
+                        val open = row.size == 1 || openStack == stackKey
+                        if (row.size > 1) {
+                            item(key = stackKey) {
+                                SwipeToDelete(label = "묶음 ${row.size}건 지우기", onDelete = { delete(row) }) {
+                                    StackCard(
+                                        entries = row,
+                                        unread = row.any(::isUnread),
+                                        open = open,
+                                        pcName = nameOf(row.first().pcId, row.first().pcName),
+                                        mark = markOf(row.first()),
+                                        onToggle = {
+                                            openStack = if (open) null else stackKey
+                                            stopAwaiting()
+                                        },
+                                        zone = zone,
+                                    )
+                                }
+                                Spacer(Modifier.height(if (open) 6.dp else 10.dp))
+                            }
+                        }
+                        if (open) {
+                            items(row, key = { it.key }) { e ->
+                                // Entries of an opened bundle sit indented under it.
+                                SwipeToDelete(
+                                    label = "이 알림 지우기",
+                                    onDelete = { delete(listOf(e)) },
+                                    modifier = if (row.size > 1) Modifier.padding(start = 14.dp) else Modifier,
+                                ) {
+                                HistoryCard(
+                                    entry = e,
+                                    unread = isUnread(e),
+                                    expanded = expanded == e.key,
+                                    pcName = nameOf(e.pcId, e.pcName),
+                                    mark = markOf(e),
+                                    canOpenPc = e.pcId in paired,
+                                    onToggle = {
+                                        expanded = if (expanded == e.key) null else e.key
+                                        stopAwaiting()
+                                    },
+                                    onOpenPc = { onOpenPc(e.pcId) },
+                                    onOpenFiles = if (e.category == FileHistory.RECEIVED && e.uris.isNotEmpty()) {
+                                        { openFiles(e) }
+                                    } else {
+                                        null
+                                    },
+                                    onCopy = if (ClipHistory.isClip(e.category) && e.body != null) {
+                                        { copyText(e) }
+                                    } else {
+                                        null
+                                    },
+                                    onDelete = { delete(listOf(e)) },
+                                    zone = zone,
+                                )
+                                }
+                                Spacer(Modifier.height(if (row.size > 1 && e !== row.last()) 6.dp else 10.dp))
+                            }
+                        }
+                    }
+                }
+                if (entries.isNotEmpty()) {
+                    item {
+                        Text(
+                            "카드를 옆으로 밀면 지웁니다(묶음은 통째로). " +
+                                "최근 30일, 최대 ${PushHistoryRules.MAX_ENTRIES}건을 이 휴대폰에만 암호화해 보관합니다. " +
+                                "끈 범주의 알림은 받지 않으므로 여기에도 남지 않습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = hb.inkSoft,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+                item { Spacer(Modifier.navigationBarsPadding().height(24.dp)) }
+            }
+        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp))
     }
 
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("알림 이력 지우기") },
-            text = { Text("받은 알림 ${entries.size}건을 이 휴대폰에서 모두 지울까요? 되돌릴 수 없습니다. PC와 Android 알림 창에는 영향이 없습니다.") },
+            title = { Text(if (clearsShown) "알림 비우기" else "알림 이력 지우기") },
+            text = {
+                Text(
+                    if (clearsShown) {
+                        "'$filterLabel' 알림 ${shown.size}건을 이 휴대폰에서 지울까요? 다른 알림은 그대로 둡니다. " +
+                            "PC와 Android 알림 창에는 영향이 없습니다."
+                    } else {
+                        "받은 알림 ${entries.size}건을 이 휴대폰에서 모두 지울까요? 되돌릴 수 없습니다. PC와 Android 알림 창에는 영향이 없습니다."
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    PushHistory.clear(context)
-                    expanded = null
-                    groupFilter = null
-                    pcFilter = null
+                    if (clearsShown) {
+                        delete(shown)
+                    } else {
+                        PushHistory.clear(context)
+                        expanded = null
+                        groupFilter = null
+                        pcFilter = null
+                    }
                     confirmClear = false
-                }) { Text("모두 지우기") }
+                }) { Text(if (clearsShown) "비우기" else "모두 지우기") }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } },
         )
     }
+}
+
+/**
+ * A card that is deleted by swiping it either way (DECISIONS M-81), over a red strip saying so. [label] also names the
+ * delete as an accessibility action, for those who cannot swipe.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToDelete(label: String, onDelete: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val hb = Hb.colors
+    val current by rememberUpdatedState(onDelete)
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.Settled) {
+                false
+            } else {
+                current()
+                true
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = state,
+        modifier = modifier.semantics {
+            customActions = listOf(
+                CustomAccessibilityAction(label) {
+                    current()
+                    true
+                },
+            )
+        },
+        backgroundContent = {
+            val fromStart = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+            Box(
+                Modifier.fillMaxSize().clip(PlateShape).background(hb.danger).padding(horizontal = 18.dp),
+                contentAlignment = if (fromStart) Alignment.CenterStart else Alignment.CenterEnd,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Delete, contentDescription = null, tint = Color.White)
+                    Spacer(Modifier.width(6.dp))
+                    Text("지우기", color = Color.White, style = HbType.label)
+                }
+            }
+        },
+    ) { content() }
 }
 
 /** "전체" plus one chip per option; scrolls sideways when the names don't fit. */
@@ -557,11 +667,22 @@ private fun headerLine(entry: HistoryEntry, pcName: String, kind: String): Strin
     }
 }
 
-/** What the notification center opens on: the kind [category] filtered, with the entry [id] of it open. */
-data class CenterFocus(val category: String, val id: String?)
+/**
+ * What the notification center opens on: the kind [category] filtered, with the entry [id] of it open; or, for a tapped
+ * push ([pcId] set, M-81), everything, with that PC's entry [id] open and its bundle unfolded.
+ */
+data class CenterFocus(val category: String, val id: String?, val pcId: String? = null)
+
+/** How the center opens for a focus: a tapped push's entry ([pcId] set, M-81), or a kind's filter with its entry. */
+private fun viewOf(entries: List<HistoryEntry>, category: String, id: String?, pcId: String?): PushHistoryRules.Focus =
+    if (pcId != null) PushHistoryRules.focusEntry(entries, pcId, id) else PushHistoryRules.focus(entries, category, id)
 
 /** Where an entry sits in the notification center's list — pure, so tests pin it (#109). */
 internal object CenterLayout {
+    /** The bundle key of the row holding entry [key] when that row is a bundle of several, else null. */
+    fun stackOf(key: String, days: List<List<Pair<List<HistoryEntry>, String>>>): String? =
+        days.asSequence().flatten().firstOrNull { (row, _) -> row.size > 1 && row.any { it.key == key } }?.second
+
     /**
      * The list index of the entry [key], or its bundle's card when that bundle is closed; null when it isn't shown.
      * [leading]: items before the first day. [days]: each day's rows (newest first) with the row's bundle key, laid

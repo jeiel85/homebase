@@ -553,6 +553,38 @@
     </Setter>
   </Style>
 
+  <!-- A notification center row's delete button (DECISIONS M-81): a quiet glyph that turns red on hover. -->
+  <Style x:Key="Center.DeleteButton" TargetType="Button">
+    <Setter Property="Foreground" Value="#4A5180"/>
+    <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+    <Setter Property="FontSize" Value="11"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Width" Value="26"/>
+    <Setter Property="Height" Value="24"/>
+    <Setter Property="VerticalAlignment" Value="Top"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd" Background="Transparent" CornerRadius="6">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="#FBE3E1"/>
+              <Setter Property="Foreground" Value="#B3261E"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="#EEF1F9"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="bd" Property="Opacity" Value="0.4"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Masthead page tab (Devices / Notifications / Settings, DECISIONS M-49): soft text on carbon, the
        picked one raised with an amber underline — the same signal as the console tabs. -->
   <Style x:Key="Dash.NavTab" TargetType="RadioButton">

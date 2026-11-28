@@ -51,6 +51,14 @@ object PushNotifier {
     const val ACTION_OPEN_CENTER = "io.github.jeiel85.homebase.action.OPEN_NOTIFICATIONS"
 
     /**
+     * Action of a notification's own tap (DECISIONS M-81): opens the notification center on its entry, unfolded, rather
+     * than its PC's screen (the entry's "PC 열기" leads there). [EXTRA_PC_ID], [EXTRA_PUSH_ID] and [EXTRA_CATEGORY] name it.
+     */
+    const val ACTION_OPEN_ENTRY = "io.github.jeiel85.homebase.action.OPEN_NOTIFICATION_ENTRY"
+    const val EXTRA_PUSH_ID = "io.github.jeiel85.homebase.PUSH_ID"
+    const val EXTRA_CATEGORY = "io.github.jeiel85.homebase.CATEGORY"
+
+    /**
      * Action of an alert's "AI 조언" button (DECISIONS M-61): opens the PC and asks its AI at once.
      * [EXTRA_NOTIFICATION_ID] is the notification to take away.
      */
@@ -103,11 +111,16 @@ object PushNotifier {
     fun show(context: Context, message: PushMessage, profile: AlertProfile, mark: PcMark): Boolean {
         if (!profile.shade || !canNotify(context)) return false
         val channelId = ensureChannel(context, message, profile) ?: return false
+        val id = message.id.hashCode()
+        // One PendingIntent per notification (its id; the action tells it apart from "AI 조언"'s), so each tap opens its own entry.
         val open = PendingIntent.getActivity(
             context,
-            message.pcId.hashCode(),
+            id,
             Intent(context, MainActivity::class.java)
+                .setAction(ACTION_OPEN_ENTRY)
                 .putExtra(EXTRA_PC_ID, message.pcId)
+                .putExtra(EXTRA_PUSH_ID, message.id)
+                .putExtra(EXTRA_CATEGORY, message.category)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -146,7 +159,6 @@ object PushNotifier {
                 // Swiping the last one away must take the summary with it.
                 .setDeleteIntent(dismissed(context))
         }
-        val id = message.id.hashCode()
         message.approval?.let { addApprovalActions(context, builder, message, it, id) }
         if (message.category in NotificationGroups.ADVICE_ON) builder.addAction(0, "AI 조언", askAdvice(context, message.pcId, id))
         if (!post(context, null, id, builder.build())) return false

@@ -105,7 +105,8 @@ class MainActivity : ComponentActivity() {
                 Surface {
                     // "" = list, "+" = pair, [ROUTE_SETTINGS] = settings, [ROUTE_PRIORITY] = notification priorities,
                     // [ROUTE_NOTIFICATIONS] = notification center, otherwise a pcId.
-                    // A tapped push notification opens its PC; a tapped bundle summary, the notification center.
+                    // A tapped push notification opens its entry in the notification center (M-81), a bundle summary the
+                    // center itself; an alert's "AI 조언", its PC.
                     var route by rememberSaveable { mutableStateOf(intent.pushRoute() ?: "") }
                     // Where back leads from a PC's screen: the notification center when its "PC 열기" opened it, else the list.
                     var pcBack by rememberSaveable { mutableStateOf("") }
@@ -177,11 +178,12 @@ class MainActivity : ComponentActivity() {
         centerFocus?.let {
             outState.putString(KEY_FOCUS_CATEGORY, it.category)
             it.id?.let { id -> outState.putString(KEY_FOCUS_ID, id) }
+            it.pcId?.let { pcId -> outState.putString(KEY_FOCUS_PC, pcId) }
         }
     }
 
     private fun Bundle.centerFocus(): CenterFocus? =
-        getString(KEY_FOCUS_CATEGORY)?.let { CenterFocus(it, getString(KEY_FOCUS_ID)) }
+        getString(KEY_FOCUS_CATEGORY)?.let { CenterFocus(it, getString(KEY_FOCUS_ID), getString(KEY_FOCUS_PC)) }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -209,6 +211,7 @@ class MainActivity : ComponentActivity() {
         const val KEY_PAIRING_LINK = "pairingLink"
         const val KEY_FOCUS_CATEGORY = "centerFocusCategory"
         const val KEY_FOCUS_ID = "centerFocusId"
+        const val KEY_FOCUS_PC = "centerFocusPc"
         /** Checked before the pcId branch, so it never reaches the PC store. */
         const val ROUTE_SETTINGS = "app:settings"
         const val ROUTE_PRIORITY = "app:priority"
@@ -232,14 +235,14 @@ class MainActivity : ComponentActivity() {
         this?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString?.takeIf(PairingLink::isLink)
 
     /**
-     * The screen a tapped notification opens: the notification center for a bundle summary, an upload's or a received
-     * text's notification, else the push's PC.
+     * The screen a tapped notification opens: the notification center for a push (on its entry, M-81), a bundle summary,
+     * an upload's or a received text's notification; the PC for an alert's "AI 조언".
      */
     private fun Intent?.pushRoute(): String? {
         val tapped = this ?: return null
         return when (tapped.action) {
-            PushNotifier.ACTION_OPEN_CENTER, UploadNotifier.ACTION_OPEN_SENT, ReceiveNotifier.ACTION_OPEN_RECEIVED,
-            ClipNotifier.ACTION_OPEN_RECEIVED -> ROUTE_NOTIFICATIONS
+            PushNotifier.ACTION_OPEN_CENTER, PushNotifier.ACTION_OPEN_ENTRY, UploadNotifier.ACTION_OPEN_SENT,
+            ReceiveNotifier.ACTION_OPEN_RECEIVED, ClipNotifier.ACTION_OPEN_RECEIVED -> ROUTE_NOTIFICATIONS
             else -> tapped.getStringExtra(PushNotifier.EXTRA_PC_ID)
         }
     }
@@ -252,6 +255,10 @@ class MainActivity : ComponentActivity() {
         UploadNotifier.ACTION_OPEN_SENT -> CenterFocus(FileHistory.SENT, getStringExtra(UploadNotifier.EXTRA_TRANSFER_ID))
         ReceiveNotifier.ACTION_OPEN_RECEIVED -> CenterFocus(FileHistory.RECEIVED, getStringExtra(ReceiveNotifier.EXTRA_TRANSFER_ID))
         ClipNotifier.ACTION_OPEN_RECEIVED -> CenterFocus(ClipHistory.RECEIVED, getStringExtra(ClipNotifier.EXTRA_CLIP_ID))
+        // A push: its own entry, open, with no filter picked (M-81).
+        PushNotifier.ACTION_OPEN_ENTRY -> getStringExtra(PushNotifier.EXTRA_CATEGORY)?.let { category ->
+            CenterFocus(category, getStringExtra(PushNotifier.EXTRA_PUSH_ID), pcId = getStringExtra(PushNotifier.EXTRA_PC_ID))
+        }
         else -> null
     }
 }

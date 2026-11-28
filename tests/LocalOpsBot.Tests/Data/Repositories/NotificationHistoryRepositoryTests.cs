@@ -45,8 +45,9 @@ public sealed class NotificationHistoryRepositoryTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private Task Relay(string title, DateTimeOffset at, string origin = "Galaxy S24", string kind = DeviceKind.Phone, string? body = null) =>
-        _t.History.AddAsync(new DeviceNotificationRecord($"n-{title}", $"id-{origin}", origin, kind, "카카오톡", title, body, at.AddSeconds(-2), at),
+    private Task Relay(string title, DateTimeOffset at, string origin = "Galaxy S24", string kind = DeviceKind.Phone, string? body = null,
+        string app = "카카오톡") =>
+        _t.History.AddAsync(new DeviceNotificationRecord($"n-{title}", $"id-{origin}", origin, kind, app, title, body, at.AddSeconds(-2), at),
             CancellationToken.None);
 
     private Task Alert(string title, DateTimeOffset at, string status = "Sent", string? body = null) =>
@@ -177,10 +178,40 @@ public sealed class NotificationHistoryRepositoryTests : IAsyncLifetime
         await Relay("엄마", T0);
         await Alert("디스크 오류", T0.AddMinutes(1));
 
-        Assert.Equal(1, await _t.History.ClearDevicesAsync(CancellationToken.None));
+        Assert.Equal(1, await _t.History.ClearDevicesAsync(null, CancellationToken.None));
 
         var entry = Assert.Single((await _t.History.ListAsync(null, 10, CancellationToken.None)).Entries);
         Assert.Equal(HistoryKind.Alert, entry.Kind);
+    }
+
+    [Fact]
+    public async Task Clearing_one_app_or_one_sender_leaves_the_rest()
+    {
+        await Relay("클립 보냄", T0, app: "clip.sent");
+        await Relay("클립 받음", T0.AddMinutes(1), app: "clip.received");
+        await Relay("PC 알림", T0.AddMinutes(2), origin: "ASUS-EXPERTBOOK", kind: DeviceKind.Pc);
+        await Alert("디스크 오류", T0.AddMinutes(3));
+
+        Assert.Equal(1, await _t.History.ClearDevicesAsync(new HistoryClearScope(App: "clip.sent"), CancellationToken.None));
+        Assert.Equal(1, await _t.History.ClearDevicesAsync(new HistoryClearScope(Source: "ASUS-EXPERTBOOK"), CancellationToken.None));
+
+        var titles = (await _t.History.ListAsync(null, 10, CancellationToken.None)).Entries.Select(e => e.Title).ToList();
+        Assert.Equal(new[] { "디스크 오류", "클립 받음" }, titles);
+    }
+
+    [Fact]
+    public async Task Deleting_one_relayed_notification_leaves_the_others_and_the_alerts()
+    {
+        await Relay("하나", T0);
+        await Relay("둘", T0.AddMinutes(1));
+        await Alert("디스크 오류", T0.AddMinutes(2));
+        var one = (await _t.History.ListAsync(null, 10, CancellationToken.None)).Entries.Single(e => e.Title == "하나");
+
+        Assert.True(await _t.History.DeleteDeviceAsync(one.Id, CancellationToken.None));
+        Assert.False(await _t.History.DeleteDeviceAsync(one.Id, CancellationToken.None)); // already gone
+
+        var titles = (await _t.History.ListAsync(null, 10, CancellationToken.None)).Entries.Select(e => e.Title).ToList();
+        Assert.Equal(new[] { "디스크 오류", "둘" }, titles);
     }
 
     [Fact]
