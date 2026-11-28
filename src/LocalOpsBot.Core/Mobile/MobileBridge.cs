@@ -31,7 +31,8 @@ public static class MobileBridge
     public const string OpHubsLink = "hubs.link";             // request {link} → HubLinkResult (M-29)
     public const string OpHubsUnlink = "hubs.unlink";         // request {pcId} → bool (M-29)
     public const string OpHistoryList = "history.list";       // request {after?, limit?} → HistoryPage (M-32)
-    public const string OpHistoryClear = "history.clear";     // request → int (relayed notifications removed; M-32)
+    public const string OpHistoryClear = "history.clear";     // request {app?, source?} → int (relayed notifications removed; M-32, M-81)
+    public const string OpHistoryDelete = "history.delete";   // request {id} → bool: one relayed notification removed (M-81)
     public const string OpAgentAlert = "agent.alert";         // push AgentAlert — an AI session waits or finished (M-45)
     public const string OpLiveGet = "live.get";               // request {target} → LiveView, keeps that view open ~10 s (M-46)
     public const string OpApprovalAsk = "approval.ask";       // request ApprovalRequest → ApprovalAskResult (M-48, waits up to 10 min)
@@ -67,7 +68,7 @@ public static class MobileBridge
     public static readonly IReadOnlySet<string> AllowedTrayOps = new HashSet<string>(StringComparer.Ordinal)
     {
         OpSessionReport, OpPairingBegin, OpDevicesList, OpDevicesRevoke, OpStatus, OpNotifyTest,
-        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpAgentAlert, OpLiveGet,
+        OpDevicesOverview, OpHubsLink, OpHubsUnlink, OpHistoryList, OpHistoryClear, OpHistoryDelete, OpAgentAlert, OpLiveGet,
         OpApprovalAsk, OpApprovalCancel, OpAliasesSet, OpDevicesRefresh, OpAdvise,
         OpClipReady, OpClipTargets, OpClipSend, OpClipDone, OpFilesReady, OpTransferSaved,
         OpFilesTargets, OpFilesBegin, OpFilesGo, OpFilesCancel,
@@ -285,6 +286,9 @@ public sealed record LiveView(string State, LiveSnapshot? Snapshot = null, strin
 
 /// <summary><c>history.list</c> request: entries after <c>After</c> (or from the newest), at most <c>Limit</c> (M-32).</summary>
 public sealed record HistoryListRequest(LocalOpsBot.Core.Notifications.HistoryCursor? After, int? Limit);
+
+/// <summary><c>history.delete</c> request: the relayed notification <c>Id</c> (a <c>device</c> entry's id; M-81).</summary>
+public sealed record HistoryDeleteRequest(long Id);
 
 /// <summary><c>hubs.link</c> result. <c>Error</c> codes: <c>invalid_link</c>, <c>unreachable</c>, <c>rejected</c>, <c>self</c>, <c>off</c>.</summary>
 public sealed record HubLinkResult(bool Linked, string? PcName, string? Error, string? Message);

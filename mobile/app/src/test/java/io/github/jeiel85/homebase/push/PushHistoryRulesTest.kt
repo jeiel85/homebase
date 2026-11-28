@@ -163,4 +163,27 @@ class PushHistoryRulesTest {
         val bytes = PushHistoryRules.toJson(kept.filter { ClipHistory.isClip(it.category) }).toByteArray(Charsets.UTF_8).size
         assertTrue("clipboard entries take $bytes bytes", bytes in 600_000..700_000)
     }
+
+    @Test
+    fun restorePutsDeletedEntriesBackInTimeOrderOnce() {
+        // M-81: an undone delete returns entries where they were, and never doubles one still there.
+        val now = at(2026, 11, 28)
+        val c = entry("c", now - 1_000)
+        val b = entry("b", now - 2_000)
+        val a = entry("a", now - 3_000)
+        val restored = PushHistoryRules.restore(listOf(c, a), listOf(b, a), now)
+        assertEquals(listOf("c", "b", "a"), restored.map { it.id })
+    }
+
+    @Test
+    fun focusEntryOpensATappedPushWithoutAFilter() {
+        // M-81: a tapped push opens its own entry (the newest if recorded twice), with no kind picked.
+        val newer = entry("p1", 300)
+        val older = entry("p1", 100)
+        val other = entry("p2", 200)
+        val list = listOf(newer, other, older)
+        assertEquals(PushHistoryRules.Focus(null, newer.key), PushHistoryRules.focusEntry(list, "pc1", "p1"))
+        assertEquals(PushHistoryRules.Focus(null, null), PushHistoryRules.focusEntry(list, "pc2", "p1"))
+        assertEquals(PushHistoryRules.Focus(null, null), PushHistoryRules.focusEntry(list, "pc1", null))
+    }
 }

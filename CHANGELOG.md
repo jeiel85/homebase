@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.63.0 — Delete notifications one by one
+
+### Added
+- **Delete a notification on its own in the PC notification center.** Each notification another device sent has a
+  × at the right of its row. The button at the bottom left follows the source picked on the left: "보낸 클립보드
+  비우기", "ASUS-EXPERTBOOK 비우기" and so on empty just that source, "모두 지우기" under 전체 everything as before.
+  This PC's alerts stay (their log also holds back repeated alerts) and go after 30 days (DECISIONS M-81).
+- **Swipe a card away in the phone's notification center**, either way; a bundle goes whole. A bar at the bottom
+  says what went, with [되돌리기] for a few seconds. With a kind or a PC picked, the bin icon empties just that list.
+  Deleting used to be only in an opened card, where it was easy to miss.
+
+### Changed
+- **Tapping a Homebase notification on the phone opens it in the notification center**, unfolded with its full text
+  (its bundle opened if it is in one), instead of the PC's screen. The card's "PC 열기" still leads there; an
+  alert's "AI 조언" button still opens the PC and asks.
+
 ## v0.62.0 — Send the clipboard from the device list
 
 ### Added

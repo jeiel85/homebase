@@ -105,6 +105,16 @@ public sealed record HistoryCursor(DateTimeOffset At, string Kind, long Id)
     public static HistoryCursor After(HistoryEntry e) => new(e.At, e.Kind, e.Id);
 }
 
+/// <summary>
+/// Which relayed notifications <c>history.clear</c> deletes: those of <c>App</c> (a received or sent file,
+/// clipboard text, a command) and/or those sent by <c>Source</c> (the device name as sent). Both null: all.
+/// </summary>
+public sealed record HistoryClearScope(string? App = null, string? Source = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsAll => App is null && Source is null;
+}
+
 public interface INotificationHistoryStore
 {
     Task AddAsync(DeviceNotificationRecord record, CancellationToken ct);
@@ -112,8 +122,14 @@ public interface INotificationHistoryStore
     /// <summary>Entries after <paramref name="after"/> in list order (or from the newest), newest first.</summary>
     Task<HistoryPage> ListAsync(HistoryCursor? after, int limit, CancellationToken ct);
 
-    /// <summary>Deletes every relayed notification. The alert log stays (it is also diagnostics).</summary>
-    Task<int> ClearDevicesAsync(CancellationToken ct);
+    /// <summary>
+    /// Deletes relayed notifications: all of them, or only those of <paramref name="scope"/> (one app, one sender).
+    /// The alert log stays (it is also diagnostics, and its rows hold back repeated alerts).
+    /// </summary>
+    Task<int> ClearDevicesAsync(HistoryClearScope? scope, CancellationToken ct);
+
+    /// <summary>Deletes one relayed notification by its <see cref="HistoryEntry.Id"/>. False when it was not there.</summary>
+    Task<bool> DeleteDeviceAsync(long id, CancellationToken ct);
 
     /// <summary>Drops relayed notifications and alert-log rows older than <paramref name="cutoff"/>, and relayed ones beyond <paramref name="maxDeviceEntries"/>.</summary>
     Task<int> PruneAsync(DateTimeOffset cutoff, int maxDeviceEntries, CancellationToken ct);

@@ -91,14 +91,32 @@ public sealed class NotificationHistoryRepository : INotificationHistoryStore
         finally { hold.Dispose(); }
     }
 
-    public async Task<int> ClearDevicesAsync(CancellationToken ct)
+    public async Task<int> ClearDevicesAsync(HistoryClearScope? scope, CancellationToken ct)
     {
         var hold = await _db.LockAsync(ct);
         try
         {
             using var cmd = _db.Connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM notification_history";
+            cmd.CommandText = """
+                DELETE FROM notification_history
+                WHERE (@app IS NULL OR app = @app) AND (@source IS NULL OR origin_name = @source)
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@app", (object?)scope?.App ?? DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@source", (object?)scope?.Source ?? DBNull.Value));
             return await cmd.ExecuteNonQueryAsync(ct);
+        }
+        finally { hold.Dispose(); }
+    }
+
+    public async Task<bool> DeleteDeviceAsync(long id, CancellationToken ct)
+    {
+        var hold = await _db.LockAsync(ct);
+        try
+        {
+            using var cmd = _db.Connection.CreateCommand();
+            cmd.CommandText = "DELETE FROM notification_history WHERE id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@id", id));
+            return await cmd.ExecuteNonQueryAsync(ct) > 0;
         }
         finally { hold.Dispose(); }
     }

@@ -44,4 +44,12 @@ class CenterLayoutTest {
     fun an_entry_not_shown_has_no_place() {
         assertNull(CenterLayout.indexOf("missing", leading = 1, days = days, openStack = null))
     }
+
+    @Test
+    fun a_tapped_push_in_a_bundle_unfolds_that_bundle() {
+        // M-81: the entry itself is shown open, so its bundle is opened first.
+        assertEquals("stack:today:b", CenterLayout.stackOf(b2.key, days))
+        assertNull(CenterLayout.stackOf(a.key, days)) // a single entry has no bundle to open
+        assertNull(CenterLayout.stackOf("missing", days))
+    }
 }

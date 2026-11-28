@@ -180,14 +180,57 @@ public partial class NotificationCenterPanel : UserControl
 
     private async void Clear_Click(object sender, RoutedEventArgs e)
     {
-        if (!MessageDialog.Show(L.CenterClearTitle, L.CenterClearMessage, L.CenterClearConfirm, L.Cancel, owner: Window.GetWindow(this))) return;
-        if (!await NotificationCenter.ClearAsync())
+        // A source picked on the left clears only its own (M-81); "Everything" clears every relayed one.
+        var scope = ClearScope(_filter);
+        if (scope is null) return; // this PC's alerts are not cleared
+        var all = scope.IsAll;
+        var message = all ? L.CenterClearMessage : L.CenterClearScopedMessage(LabelFor(_filter));
+        if (!MessageDialog.Show(L.CenterClearTitle, message, L.CenterClearConfirm, L.Cancel, owner: Window.GetWindow(this))) return;
+        if (!await NotificationCenter.ClearAsync(scope))
         {
             MessageDialog.Show(L.CenterClearTitle, L.CenterFailed, owner: Window.GetWindow(this));
             return;
         }
         if (_filter is not null && _filter != AlertFilter) _filter = null;
         await ReloadAsync();
+    }
+
+    /// <summary>
+    /// What "clear" deletes with <paramref name="filter"/> picked: every relayed notification, one kind of them (an app),
+    /// or one sender's. Null for this PC's alerts, which stay (their log also holds back repeated alerts).
+    /// </summary>
+    private static HistoryClearScope? ClearScope(string? filter) => filter switch
+    {
+        null => new HistoryClearScope(),
+        AlertFilter => null,
+        ReceivedFilter => new HistoryClearScope(App: TransferHistory.Received),
+        SentFilter => new HistoryClearScope(App: TransferHistory.Sent),
+        CommandsFilter => new HistoryClearScope(App: RemoteCommandProtocol.HistoryApp),
+        ClipReceivedFilter => new HistoryClearScope(App: ClipHistory.Received),
+        ClipSentFilter => new HistoryClearScope(App: ClipHistory.Sent),
+        var name => new HistoryClearScope(Source: name),
+    };
+
+    private async void Delete_Click(HistoryEntry entry, Button button)
+    {
+        button.IsEnabled = false;
+        if (!await NotificationCenter.DeleteAsync(entry.Id))
+        {
+            button.IsEnabled = true;
+            MessageDialog.Show(L.CenterDeleteTitle, L.CenterDeleteFailed, owner: Window.GetWindow(this));
+            return;
+        }
+        _entries.RemoveAll(e => e.Kind == entry.Kind && e.Id == entry.Id);
+        // Every loaded entry deleted while older ones remain: read the first page again, or the list would claim to be
+        // empty (and "Older" cannot page on from nothing).
+        if (_entries.Count == 0 && _more)
+        {
+            await ReloadAsync();
+            return;
+        }
+        // The last of a source gone: back to everything rather than an empty pick.
+        if (_filter is not null && !_entries.Any(Matches)) _filter = null;
+        Render();
     }
 
     private void MarkShownAsSeen() =>
@@ -201,7 +244,16 @@ public partial class NotificationCenterPanel : UserControl
         ListPanel.Children.Clear();
 
         var shown = _entries.Where(Matches).ToList();
-        ClearButton.IsEnabled = _entries.Any(e => e.Kind == HistoryKind.Device);
+        // The button follows the pick on the left: everything, or just that source (M-81). Alerts are not cleared.
+        ClearButton.Content = _filter is null ? L.CenterClear : L.CenterClearScoped(LabelFor(_filter));
+        ClearButton.IsEnabled = _filter switch
+        {
+            null => _entries.Any(e => e.Kind == HistoryKind.Device),
+            AlertFilter => false,
+            _ => shown.Count > 0,
+        };
+        ClearButton.ToolTip = _filter == AlertFilter ? L.CenterAlertsStay : null;
+        ToolTipService.SetShowOnDisabled(ClearButton, true);
         MoreButton.Visibility = _more ? Visibility.Visible : Visibility.Collapsed;
         CountText.Text = L.CenterCount(shown.Count, _more);
 
@@ -345,7 +397,8 @@ public partial class NotificationCenterPanel : UserControl
         CommandsFilter => L.CenterCommands,
         ClipReceivedFilter => L.CenterClipReceived,
         ClipSentFilter => L.CenterClipSent,
-        _ => key,
+        // A sender's tile shows the group's alias for it (M-51), as RenderFilters draws it.
+        _ => DeviceNames.Show(_entries.FirstOrDefault(e => e.Kind == HistoryKind.Device && e.Source == key)?.SourceKind, key),
     };
 
     private bool Matches(HistoryEntry e) => Matches(e, _filter);
@@ -392,6 +445,29 @@ public partial class NotificationCenterPanel : UserControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(42) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        // A relayed notification can be deleted on its own (M-81); this PC's alerts stay, as with "clear".
+        Button? delete = null;
+        if (e.Kind == HistoryKind.Device)
+        {
+            delete = new Button
+            {
+                Content = "", // Cancel (×)
+                Style = Res<Style>("Center.DeleteButton"),
+                ToolTip = L.CenterDeleteTip,
+                Margin = new Thickness(8, -3, -4, 0),
+            };
+            System.Windows.Automation.AutomationProperties.SetName(delete, L.CenterDeleteTip);
+            var button = delete;
+            delete.Click += (_, args) =>
+            {
+                args.Handled = true;
+                Delete_Click(e, button);
+            };
+            Grid.SetColumn(delete, 3);
+            grid.Children.Add(delete);
+        }
 
         if (e.At > _seenAtOpen)
         {
@@ -496,8 +572,9 @@ public partial class NotificationCenterPanel : UserControl
             grid.ToolTip = L.CenterExpandTip;
             grid.MouseLeftButtonUp += (_, args) =>
             {
-                if (args.OriginalSource is DependencyObject d && (IsInside(d, full) || (folderLink is not null && IsInside(d, folderLink))))
-                    return; // selecting text, or the folder link
+                if (args.OriginalSource is DependencyObject d && (IsInside(d, full) || (folderLink is not null && IsInside(d, folderLink))
+                        || (delete is not null && IsInside(d, delete))))
+                    return; // selecting text, the folder link, or deleting
                 var open = full.Visibility == Visibility.Visible;
                 full.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
                 preview.Visibility = open ? Visibility.Visible : Visibility.Collapsed;

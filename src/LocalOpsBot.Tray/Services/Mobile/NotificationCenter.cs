@@ -114,13 +114,44 @@ internal static class NotificationCenter
         }
     }
 
-    /// <summary>Deletes the relayed notifications (the alert log stays). False when the Agent refused or was unreachable.</summary>
-    public static async Task<bool> ClearAsync()
+    /// <summary>
+    /// Deletes the relayed notifications — all of them, or only <paramref name="scope"/>'s (one app or one sender, M-81);
+    /// the alert log stays. False when the Agent refused or was unreachable.
+    /// </summary>
+    public static async Task<bool> ClearAsync(HistoryClearScope? scope = null)
     {
-        if (Preview is not null || MobileHost.Client is not { IsConnected: true } client) return false;
+        if (Preview is { } preview)
+        {
+            Preview = new HistoryPage(preview.Entries.Where(e => e.Kind != HistoryKind.Device
+                || (scope?.App is { } app && e.App != app) || (scope?.Source is { } source && e.Source != source)).ToList(), preview.More);
+            return true;
+        }
+        if (MobileHost.Client is not { IsConnected: true } client) return false;
         try
         {
-            var r = await client.RequestAsync(MobileBridge.OpHistoryClear);
+            var r = scope is null || scope.IsAll
+                ? await client.RequestAsync(MobileBridge.OpHistoryClear)
+                : await client.RequestAsync(MobileBridge.OpHistoryClear, scope);
+            return (bool?)r["ok"] == true;
+        }
+        catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Deletes one relayed notification (M-81). False when the Agent refused or was unreachable.</summary>
+    public static async Task<bool> DeleteAsync(long id)
+    {
+        if (Preview is { } preview)
+        {
+            Preview = new HistoryPage(preview.Entries.Where(e => !(e.Kind == HistoryKind.Device && e.Id == id)).ToList(), preview.More);
+            return true;
+        }
+        if (MobileHost.Client is not { IsConnected: true } client) return false;
+        try
+        {
+            var r = await client.RequestAsync(MobileBridge.OpHistoryDelete, new HistoryDeleteRequest(id));
             return (bool?)r["ok"] == true;
         }
         catch (Exception ex) when (ex is IOException or TaskCanceledException or OperationCanceledException)
