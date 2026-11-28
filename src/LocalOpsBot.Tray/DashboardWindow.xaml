@@ -99,6 +99,34 @@
     </Border>
 
     <!-- ═ Notifications and Settings pages (out of view until picked) ═ -->
+    <!-- A send started on the Devices page (Ctrl+V, a tile's menu, a drop — M-80) slides up here and says how it went. -->
+    <Border x:Name="SendToast" Grid.Row="1" Panel.ZIndex="10" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+            Margin="24,0,24,36" MinWidth="360" MaxWidth="680" Padding="18,14,24,14" CornerRadius="12" Background="#2E8B4E"
+            BorderBrush="#33FFFFFF" BorderThickness="1" RenderTransformOrigin="0.5,1"
+            Visibility="Collapsed" Opacity="0" Cursor="Hand" MouseLeftButtonUp="SendToast_Click">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.45" Color="#10121A"/>
+      </Border.Effect>
+      <Border.RenderTransform>
+        <TransformGroup>
+          <ScaleTransform x:Name="SendToastScale" ScaleX="0.9" ScaleY="0.9"/>
+          <TranslateTransform x:Name="SendToastShift" Y="40"/>
+        </TransformGroup>
+      </Border.RenderTransform>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Border Width="34" Height="34" CornerRadius="17" Margin="0,0,14,0" VerticalAlignment="Center" Background="White">
+          <TextBlock x:Name="SendToastMark" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     FontSize="18" FontWeight="Bold" Foreground="#2E8B4E"/>
+        </Border>
+        <TextBlock x:Name="SendToastText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap"
+                   FontSize="15" FontWeight="SemiBold" Foreground="White"/>
+      </Grid>
+    </Border>
+
     <local:NotificationCenterPanel x:Name="CenterView" Grid.Row="1" Visibility="Collapsed"/>
     <local:SettingsPanel x:Name="SettingsView" Grid.Row="1" Visibility="Collapsed"/>
 

@@ -10,6 +10,10 @@
   sent only after confirming, as before (DECISIONS M-80).
 - **Right-clicking a phone or PC in the list offers "클립보드 보내기"**, greyed out while nothing is copied. The
   hint under the list says both ways.
+- **Sends from the Homebase window say how they went in the window.** A Ctrl+V, a tile's "클립보드 보내기" or a drop
+  raises a large message at the bottom of the window: blue while sending, green with the device's name (and the
+  start of the text) once sent, amber with the reason when it wasn't. Files say they are on their way; the tray
+  notification still tells when each device has them.
 
 ## v0.61.0 — Quick send from the share sheet
 

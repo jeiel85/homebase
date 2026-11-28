@@ -175,6 +175,14 @@ public static class L
     // ── Clipboard from the Homebase window (M-80) ──
     public static string TileSendClipboard => T("Send clipboard", "클립보드 보내기");
     public static string TileSendClipboardEmpty => T("Send clipboard (nothing copied)", "클립보드 보내기 (복사한 것 없음)");
+    public static string ToastSending(string names) => T($"Sending to {names}…", $"{names}(으)로 보내는 중…");
+    public static string ToastTextSent(string names, string? preview) => preview is null
+        ? T($"Sent to {names}'s clipboard (password-manager text, not shown)", $"{names} 클립보드로 보냈습니다 (비밀번호 관리자 내용이라 표시 안 함)")
+        : T($"Sent to {names}'s clipboard · “{preview}”", $"{names} 클립보드로 보냈습니다 · “{preview}”");
+    public static string ToastFilesStarted(int count, long bytes, string names) => T(
+        $"Sending {count} file{(count == 1 ? "" : "s")} ({Size(bytes)}) to {names} — a notification says when it's done",
+        $"{names}(으)로 파일 {count}개 ({Size(bytes)}) 보내는 중 — 다 되면 알림으로 알려 드립니다");
+    public static string ToastPreviewPick => T("Preview: here the devices to send to would be picked", "미리보기: 여기서는 받을 기기를 고르는 창이 뜹니다");
     public static string ClipEmpty => T("Nothing is copied. Copy text, a picture or files first.",
         "복사한 것이 없습니다. 텍스트·그림·파일을 먼저 복사하세요.");
     public static string SendToSection => T("SEND TO MENU", "보내기 메뉴");

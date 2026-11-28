@@ -140,4 +140,13 @@ public sealed class DashboardDeviceListTests
         Assert.Null(DashboardWindow.PasteKey(all, Key(i => i.Role == DeviceRole.ViaHub)));
         Assert.Null(DashboardWindow.PasteKey(all, "device:gone"));
     }
+
+    [Fact]
+    public void The_send_message_quotes_text_on_one_line_cut_short_and_never_a_password_managers()
+    {
+        Assert.Equal("first line second", TrayIconManager.Preview("  first line\r\nsecond \n", 40));
+        Assert.Equal("abcde…", TrayIconManager.Preview("abcdefgh", 5));
+        Assert.Contains("“abc”", L.ToastTextSent("S24", "abc"));
+        Assert.DoesNotContain("“", L.ToastTextSent("S24", null));
+    }
 }

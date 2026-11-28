@@ -80,6 +80,7 @@ public partial class DashboardWindow : ThemedWindow
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Refresh();
+        _toastHide.Tick += (_, _) => SlideToast(show: false);
 
         // Refresh at once whenever the window is shown again and stop asking for live views while it
         // is hidden. Hiding is what closing the old Settings window was: unsaved input there is dropped.
@@ -391,9 +392,105 @@ public partial class DashboardWindow : ThemedWindow
     /// <summary>Sends what is copied to <paramref name="key"/> (or the devices picked) through the tray.</summary>
     private void SendClipboard(string? key)
     {
-        if (_preview || TrayIconManager.Current is not { } tray) return;
-        _ = tray.SendClipboardToAsync(key);
+        if (_preview)
+        {
+            // Design preview: nothing is sent, but the message shows as it would, named after the device it would go to.
+            var to = _items.FirstOrDefault(i => key is not null && DropKey(i) == key)?.Shown;
+            ShowToast(to is null ? SendNoticeKind.Failed : SendNoticeKind.Sent,
+                to is null ? L.ToastPreviewPick : L.ToastTextSent(to, "Homebase preview"));
+            return;
+        }
+        if (TrayIconManager.Current is not { } tray) return;
+        _ = tray.SendClipboardToAsync(key, NewFeedback());
     }
+
+    // ── The send message (M-80) ──
+
+    private int _toastSeq;
+    private bool _toastShown;
+    private readonly DispatcherTimer _toastHide = new();
+
+    /// <summary>
+    /// A send's report to this window: its progress and outcome slide up at the bottom. Backing out (closing the picker)
+    /// takes the message away, unless a later send has put its own there since.
+    /// </summary>
+    private SendFeedback NewFeedback()
+    {
+        var seq = ++_toastSeq;
+        return new SendFeedback(
+            (kind, text) => Dispatcher.BeginInvoke(() => ShowToast(kind, text)),
+            () => Dispatcher.BeginInvoke(() => { if (seq == _toastSeq) SlideToast(show: false); }));
+    }
+
+    private void ShowToast(SendNoticeKind kind, string text)
+    {
+        // The whole message takes the outcome's colour: blue while sending, green once sent, amber when it wasn't.
+        var (tone, mark) = kind switch
+        {
+            SendNoticeKind.Working => (Brush(0x3F, 0x63, 0xC9), "↑"),
+            SendNoticeKind.Failed => (Brush(0xC8, 0x6E, 0x0C), "!"),
+            SendNoticeKind.Started => (Brush(0x2E, 0x8B, 0x4E), "↑"),
+            _ => (Brush(0x2E, 0x8B, 0x4E), "✓"),
+        };
+        SendToast.Background = tone;
+        SendToastMark.Foreground = tone;
+        SendToastMark.Text = mark;
+        SendToastText.Text = text;
+        // Already up (sending → sent): a little pop says the outcome arrived.
+        if (_toastShown && kind != SendNoticeKind.Working) Pop(1.06, 1, 260);
+        // "Sending…" stays until the outcome replaces it; an outcome goes after a while (a failure stays longer).
+        _toastHide.Stop();
+        if (kind != SendNoticeKind.Working)
+        {
+            _toastHide.Interval = TimeSpan.FromSeconds(kind == SendNoticeKind.Failed ? 6 : 3.5);
+            _toastHide.Start();
+        }
+        if (!_toastShown) SlideToast(show: true);
+    }
+
+    /// <summary>Slides the message up into view (fading in) or down out of it.</summary>
+    private void SlideToast(bool show)
+    {
+        if (!show) _toastHide.Stop();
+        if (show == _toastShown) return;
+        _toastShown = show;
+        var ease = new System.Windows.Media.Animation.CubicEase
+        {
+            EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut : System.Windows.Media.Animation.EasingMode.EaseIn,
+        };
+        var length = TimeSpan.FromMilliseconds(show ? 320 : 220);
+        if (show)
+        {
+            SendToastShift.BeginAnimation(TranslateTransform.YProperty, null);
+            SendToastShift.Y = 40;
+            SendToast.Visibility = Visibility.Visible;
+            // Rises with a slight overshoot and grows to full size, so it is hard to miss.
+            Pop(0.9, 1, 320, overshoot: true);
+        }
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(show ? 1 : 0, length) { EasingFunction = ease };
+        if (!show) fade.Completed += (_, _) => { if (!_toastShown) SendToast.Visibility = Visibility.Collapsed; };
+        SendToast.BeginAnimation(OpacityProperty, fade);
+        SendToastShift.BeginAnimation(TranslateTransform.YProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(show ? 0 : 24, length)
+            {
+                EasingFunction = show ? new System.Windows.Media.Animation.BackEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Amplitude = 0.4 } : ease,
+            });
+    }
+
+    /// <summary>Scales the message from <paramref name="from"/> to <paramref name="to"/>.</summary>
+    private void Pop(double from, double to, int ms, bool overshoot = false)
+    {
+        var grow = new System.Windows.Media.Animation.DoubleAnimation(from, to, TimeSpan.FromMilliseconds(ms))
+        {
+            EasingFunction = overshoot
+                ? new System.Windows.Media.Animation.BackEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Amplitude = 0.4 }
+                : new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut },
+        };
+        SendToastScale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        SendToastScale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+    }
+
+    private void SendToast_Click(object sender, MouseButtonEventArgs e) => SlideToast(show: false);
 
     /// <summary>
     /// Whether anything sendable is copied: text, files or a picture. Only the formats are looked at, not the content
@@ -428,10 +525,11 @@ public partial class DashboardWindow : ThemedWindow
         if (_preview || _tab != DashTab.Devices || TrayIconManager.Current is not { } tray) return;
         var key = d is null ? null : DropKey(d);
         if (d is not null && key is null) return;
+        // How it goes shows in this window too (M-80).
         if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths)
-            _ = tray.SendPathsAsync(paths, key);
+            _ = tray.SendPathsAsync(paths, key, NewFeedback());
         else if (e.Data.GetData(DataFormats.UnicodeText) is string { Length: > 0 } text)
-            _ = tray.SendTextAsync(text, key);
+            _ = tray.SendTextAsync(text, key, feedback: NewFeedback());
     }
 
     private Border Tile(DeviceItem d)

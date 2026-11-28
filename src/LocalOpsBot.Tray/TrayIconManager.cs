@@ -477,19 +477,19 @@ public sealed class TrayIconManager : IDisposable
     /// the way the tray's "Send clipboard" sends it: files copied in Explorer as if dropped (folders zipped after asking),
     /// a picture as a PNG file, text as clipboard text (a password manager's only after asking).
     /// </summary>
-    internal async Task SendClipboardToAsync(string? targetKey)
+    internal async Task SendClipboardToAsync(string? targetKey, SendFeedback? feedback = null)
     {
         if (Closing) return;
         var snapshot = await ClipboardShare.ReadAsync();
         if (Closing) return;
         if (snapshot is null)
         {
-            ShowBalloon(L.ClipNotSentTitle, L.ClipBusy);
+            Fail(feedback, L.ClipNotSentTitle, L.ClipBusy);
             return;
         }
         if (snapshot.Files is { Count: > 0 } copied)
         {
-            await SendPathsAsync(copied, targetKey);
+            await SendPathsAsync(copied, targetKey, feedback);
             return;
         }
         if (snapshot.Text is null && snapshot.Png is { } png)
@@ -498,38 +498,54 @@ public sealed class TrayIconManager : IDisposable
             if (Closing) return;
             if (targets is null)
             {
-                ShowBalloon(L.FilesNotSentTitle, L.ClipAgentUnavailable);
+                Fail(feedback, L.FilesNotSentTitle, L.ClipAgentUnavailable);
                 return;
             }
             var item = ClipboardPicture(png);
             IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget>? picked = targetKey is null
                 ? SendPickerWindow.Pick(L.SendPickSummary(1, png.Length, item.Name), targets, ClipTargetLabel, L.FilesNoTargets)
                 : targets.Where(t => t.Key == targetKey).ToList();
-            if (picked is null) return;
-            if (picked.Count == 0)
+            if (picked is null)
             {
-                ShowBalloon(L.FilesNotSentTitle, L.DropNotHere);
+                feedback?.Dropped();
                 return;
             }
-            await SendFilesAsync(new[] { item }, picked);
+            if (picked.Count == 0)
+            {
+                Fail(feedback, L.FilesNotSentTitle, L.DropNotHere);
+                return;
+            }
+            await SendFilesAsync(new[] { item }, picked, feedback: feedback);
             return;
         }
         if (string.IsNullOrWhiteSpace(snapshot.Text))
         {
-            ShowBalloon(L.ClipNotSentTitle, L.ClipEmpty);
+            Fail(feedback, L.ClipNotSentTitle, L.ClipEmpty);
             return;
         }
-        await SendTextAsync(snapshot.Text, targetKey, snapshot.Sensitive);
+        await SendTextAsync(snapshot.Text, targetKey, snapshot.Sensitive, feedback);
     }
 
-    /// <summary>Text to <paramref name="targets"/> (M-62), and one balloon on how it went.</summary>
-    private async Task SendTextToAsync(string text, bool sensitive, IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget> targets)
+    /// <summary>A send's failure: in the Homebase window when it started there (M-80), else as a balloon.</summary>
+    private void Fail(SendFeedback? feedback, string title, string body)
     {
+        if (feedback is null) ShowBalloon(title, body);
+        else feedback.Show(SendNoticeKind.Failed, body);
+    }
+
+    private static string TargetNames(IEnumerable<LocalOpsBot.Core.Mobile.ClipTarget> targets) =>
+        string.Join(", ", targets.Select(t => DeviceNames.Show(t.Kind, t.Name, t.Kind == LocalOpsBot.Core.Mobile.DeviceKind.Pc ? t.Key : null)));
+
+    /// <summary>Text to <paramref name="targets"/> (M-62), and one balloon on how it went.</summary>
+    private async Task SendTextToAsync(string text, bool sensitive, IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget> targets,
+        SendFeedback? feedback = null)
+    {
+        feedback?.Show(SendNoticeKind.Working, L.ToastSending(TargetNames(targets)));
         var result = await ClipboardShare.SendAsync(targets.Select(t => t.Key).ToList(), text, sensitive);
         if (_disposed) return;
         if (result is null)
         {
-            ShowBalloon(L.ClipNotSentTitle, L.ClipAgentUnavailable);
+            Fail(feedback, L.ClipNotSentTitle, L.ClipAgentUnavailable);
             return;
         }
         string Name(LocalOpsBot.Core.Mobile.ClipSendOutcome o) =>
@@ -538,6 +554,13 @@ public sealed class TrayIconManager : IDisposable
         var failed = result.Results.Where(o => !o.Ok).ToList();
         TrayLog.Info("Clipboard", $"Sent {text.Length} chars{(sensitive ? " (sensitive)" : "")}: " +
             string.Join(", ", result.Results.Select(o => o.Ok ? $"{o.Name} ok" : $"{o.Name} {o.Error}")));
+        // Started in the Homebase window (M-80): said there, with what went, instead of a balloon.
+        if (feedback is not null)
+        {
+            if (failed.Count == 0) feedback.Show(SendNoticeKind.Sent, L.ToastTextSent(string.Join(", ", sent), sensitive ? null : Preview(text, 40)));
+            else feedback.Show(SendNoticeKind.Failed, string.Join("\n", failed.Select(o => $"{Name(o)}: {L.ClipError(o.Error)}")));
+            return;
+        }
         // Each target's outcome is kept as "Clipboard sent" (M-70): clicked, the balloon opens it.
         if (failed.Count == 0)
             ShowBalloon(L.ClipSentTitle, L.ClipSentBody(string.Join(", ", sent)), () => ShowClipboardHistory(received: false));
@@ -591,30 +614,33 @@ public sealed class TrayIconManager : IDisposable
     /// fares arrives as files.progress and ends in one balloon.
     /// </summary>
     private async Task SendFilesAsync(IReadOnlyList<FileSender.Item> items, IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget> targets,
-        string? note = null)
+        string? note = null, SendFeedback? feedback = null)
     {
         if (items.Count == 0)
         {
-            ShowBalloon(L.FilesNotSentTitle, L.FilesNothing);
+            Fail(feedback, L.FilesNotSentTitle, L.FilesNothing);
             return;
         }
         var allowed = await FileSender.TargetsAsync();
         if (allowed is null)
         {
-            ShowBalloon(L.FilesNotSentTitle, L.ClipAgentUnavailable);
+            Fail(feedback, L.FilesNotSentTitle, L.ClipAgentUnavailable);
             return;
         }
         var keys = allowed.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
         var usable = targets.Where(t => keys.Contains(t.Key)).ToList();
         if (usable.Count == 0)
         {
-            ShowBalloon(L.FilesNotSentTitle, L.FilesNoTargets);
+            Fail(feedback, L.FilesNotSentTitle, L.FilesNoTargets);
             return;
         }
         var bytes = items.Sum(i => i.Size);
         var names = usable.ToDictionary(t => t.Key,
             t => DeviceNames.Show(t.Kind, t.Name, t.Kind == LocalOpsBot.Core.Mobile.DeviceKind.Pc ? t.Key : null), StringComparer.Ordinal);
-        ShowBalloon(L.FilesSendingTitle(items.Count, bytes), L.FilesSendingBody(string.Join(", ", names.Values)) + (note is null ? "" : "\n" + note));
+        if (feedback is null)
+            ShowBalloon(L.FilesSendingTitle(items.Count, bytes), L.FilesSendingBody(string.Join(", ", names.Values)) + (note is null ? "" : "\n" + note));
+        else
+            feedback.Show(SendNoticeKind.Working, L.ToastSending(string.Join(", ", names.Values)));
 
         // Tracked before files.go: delivery starts inside it, and its first (even final) progress may come back at once.
         string? tracked = null;
@@ -628,8 +654,11 @@ public sealed class TrayIconManager : IDisposable
         if (result.Id is null)
         {
             if (tracked is not null) lock (_sends) _sends.Remove(tracked);
-            ShowBalloon(L.FilesNotSentTitle, L.FileSendError(result.Error));
+            Fail(feedback, L.FilesNotSentTitle, L.FileSendError(result.Error));
+            return;
         }
+        // How each device fares still comes as a balloon (OnFilesProgress): a phone may fetch them much later.
+        feedback?.Show(SendNoticeKind.Started, L.ToastFilesStarted(items.Count, bytes, string.Join(", ", names.Values)) + (note is null ? "" : "\n" + note));
     }
 
     /// <summary>A remote command from a phone (M-69). A custom one says so in a balloon; the others show for themselves.</summary>
@@ -690,29 +719,33 @@ public sealed class TrayIconManager : IDisposable
     /// <paramref name="targetKey"/> the user picks the devices first. Folders, or more files than one send takes, go as one
     /// zip — asked first, made in the temp folder with the user's rights, deleted once the Agent has the bytes.
     /// </summary>
-    internal async Task SendPathsAsync(IReadOnlyList<string> paths, string? targetKey = null)
+    internal async Task SendPathsAsync(IReadOnlyList<string> paths, string? targetKey = null, SendFeedback? feedback = null)
     {
         if (Closing) return;
         var selection = SendBundle.Classify(paths);
         if (selection.Files.Count == 0 && selection.Folders.Count == 0)
         {
-            ShowBalloon(L.FilesNotSentTitle, L.FilesNothing);
+            Fail(feedback, L.FilesNotSentTitle, L.FilesNothing);
             return;
         }
         var targets = await FileSender.TargetsAsync();
         if (Closing) return;
         if (targets is null)
         {
-            ShowBalloon(L.FilesNotSentTitle, L.ClipAgentUnavailable);
+            Fail(feedback, L.FilesNotSentTitle, L.ClipAgentUnavailable);
             return;
         }
         IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget>? picked = targetKey is null
             ? SendPickerWindow.Pick(SendSummary(selection), targets, ClipTargetLabel, L.FilesNoTargets)
             : targets.Where(t => t.Key == targetKey).ToList();
-        if (picked is null) return;
+        if (picked is null)
+        {
+            feedback?.Dropped();
+            return;
+        }
         if (picked.Count == 0)
         {
-            ShowBalloon(L.FilesNotSentTitle, L.DropNotHere);
+            Fail(feedback, L.FilesNotSentTitle, L.DropNotHere);
             return;
         }
 
@@ -725,15 +758,19 @@ public sealed class TrayIconManager : IDisposable
             {
                 var name = SendBundle.ZipName(selection, DateTime.Now);
                 if (!MessageDialog.Show(L.ZipAskTitle, L.ZipAskBody(selection.Folders.Count, selection.Files.Count, name), L.ZipAndSend, L.Cancel))
+                {
+                    feedback?.Dropped();
                     return;
-                ShowBalloon(L.ZippingTitle, name);
+                }
+                if (feedback is null) ShowBalloon(L.ZippingTitle, name);
+                else feedback.Show(SendNoticeKind.Working, $"{L.ZippingTitle} {name}");
                 var path = System.IO.Path.Combine(SendBundle.NewWorkFolder(), name);
                 var made = await Task.Run(() => SendBundle.Create(selection, path));
                 TrayLog.Info("Files", $"Zip of {selection.Folders.Count} folder(s), {selection.Files.Count} file(s): {made.Error ?? "ok"}, {made.Skipped} skipped");
                 if (made.Path is null || Closing)
                 {
                     SendBundle.Discard(path);
-                    if (made.Path is null) ShowBalloon(L.FilesNotSentTitle, L.ZipError(made.Error));
+                    if (made.Path is null) Fail(feedback, L.FilesNotSentTitle, L.ZipError(made.Error));
                     return;
                 }
                 zip = made.Path;
@@ -744,7 +781,7 @@ public sealed class TrayIconManager : IDisposable
             {
                 items = FileSender.FromPaths(selection.Files);
             }
-            await SendFilesAsync(items, picked, note);
+            await SendFilesAsync(items, picked, note, feedback);
         }
         finally
         {
@@ -757,34 +794,47 @@ public sealed class TrayIconManager : IDisposable
     /// Text dropped on the Homebase window (M-66), or pasted there (M-80): sent as clipboard text (M-62), to that device or
     /// the ones picked. <paramref name="sensitive"/> text (a password manager copied it) goes only when the user says so.
     /// </summary>
-    internal async Task SendTextAsync(string text, string? targetKey = null, bool sensitive = false)
+    internal async Task SendTextAsync(string text, string? targetKey = null, bool sensitive = false, SendFeedback? feedback = null)
     {
         if (Closing || string.IsNullOrWhiteSpace(text)) return;
         if (text.Length > LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars)
         {
-            ShowBalloon(L.ClipNotSentTitle, L.ClipTooLong(LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars));
+            Fail(feedback, L.ClipNotSentTitle, L.ClipTooLong(LocalOpsBot.Core.Mobile.ClipProtocol.MaxChars));
             return;
         }
         if (sensitive && !MessageDialog.Show(L.ClipSensitiveTitle, L.ClipSensitiveBody, L.ClipSendAnyway, L.Cancel))
+        {
+            feedback?.Dropped();
             return;
+        }
         var targets = await ClipboardShare.TargetsAsync();
         if (Closing) return;
         if (targets is null)
         {
-            ShowBalloon(L.ClipNotSentTitle, L.ClipAgentUnavailable);
+            Fail(feedback, L.ClipNotSentTitle, L.ClipAgentUnavailable);
             return;
         }
-        var preview = text.Trim().ReplaceLineEndings(" ");
         IReadOnlyList<LocalOpsBot.Core.Mobile.ClipTarget>? picked = targetKey is null
-            ? SendPickerWindow.Pick(L.SendPickText(preview.Length > 60 ? preview[..60] + "…" : preview), targets, ClipTargetLabel, L.ClipNoTargets)
+            ? SendPickerWindow.Pick(L.SendPickText(Preview(text, 60)), targets, ClipTargetLabel, L.ClipNoTargets)
             : targets.Where(t => t.Key == targetKey).ToList();
-        if (picked is null) return;
+        if (picked is null)
+        {
+            feedback?.Dropped();
+            return;
+        }
         if (picked.Count == 0)
         {
-            ShowBalloon(L.ClipNotSentTitle, L.DropNotHere);
+            Fail(feedback, L.ClipNotSentTitle, L.DropNotHere);
             return;
         }
-        await SendTextToAsync(text, sensitive, picked);
+        await SendTextToAsync(text, sensitive, picked, feedback);
+    }
+
+    /// <summary>Text on one line, cut to <paramref name="max"/> characters.</summary>
+    internal static string Preview(string text, int max)
+    {
+        var line = text.Trim().ReplaceLineEndings(" ");
+        return line.Length > max ? line[..max] + "…" : line;
     }
 
     private static string SendSummary(SendBundle.Selection s)
