@@ -80,6 +80,7 @@ public partial class DashboardWindow : ThemedWindow
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => Refresh();
+        _toastHide.Tick += (_, _) => SlideToast(show: false);
 
         // Refresh at once whenever the window is shown again and stop asking for live views while it
         // is hidden. Hiding is what closing the old Settings window was: unsaved input there is dropped.
@@ -105,6 +106,14 @@ public partial class DashboardWindow : ThemedWindow
             // F2 renames the selected device and F5 refreshes the list (M-59), on the Devices page only
             // (Settings has text fields of its own).
             if (_tab != DashTab.Devices) return;
+            // Ctrl+V sends what is copied to the selected device, or asks where (M-80).
+            if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control
+                && e.OriginalSource is not System.Windows.Controls.Primitives.TextBoxBase && _items.Count > 0)
+            {
+                e.Handled = true;
+                SendClipboard(PasteKey(_items, _selected));
+                return;
+            }
             if (e.Key == Key.F5)
             {
                 e.Handled = true;
@@ -254,6 +263,20 @@ public partial class DashboardWindow : ThemedWindow
     /// <summary>Design preview only: open the alias dialog for the selected device (<c>--rename</c>).</summary>
     internal void PreviewRename() => Dispatcher.BeginInvoke(() => Rename(_selected), DispatcherPriority.ApplicationIdle);
 
+    /// <summary>Design preview only: show the send message in one of its states (<c>--send-toast</c>, M-80).</summary>
+    internal void PreviewToast(string kind)
+    {
+        var k = Enum.TryParse<SendNoticeKind>(kind, ignoreCase: true, out var parsed) ? parsed : SendNoticeKind.Sent;
+        ShowToast(k, k switch
+        {
+            SendNoticeKind.Working => L.ToastSending("Galaxy S24"),
+            SendNoticeKind.Started => L.ToastFilesStarted(2, 3_400_000, "LAPTOP-JEIEL"),
+            SendNoticeKind.Failed => "Galaxy Tab S9: " + L.DropNotHere,
+            _ => L.ToastTextSent("Galaxy S24", "https://www.threads.com/@homebase/post/…"),
+        });
+        _toastHide.Stop(); // held for the preview
+    }
+
     private DeviceItem Selected() => _items.FirstOrDefault(i => i.Key == _selected) ?? _items[0];
 
     // ── Aliases (DECISIONS M-50) ──
@@ -285,8 +308,24 @@ public partial class DashboardWindow : ThemedWindow
 
     private ContextMenu? TileMenu(DeviceItem d)
     {
-        if (d.AliasKey is not { } aliasKey) return null; // a PC linked here that hasn't said its id yet
+        var sendKey = DropKey(d); // shown in the design preview too, where sending does nothing
+        if (d.AliasKey is null && sendKey is null) return null; // a PC linked here that hasn't said its id yet
         var menu = new ContextMenu { FontFamily = Ui };
+        if (sendKey is not null)
+        {
+            // What is already copied, straight to this device (M-80); greyed out while nothing is copied.
+            var send = new MenuItem { Header = L.TileSendClipboard };
+            send.Click += (_, _) => SendClipboard(sendKey);
+            menu.Items.Add(send);
+            menu.Opened += (_, _) =>
+            {
+                var any = ClipboardHasContent();
+                send.IsEnabled = any;
+                send.Header = any ? L.TileSendClipboard : L.TileSendClipboardEmpty;
+            };
+            if (d.AliasKey is not null) menu.Items.Add(new Separator());
+        }
+        if (d.AliasKey is not { } aliasKey) return menu;
         var set = new MenuItem { Header = d.Alias is null ? L.AliasSet : L.AliasChange };
         set.Click += (_, _) => Rename(d.Key);
         menu.Items.Add(set);
@@ -355,6 +394,144 @@ public partial class DashboardWindow : ThemedWindow
         : d.IsPc && d.Key.StartsWith("hub:", StringComparison.Ordinal) ? LocalOpsBot.Core.Mobile.ClipTargetKeys.Pc(d.Key[4..])
         : null;
 
+    // ── The clipboard (M-80) ──
+
+    /// <summary>
+    /// Where Ctrl+V on the Devices page sends what is copied: the selected device when it takes sends, else null — then the
+    /// user picks the devices (this PC selected, or a device seen only through another PC).
+    /// </summary>
+    internal static string? PasteKey(IReadOnlyList<DeviceItem> items, string selected) =>
+        items.FirstOrDefault(i => i.Key == selected) is { } d ? DropKey(d) : null;
+
+    /// <summary>Sends what is copied to <paramref name="key"/> (or the devices picked) through the tray.</summary>
+    private void SendClipboard(string? key)
+    {
+        if (_preview)
+        {
+            // Design preview: nothing is sent, but the message shows as it would, named after the device it would go to.
+            var to = _items.FirstOrDefault(i => key is not null && DropKey(i) == key)?.Shown;
+            ShowToast(to is null ? SendNoticeKind.Failed : SendNoticeKind.Sent,
+                to is null ? L.ToastPreviewPick : L.ToastTextSent(to, "Homebase preview"));
+            return;
+        }
+        if (TrayIconManager.Current is not { } tray) return;
+        _ = tray.SendClipboardToAsync(key, NewFeedback());
+    }
+
+    // ── The send message (M-80) ──
+
+    private int _toastSeq;
+    private bool _toastShown;
+    private readonly DispatcherTimer _toastHide = new();
+
+    /// <summary>
+    /// A send's report to this window: its progress and outcome slide up at the bottom. Backing out (closing the picker)
+    /// takes the message away, unless a later send has put its own there since.
+    /// </summary>
+    private SendFeedback NewFeedback()
+    {
+        var seq = ++_toastSeq;
+        return new SendFeedback(
+            (kind, text) => Dispatcher.BeginInvoke(() => ShowToast(kind, text)),
+            () => Dispatcher.BeginInvoke(() => { if (seq == _toastSeq) SlideToast(show: false); }));
+    }
+
+    private void ShowToast(SendNoticeKind kind, string text)
+    {
+        // The whole message takes the outcome's colours: blue into violet while sending, green into teal once sent,
+        // amber into coral when it wasn't.
+        var (from, to, mark) = kind switch
+        {
+            SendNoticeKind.Working => (Color.FromRgb(0x4A, 0x6C, 0xF0), Color.FromRgb(0x7B, 0x4F, 0xD6), "↑"),
+            SendNoticeKind.Failed => (Color.FromRgb(0xF0, 0x9A, 0x2A), Color.FromRgb(0xD9, 0x4F, 0x3D), "!"),
+            _ => (Color.FromRgb(0x2F, 0xB0, 0x63), Color.FromRgb(0x14, 0x8A, 0x8A), kind == SendNoticeKind.Started ? "↑" : "✓"),
+        };
+        var fill = new LinearGradientBrush(from, to, new Point(0, 0), new Point(1, 1));
+        fill.Freeze();
+        var ink = new SolidColorBrush(Color.FromRgb((byte)((from.R + to.R) / 2), (byte)((from.G + to.G) / 2), (byte)((from.B + to.B) / 2)));
+        ink.Freeze();
+        SendToast.Background = fill;
+        SendToastMark.Foreground = ink;
+        SendToastMark.Text = mark;
+        SendToastText.Text = text;
+        // Already up (sending → sent): a little pop says the outcome arrived.
+        if (_toastShown && kind != SendNoticeKind.Working) Pop(1.06, 1, 260);
+        // "Sending…" stays until the outcome replaces it; an outcome goes after a while (a failure stays longer), and
+        // the bar along the bottom runs down until then.
+        _toastHide.Stop();
+        SendToastTimerScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SendToastTrack.Visibility = kind == SendNoticeKind.Working ? Visibility.Collapsed : Visibility.Visible;
+        if (kind != SendNoticeKind.Working)
+        {
+            _toastHide.Interval = TimeSpan.FromSeconds(kind == SendNoticeKind.Failed ? 6 : 3.5);
+            _toastHide.Start();
+            SendToastTimerScale.BeginAnimation(ScaleTransform.ScaleXProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(1, 0, _toastHide.Interval));
+        }
+        if (!_toastShown) SlideToast(show: true);
+    }
+
+    /// <summary>Slides the message up into view (fading in) or down out of it.</summary>
+    private void SlideToast(bool show)
+    {
+        if (!show) _toastHide.Stop();
+        if (show == _toastShown) return;
+        _toastShown = show;
+        var ease = new System.Windows.Media.Animation.CubicEase
+        {
+            EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut : System.Windows.Media.Animation.EasingMode.EaseIn,
+        };
+        var length = TimeSpan.FromMilliseconds(show ? 320 : 220);
+        if (show)
+        {
+            SendToastShift.BeginAnimation(TranslateTransform.YProperty, null);
+            SendToastShift.Y = 40;
+            SendToast.Visibility = Visibility.Visible;
+            // Rises with a slight overshoot and grows to full size, so it is hard to miss.
+            Pop(0.9, 1, 320, overshoot: true);
+        }
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(show ? 1 : 0, length) { EasingFunction = ease };
+        if (!show) fade.Completed += (_, _) => { if (!_toastShown) SendToast.Visibility = Visibility.Collapsed; };
+        SendToast.BeginAnimation(OpacityProperty, fade);
+        SendToastShift.BeginAnimation(TranslateTransform.YProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(show ? 0 : 24, length)
+            {
+                EasingFunction = show ? new System.Windows.Media.Animation.BackEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Amplitude = 0.4 } : ease,
+            });
+    }
+
+    /// <summary>Scales the message from <paramref name="from"/> to <paramref name="to"/>.</summary>
+    private void Pop(double from, double to, int ms, bool overshoot = false)
+    {
+        var grow = new System.Windows.Media.Animation.DoubleAnimation(from, to, TimeSpan.FromMilliseconds(ms))
+        {
+            EasingFunction = overshoot
+                ? new System.Windows.Media.Animation.BackEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Amplitude = 0.4 }
+                : new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut },
+        };
+        SendToastScale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        SendToastScale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+    }
+
+    private void SendToast_Click(object sender, MouseButtonEventArgs e) => SlideToast(show: false);
+
+    /// <summary>
+    /// Whether anything sendable is copied: text, files or a picture. Only the formats are looked at, not the content
+    /// (M-62: the content is read when the user sends). A busy clipboard counts as yes; the send then says so.
+    /// </summary>
+    private static bool ClipboardHasContent()
+    {
+        try
+        {
+            // "PNG" too: some apps copy a picture only in that format, which ClipboardShare reads (ContainsImage looks for a bitmap).
+            return Clipboard.ContainsText() || Clipboard.ContainsFileDropList() || Clipboard.ContainsImage() || Clipboard.ContainsData("PNG");
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            return true;
+        }
+    }
+
     private static bool Droppable(IDataObject data) =>
         data.GetDataPresent(DataFormats.FileDrop) || data.GetDataPresent(DataFormats.UnicodeText);
 
@@ -371,10 +548,11 @@ public partial class DashboardWindow : ThemedWindow
         if (_preview || _tab != DashTab.Devices || TrayIconManager.Current is not { } tray) return;
         var key = d is null ? null : DropKey(d);
         if (d is not null && key is null) return;
+        // How it goes shows in this window too (M-80).
         if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } paths)
-            _ = tray.SendPathsAsync(paths, key);
+            _ = tray.SendPathsAsync(paths, key, NewFeedback());
         else if (e.Data.GetData(DataFormats.UnicodeText) is string { Length: > 0 } text)
-            _ = tray.SendTextAsync(text, key);
+            _ = tray.SendTextAsync(text, key, feedback: NewFeedback());
     }
 
     private Border Tile(DeviceItem d)

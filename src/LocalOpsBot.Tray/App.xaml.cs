@@ -93,6 +93,7 @@ public partial class App : Application
         //   Homebase.Tray.exe --preview-dashboard [--view devices|notifications|settings]
         //                     [--area phone|telegram|forwarding|monitors|ai|updates] [--select <device key>] [--lang en]
         //                     [--alias "<group key>=<alias>"] [--rename]   (pc:pc-work, phone-name:galaxy s24|samsung sm-s921n)
+        //                     [--send-toast working|sent|started|failed]   (the send message, M-80)
         if (e.Args.Contains("--preview-dashboard"))
         {
             base.OnStartup(e);
@@ -111,6 +112,7 @@ public partial class App : Application
             if (Enum.TryParse<DashTab>(ArgAfter(e.Args, "--view"), ignoreCase: true, out var view))
                 preview.ShowTab(view, Enum.TryParse<SettingsTab>(ArgAfter(e.Args, "--area"), ignoreCase: true, out var area) ? area : null);
             if (e.Args.Contains("--rename")) preview.ContentRendered += (_, _) => preview.PreviewRename();
+            if (ArgAfter(e.Args, "--send-toast") is { } toast) preview.ContentRendered += (_, _) => preview.PreviewToast(toast);
             if (ArgAfter(e.Args, "--select") is { } key) preview.PreviewSelect(key);
             if (int.TryParse(ArgAfter(e.Args, "--tab"), out var tab)) Dashboard.PcLiveView.PreviewTab = tab;
             if (ArgAfter(e.Args, "--size")?.Split('x') is [var w, var h] && double.TryParse(w, out var pw) && double.TryParse(h, out var ph))
